@@ -35,7 +35,7 @@ build_prompt.py  ──►  reversal-zones-projection  ──►  plot_projectio
 
 ## Setup
 
-Requirements: Python 3.15 or newer (see `.python-version`) and [uv](https://docs.astral.sh/uv/).
+Requirements: Python 3.12 or newer (see `.python-version`) and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 git clone https://github.com/pedrohml/stock_predict_zones.git
