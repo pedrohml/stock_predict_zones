@@ -125,14 +125,20 @@ def sim(path, zones_path, paths=200_000):
         broke = (lambda x: ext < x) if is_support else (lambda x: ext > x)
         inside = price <= near[0] if is_support else price >= near[0]
         reach = [1.0 if inside else float(passed(near[0]).mean())] + [float(broke(x).mean()) for x in far]
+        reach = [round(x, 2) for x in reach]   # round reach once and derive turn from it, so they always add up
         ids = [("S" if is_support else "R") + str(i + 1) for i in range(len(zones))] + ["below" if is_support else "above"]
-        return [{"id": ids[i], "reach": round(reach[i], 2),
+        return [{"id": ids[i], "reach": reach[i],
                  "turn": round(reach[i] - (reach[i + 1] if i + 1 < len(reach) else 0), 2)} for i in range(len(reach))]
 
     S, R = z["supports"], z["resistances"]
     s_mid, r_mid = S[min(1, len(S) - 1)][0], R[min(1, len(R) - 1)][1]
     down, up = lo < s_mid, hi > r_mid
+    # Same rule as for reach and turn: round the totals once and take the rest by difference,
+    # so breakdown + whipsaw equals the reach past the middle support and the four sum to 1.
     share = lambda mask: round(float(mask.mean()), 2)
+    both = share(down & up)
+    p_down, p_up = round(share(down) - both, 2), round(share(up) - both, 2)
+    p_range = round(1 - p_down - p_up - both, 2)
     out = {
         "horizon": {"label": d["horizon"], "close_basis": main["candles"], "closes": n,
                     "first": dates[0].isoformat(), "last": dates[-1].isoformat()},
@@ -141,10 +147,10 @@ def sim(path, zones_path, paths=200_000):
         "first_candle_share_left": round(frac, 2), "measure": "touch" if touched else "close",
         "supports": side(S, True), "resistances": side(R, False),
         "scenarios": [
-            {"name": "breakdown", "p": share(down & ~up), "low": f"below {s_mid}", "high": f"{r_mid} or lower"},
-            {"name": "breakout", "p": share(up & ~down), "low": f"{s_mid} or higher", "high": f"above {r_mid}"},
-            {"name": "range", "p": share(~down & ~up), "low": f"{s_mid} or higher", "high": f"{r_mid} or lower"},
-            {"name": "whipsaw", "p": share(down & up), "low": f"below {s_mid}", "high": f"above {r_mid}"}],
+            {"name": "breakdown", "p": p_down, "low": f"below {s_mid}", "high": f"{r_mid} or lower"},
+            {"name": "breakout", "p": p_up, "low": f"{s_mid} or higher", "high": f"above {r_mid}"},
+            {"name": "range", "p": p_range, "low": f"{s_mid} or higher", "high": f"{r_mid} or lower"},
+            {"name": "whipsaw", "p": both, "low": f"below {s_mid}", "high": f"above {r_mid}"}],
     }
     for key, value in out.items(): print(key, json.dumps(value))
 

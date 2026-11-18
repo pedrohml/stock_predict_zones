@@ -361,10 +361,6 @@ def test_check_allows_touching_zones_and_a_projection_without_drivers(rz, capsys
     assert run_check(rz, capsys, write_json("ok.json", projection_data)) == (0, "OK")
 
 
-@pytest.mark.xfail(strict=False, reason=(
-    "rz.py sim rounds reach and turn independently (rz.py:129-130), so an unadjusted baseline "
-    "can miss check's own 0.011 tolerance (rz.py:159): on this fixture, with the 1.19 "
-    "ex-dividend drop, R1 reach is 0.60 but the resistance turns sum to 0.58"))
 def test_check_accepts_an_unadjusted_sim_baseline(rz, capsys, run_sim, zones, projection_from_sim, write_json):
     zones["shocks"] = [{"date": "2026-12-21", "drop": 1.19}]
     out = run_sim(zones)
