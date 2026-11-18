@@ -141,3 +141,23 @@ def no_real_claude(monkeypatch):
     forgets to stub a Claude step fails at once with "not found" instead."""
     import run_pipeline
     monkeypatch.setattr(run_pipeline, "CLAUDE", "claude-must-not-run-in-tests")
+
+
+@pytest.fixture(autouse=True)
+def no_real_config(monkeypatch, tmp_path_factory):
+    """No test may read the developer's own defaults (run_pipeline.py's config files), or
+    the suite passes on one machine only. The user file is a path that does not exist and
+    ./zones.toml is not looked up; a test about config files sets ZONES_CONFIG, or
+    run_pipeline.PROJECT_CONFIG, itself. A `history_dir` exports RZ_PROJECTIONS_DIR for the
+    whole process, so the variable is put back after every test."""
+    import os
+    import run_pipeline
+    monkeypatch.setenv(run_pipeline.CONFIG_ENV,
+                       str(tmp_path_factory.getbasetemp() / "no-config" / "config.toml"))
+    monkeypatch.setattr(run_pipeline, "PROJECT_CONFIG", None)
+    kept = os.environ.get(run_pipeline.HISTORY_ENV)
+    yield
+    if kept is None:
+        os.environ.pop(run_pipeline.HISTORY_ENV, None)
+    else:
+        os.environ[run_pipeline.HISTORY_ENV] = kept

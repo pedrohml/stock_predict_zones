@@ -40,9 +40,17 @@ prompts/trade_entries.md, filled with the two files, to `claude -p` with no
 tools at all, so that Claude writes the sentences; every number of that reply is
 checked against the computed one. Pass --no-entries to skip the step.
 
+Standing preferences (language, horizon, research, model, theme, where runs/
+and the saved history go ...) can live in a TOML file instead of being typed on
+every run: `zones --init-config` writes a commented template, `zones
+--show-config` prints every setting with where its value comes from, and
+--no-config ignores the files for one run. Precedence: command line >
+environment variable > ./zones.toml > the user file > built-in default.
+
 The result is analysis for study, not investment advice.
 """
 import argparse
+import difflib
 import json
 import os
 import queue
@@ -53,9 +61,11 @@ import sys
 import tempfile
 import threading
 import time
+import tomllib
 import urllib.parse
 from datetime import datetime
 from pathlib import Path
+from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parent
 BUILD = ROOT / "build_prompt.py"
@@ -655,6 +665,370 @@ def trade_entries(input_path, projection_path, entries_path, timeout, model=None
     return checked_entries(input_path, projection_path, entries_path)
 
 
+# ---- your defaults (config files) ----------------------------------------------
+#
+# Precedence, lowest to highest: built-in default < user file < project file <
+# environment variable (history_dir only) < command line. `settle()` is the one
+# place that implements it; README "Your defaults" is the one place that documents it.
+
+CONFIG_ENV = "ZONES_CONFIG"          # names the user file, instead of the default location
+PROJECT_CONFIG = "zones.toml"        # looked up in the current directory only; None: no lookup
+HISTORY_ENV = "RZ_PROJECTIONS_DIR"   # what rz.py and score_projections.py read
+PRECEDENCE = ("command line > environment variable > project file (./zones.toml) > "
+              "user file > built-in default")
+
+
+class Setting(NamedTuple):
+    """One thing a config file may set. The key is the long option's name with
+    underscores (`--max-rows` -> `max_rows`), so there is one vocabulary."""
+    key: str
+    group: str            # "step1": becomes a build_prompt.py option; otherwise read by this script
+    kind: str             # text, choice, int, number, flag or path
+    default: object       # None: nothing is passed on, and `unset` says what happens then
+    note: str             # for the template
+    choices: tuple = ()
+    example: object = None    # the template's value when the default is not one
+    unset: str = ""
+    low: object = None
+    high: object = None
+    env: str = ""
+
+    @property
+    def flag(self):
+        return "--" + self.key.replace("_", "-")
+
+
+GROUPS = {
+    "step1": "Step 1: the request (options of build_prompt.py)",
+    "claude": "Steps 2 and 5: Claude Code, the saved history, trade setups",
+    "chart": "Step 4: the chart",
+    "files": "Where the files go",
+}
+# The step-1 names, choices and defaults repeat build_prompt.py's, and theme/lang repeat
+# plot_projection.py's THEMES/TEXT: a config value is checked here, before anything runs,
+# so a typo costs no download and no Claude Code call. tests/test_config.py pins both.
+SETTINGS = {s.key: s for s in (
+    Setting("language", "step1", "text", "en",
+            "language of the projection's text and of the chart's labels, e.g. \"pt\""),
+    Setting("horizon", "step1", "choice", "1-3m", "today, 1-2w, 1-3m or 6-12m",
+            choices=("today", "1-2w", "1-3m", "6-12m")),
+    Setting("research", "step1", "choice", "one_search", "web research: none, one_search or deep",
+            choices=("none", "one_search", "deep")),
+    Setting("supports", "step1", "int", 3, "how many support zones to ask for"),
+    Setting("resistances", "step1", "int", 3, "how many resistance zones to ask for"),
+    Setting("volume", "step1", "flag", False,
+            "add a volume column to every candle (off for one run: --no-volume)"),
+    Setting("max_rows", "step1", "int", None, "cap the rows of the main series (default: the horizon's preset)",
+            example=52, unset="the horizon's preset"),
+    Setting("shape", "step1", "choice", "table", "shape of the prose after the projection: table or list",
+            choices=("table", "list")),
+    Setting("max_words", "step1", "int", 200, "word limit for that prose"),
+    Setting("links", "step1", "choice", "decisive_only", "links in the prose: none, decisive_only or all",
+            choices=("none", "decisive_only", "all")),
+    Setting("decimals", "step1", "int", 2, "price rounding"),
+
+    Setting("model", "claude", "text", None, "model for `claude -p` (default: Claude Code's own)",
+            example="sonnet", unset="Claude Code's own"),
+    Setting("timeout", "claude", "number", DEFAULT_TIMEOUT,
+            "seconds before giving up on a Claude Code call", low=0),
+    Setting("quiet", "claude", "flag", False, "no line per stage while Claude Code works"),
+    Setting("save", "claude", "flag", True, "keep each new projection in history_dir, for scoring later"),
+    Setting("entries", "claude", "flag", True, "ranked trade setups after the chart (step 5)"),
+    Setting("entries_by_claude", "claude", "flag", False,
+            "have Claude Code write the setups' sentences (a second call)"),
+
+    Setting("theme", "chart", "choice", None, "light or dark", choices=("light", "dark"),
+            example="light", unset="light, the chart's default"),
+    Setting("lang", "chart", "choice", None,
+            "chart labels only: pt or en (default: the same as `language`)", choices=("pt", "en"),
+            example="en", unset="follows `language`"),
+    Setting("candles", "chart", "int", None, "how many past candles to show (default: automatic)",
+            example=60, unset="automatic", low=1),
+    Setting("dpi", "chart", "int", None, "resolution of raster formats, 1 to 1200",
+            example=160, unset="160, the chart's default", low=1, high=1200),
+    Setting("open", "chart", "flag", False, "open the chart in the default viewer after a run"),
+
+    Setting("runs_dir", "files", "path", RUNS,
+            "one folder per run goes here (default: runs/ in the current directory)",
+            example="~/zones/runs"),
+    Setting("history_dir", "files", "path", "projections",
+            "the saved projections, append-only (default: $RZ_PROJECTIONS_DIR, "
+            "else projections/ in the current directory)",
+            example="~/zones/projections", env=HISTORY_ENV),
+)}
+
+
+def literal(value):
+    """A value the way a TOML file spells it."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, dict):
+        return "a table"
+    if isinstance(value, list):
+        return "a list"
+    return str(value)
+
+
+def tilde(path):
+    """A path for a person to read: the home folder as ~."""
+    text, home = str(path), str(Path.home())
+    return "~" + text[len(home):] if text.startswith(home + os.sep) else text
+
+
+def user_config():
+    """Where the user file is: $ZONES_CONFIG, else $XDG_CONFIG_HOME/zones/config.toml,
+    else ~/.config/zones/config.toml on every platform (one path to remember and
+    document, and where command-line tools are looked for on macOS too)."""
+    named = os.environ.get(CONFIG_ENV)
+    if named:
+        return Path(named).expanduser().absolute()
+    base = os.environ.get("XDG_CONFIG_HOME", "")
+    base = Path(base) if os.path.isabs(base) else Path.home() / ".config"   # the XDG rule: ignore a relative one
+    return base / "zones" / "config.toml"
+
+
+def config_files():
+    """[(label, path)], lowest precedence first. The project file is ./zones.toml and
+    nothing else: no search through parent folders, so what applies is easy to see."""
+    files = [("user file", user_config())]
+    if PROJECT_CONFIG:
+        project = Path.cwd() / PROJECT_CONFIG
+        if project != files[0][1]:
+            files.append(("project file", project))
+    return files
+
+
+def config_path(setting, text, path):
+    """A folder named in a config file: ~ and $VARIABLES expand, and a relative one
+    starts at the file's own folder, so it means the same from any directory."""
+    expanded = os.path.expanduser(os.path.expandvars(text))
+    unset = re.search(r"\$\{?(\w+)", expanded)
+    if unset:
+        raise PipelineError(f"{path}: '{setting.key}' names the environment variable "
+                            f"{unset.group(1)}, which is not set")
+    return os.path.normpath(Path(path).parent / expanded)
+
+
+def config_value(setting, value, path):
+    """The value as it will be used, or one PipelineError naming the file and the key."""
+    def wrong(must):
+        return PipelineError(f"{path}: '{setting.key}' must be {must}, not {literal(value)}")
+    whole = isinstance(value, int) and not isinstance(value, bool)
+    kind, low, high = setting.kind, setting.low, setting.high
+    if kind == "flag":
+        if not isinstance(value, bool):
+            raise wrong("true or false")
+    elif kind == "choice":
+        if not isinstance(value, str) or value not in setting.choices:
+            raise wrong("one of " + ", ".join(literal(c) for c in setting.choices))
+    elif kind == "int":
+        if not whole or (low is not None and value < low) or (high is not None and value > high):
+            raise wrong("a whole number" + (f" from {low} to {high}" if high is not None
+                                            else f", {low} or more" if low is not None else ""))
+    elif kind == "number":
+        if not (whole or isinstance(value, float)) or not low < value < float("inf"):
+            raise wrong(f"a number above {low}")
+    elif not isinstance(value, str) or not value.strip():
+        raise wrong("a folder path in quotes" if kind == "path" else "text in quotes")
+    elif kind == "path":
+        return config_path(setting, value, path)
+    return value
+
+
+def read_config(path):
+    """The checked settings of one file, or None when there is no such file."""
+    try:
+        with open(path, "rb") as handle:
+            raw = tomllib.load(handle)
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    except tomllib.TOMLDecodeError as error:
+        raise PipelineError(f"{path} is not valid TOML: {error}")
+    except (OSError, UnicodeDecodeError) as error:
+        raise PipelineError(f"Cannot read the config file {path}: {error}")
+    values = {}
+    for key, value in raw.items():
+        if key not in SETTINGS:
+            near = difflib.get_close_matches(key.replace("-", "_").lower(), SETTINGS, 1)
+            hint = (f" (did you mean '{near[0]}'?)" if near else
+                    " (settings are plain `key = value` lines, not [tables])"
+                    if isinstance(value, dict) else "")
+            raise PipelineError(f"{path}: unknown setting '{key}'{hint}. "
+                                "`zones --show-config` lists them all.")
+        values[key] = config_value(SETTINGS[key], value, path)
+    return values
+
+
+def typed(flag, arguments):
+    """Whether a step-1 option is among the arguments passed through, and its value:
+    (True, value) for `--opt value` and `--opt=value`, (True, None) for a bare flag
+    or a missing value, else (False, None). An abbreviation counts, because
+    build_prompt.py's parser accepts one."""
+    found = (False, None)
+    for index, argument in enumerate(arguments):
+        head, equals, value = argument.partition("=")
+        if len(head) > 2 and head.startswith("--") and flag.startswith(head):
+            after = arguments[index + 1] if index + 1 < len(arguments) else None
+            found = (True, value if equals else after)   # the last one wins, as in argparse
+    return found
+
+
+def command_line(args, passthrough):
+    """{key: value} of the settings given on the command line in this run."""
+    given = {}
+    for setting in SETTINGS.values():
+        if setting.group != "step1":
+            value = getattr(args, setting.key)
+            if value is not None:
+                given[setting.key] = value
+            continue
+        found, value = typed(setting.flag, passthrough)
+        if setting.kind == "flag":
+            off = getattr(args, "no_" + setting.key)
+            if found and off:
+                raise PipelineError(f"Give {setting.flag} or --no-{setting.flag[2:]}, not both.")
+            if found or off:
+                given[setting.key] = found
+        elif found:
+            given[setting.key] = value
+    return given
+
+
+def settle(given, layers, environ=None):
+    """{key: (value, source)} for every setting. `given` is what the command line
+    set, `layers` the files as [(path, values)], lowest precedence first."""
+    environ = os.environ if environ is None else environ
+    settled = {}
+    for key, setting in SETTINGS.items():
+        value, source = setting.default, "default"
+        for path, values in layers:
+            if key in values:
+                value, source = values[key], str(path)
+        if setting.env and environ.get(setting.env):
+            value, source = environ[setting.env], f"environment ({setting.env})"
+        if key in given:
+            value, source = given[key], "command line"
+        settled[key] = (value, source)
+    return settled
+
+
+def from_file(source):
+    return source not in ("default", "command line") and not source.startswith("environment")
+
+
+def step1_arguments(settled):
+    """The build_prompt.py options that come from a config file. An option typed in
+    this run is "command line" in `settled`, so it is never repeated here."""
+    extra = []
+    for key, setting in SETTINGS.items():
+        value, source = settled[key]
+        if setting.group != "step1" or not from_file(source):
+            continue
+        if setting.kind != "flag":
+            extra.append(f"{setting.flag}={value}")
+        elif value:
+            extra.append(setting.flag)
+    return extra
+
+
+def config_template():
+    """The file --init-config writes: every setting, commented out, with its default."""
+    lines = [
+        "# Your defaults for `zones` (run_pipeline.py).",
+        "#",
+        "# Every setting below is commented out and shows the built-in default (or an",
+        "# example, where the default is not a value). To make one yours, remove its",
+        "# leading \"# \" and change the value.",
+        "#",
+        "# Precedence: command line > environment variable > ./zones.toml in the current",
+        "# directory > this file > built-in default.",
+        "# `zones --show-config` prints every setting and where its value comes from;",
+        "# `--no-config` ignores the files for one run.",
+        "#",
+        "# Paths: ~ and $VARIABLES expand; a relative path starts at this file's folder,",
+        "# not at the current directory.",
+    ]
+    for group, title in GROUPS.items():
+        lines += ["", f"# ---- {title} ----"]
+        for setting in SETTINGS.values():
+            if setting.group == group:
+                value = setting.default if setting.example is None else setting.example
+                lines.append(f"# {setting.key} = {literal(value)}".ljust(38) + f"  # {setting.note}")
+    return "\n".join(lines) + "\n"
+
+
+def init_config():
+    """Write the template to the user location, unless a file is already there."""
+    path = user_config()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "x", encoding="utf-8") as handle:   # "x": never over an existing file
+            handle.write(config_template())
+    except FileExistsError:
+        return f"{path} already exists and was left as it is."
+    except OSError as error:
+        raise PipelineError(f"Cannot write the config file {path}: {error}")
+    return f"Wrote {path}: every setting is commented out. Edit it, then check with `zones --show-config`."
+
+
+def show_config(files, settled, ignored=False):
+    """--show-config: the files looked at, then every setting, its value and its source."""
+    lines = ["Config files (the project file wins over the user file):"]
+    for label, path, values in files:
+        state = ("ignored (--no-config)" if ignored else "not found" if values is None else
+                 f"loaded, {len(values)} setting" + ("" if len(values) == 1 else "s"))
+        lines.append(f"  {label + ':':<14}{tilde(path)}  [{state}]")
+    lines.append(f"Precedence: {PRECEDENCE}")
+    for group, title in GROUPS.items():
+        lines += ["", title]
+        for key, setting in SETTINGS.items():
+            if setting.group != group:
+                continue
+            value, source = settled[key]
+            if value is None:
+                shown = f"({setting.unset})"
+            elif setting.kind == "path":
+                shown = tilde(Path(value).absolute())
+            else:
+                shown = literal(value) if isinstance(value, bool) else str(value)
+            lines.append(f"  {key:<19}{shown:<30}  {tilde(source)}")
+    lines += ["", "On the command line each setting is its option: --research none, --runs-dir DIR, "
+                  "--open / --no-open ..."]
+    return "\n".join(lines)
+
+
+def configured(args, passthrough):
+    """Fill `args` and the pass-through list from the command line, the environment,
+    the config files and the defaults, in that order of precedence."""
+    if args.init_config:
+        print(init_config())
+        raise SystemExit(0)
+    files = [(label, path, None if args.no_config else read_config(path))
+             for label, path in config_files()]
+    loaded = [(path, values) for _, path, values in files if values is not None]
+    settled = settle(command_line(args, passthrough), loaded)
+    if args.show_config:
+        print(show_config(files, settled, args.no_config))
+        raise SystemExit(0)
+    if loaded:   # one line, so a run that departs from the built-in defaults says why
+        say("Config: " + "; ".join(f"{tilde(path)} ({', '.join(values) or 'no settings'})"
+                                   for path, values in loaded))
+    for key, setting in SETTINGS.items():
+        if setting.group != "step1":
+            setattr(args, key, settled[key][0])
+    args.no_entries, args.no_save = not args.entries, not args.save   # the names pipeline() reads
+    history, source = settled["history_dir"]
+    if source != "default" and not source.startswith("environment"):
+        # rz.py save and anything else started from here read the variable: set it once,
+        # for the whole process, so every part of the command uses the same folder
+        os.environ[HISTORY_ENV] = args.history_dir = str(Path(history).absolute())
+    if passthrough and not args.input:   # with --input there is no step 1 to configure
+        passthrough = step1_arguments(settled) + passthrough   # first: anything typed comes later and wins
+    return args, passthrough
+
+
 # ---- command line -------------------------------------------------------------
 
 def parse(argv=None):
@@ -663,6 +1037,7 @@ def parse(argv=None):
         usage="%(prog)s TICKER [build_prompt.py options] [options]\n"
               "       %(prog)s --input FILE [--projection FILE] [options]",
         allow_abbrev=False)
+    switch = argparse.BooleanOptionalAction   # --open / --no-open: either side of a config file's value
     files = parser.add_argument_group("files")
     files.add_argument("--out-dir", metavar="DIR",
                        help="put the files exactly here, named STEM_input.json, "
@@ -679,22 +1054,27 @@ def parse(argv=None):
     files.add_argument("--chart", metavar="FILE",
                        help="chart file (default: chart.png in the run folder, or STEM.png "
                             "in --out-dir; the extension picks the format)")
-    files.add_argument("--open", action="store_true",
+    files.add_argument("--open", action=switch, default=None,
                        help="open the chart in the default viewer when the run succeeds")
+    files.add_argument("--runs-dir", metavar="DIR",
+                       help=f"where the run folders are made (default: {RUNS}/ in the current directory)")
+    files.add_argument("--history-dir", metavar="DIR",
+                       help=f"where new projections are kept (default: ${HISTORY_ENV}, else "
+                            "projections/ in the current directory)")
     claude = parser.add_argument_group("steps 2 and 5")
-    claude.add_argument("--no-entries", action="store_true",
-                        help="stop at the chart: no ranked trade setups (step 5)")
-    claude.add_argument("--entries-by-claude", action="store_true",
+    claude.add_argument("--entries", action=switch, default=None,
+                        help="--no-entries stops at the chart: no ranked trade setups (step 5)")
+    claude.add_argument("--entries-by-claude", action=switch, default=None,
                         help="have Claude Code write the setups' sentences (a second call, a few "
                              "minutes); the numbers are the same, computed by trade_entries.py")
     claude.add_argument("--model", help="model for `claude -p` (default: Claude Code's own)")
-    claude.add_argument("--no-save", action="store_true",
-                        help="do not keep the new projection under projections/ "
+    claude.add_argument("--save", action=switch, default=None,
+                        help="--no-save does not keep the new projection under projections/ "
                              "(see `rz.py save`)")
-    claude.add_argument("--quiet", action="store_true",
+    claude.add_argument("--quiet", action=switch, default=None,
                         help="no line per stage while Claude Code works; step headers, "
                              "errors and the duration and cost line stay")
-    claude.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT, metavar="SECONDS",
+    claude.add_argument("--timeout", type=float, metavar="SECONDS",
                         help=f"give up on each Claude Code call after this long (default: {DEFAULT_TIMEOUT})")
     chart = parser.add_argument_group(
         "step 4, passed to plot_projection.py only when given")
@@ -702,7 +1082,30 @@ def parse(argv=None):
     chart.add_argument("--lang")
     chart.add_argument("--candles")
     chart.add_argument("--dpi")
-    return parser.parse_known_args(argv)
+    defaults = parser.add_argument_group(
+        "your defaults",
+        "Standing preferences are read from the user file ($ZONES_CONFIG, else\n"
+        "$XDG_CONFIG_HOME/zones/config.toml, else ~/.config/zones/config.toml) and from\n"
+        "zones.toml in the current directory. Precedence: command line > environment\n"
+        "variable > project file > user file > built-in default. A switch that a file\n"
+        "turns on is turned off for one run by its --no- form.")
+    defaults.add_argument("--show-config", action="store_true",
+                          help="print the config files found and every setting with where its "
+                               "value comes from, then exit")
+    defaults.add_argument("--init-config", action="store_true",
+                          help="write a commented template to the user file, unless it exists, then exit")
+    defaults.add_argument("--no-config", action="store_true", help="ignore the config files in this run")
+    for setting in SETTINGS.values():   # step-1 switches: build_prompt.py has no "off" form
+        if setting.group == "step1" and setting.kind == "flag":
+            defaults.add_argument(f"--no-{setting.flag[2:]}", action="store_true",
+                                  help=f"do not pass {setting.flag} to build_prompt.py although a "
+                                       "config file sets it")
+    args, passthrough = parser.parse_known_args(argv)
+    try:
+        return configured(args, passthrough)
+    except PipelineError as error:   # a config file problem: one line, like every other error
+        say(f"Error: {error}")
+        raise SystemExit(1)
 
 
 def pipeline(args, passthrough):
@@ -739,7 +1142,7 @@ def pipeline(args, passthrough):
     elif args.projection and args.chart and args.no_entries:   # plot again into a named file: nothing else to place
         out_dir, own, stem = None, False, args.name
     else:                               # a new folder for this run, complete with all three files
-        out_dir, own, stem = run_folder(data), True, args.name
+        out_dir, own, stem = run_folder(data, args.runs_dir), True, args.name
     input_name, projection_name, chart_name = file_names(stem)
     if fresh is not None:
         input_path = out_dir / input_name

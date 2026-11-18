@@ -252,7 +252,10 @@ def render(prompt):
     return text
 
 
-def main():
+def arguments():
+    """The command line. run_pipeline.py repeats the standing options (names, choices,
+    defaults) in its SETTINGS so that a config file can set them; tests/test_config.py
+    compares the two."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("ticker", help="Yahoo symbol, e.g. NVDA, PETR4.SA, BTC-USD")
     parser.add_argument("--horizon", choices=PRESETS, default="1-3m")
@@ -275,7 +278,11 @@ def main():
                         default="decisive_only")
     parser.add_argument("--decimals", type=int, default=2)
     parser.add_argument("-o", "--output", help="write to this file instead of stdout")
-    args = parser.parse_args()
+    return parser
+
+
+def main():
+    args = arguments().parse_args()
 
     text = render(build(args))
     if args.output:

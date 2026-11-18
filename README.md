@@ -28,6 +28,7 @@ build_prompt.py  ──►  reversal-zones-projection  ──►  plot_projectio
 
 - [Setup](#setup)
 - [Quick start](#quick-start)
+- [Your defaults](#your-defaults)
 - [Step 1: build_prompt.py](#step-1-build_promptpy)
 - [Step 2: the reversal-zones-projection skill](#step-2-the-reversal-zones-projection-skill)
 - [Step 3: plot_projection.py](#step-3-plot_projectionpy)
@@ -70,9 +71,9 @@ One command, from ticker to chart and ranked trade setups (needs [Claude Code](h
 uv run zones PETR4.SA --open          # plain `zones PETR4.SA --open` after the global install
 ```
 
-It runs the three steps below in order, validates the projection with `rz.py check` before plotting, then computes three ranked trade setups (see [Ranked trade setups](#ranked-trade-setups)). It prints where the files are and, with `--open`, shows the chart in your default image viewer. `--horizon` and the other step-1 options work here too (the default horizon is `1-3m`). Step 2 takes about 2 to 6 minutes (longest with `--research deep`) and is the only Claude Code call; the trade-setups step is computed in under a second. Progress goes to standard error. Pass `--no-entries` to stop at the chart. `uv run python run_pipeline.py ...` is the same command.
+It runs the three steps below in order, validates the projection with `rz.py check` before plotting, then computes three ranked trade setups (see [Ranked trade setups](#ranked-trade-setups)). It prints where the files are and, with `--open`, shows the chart in your default image viewer. `--horizon` and the other step-1 options work here too (the default horizon is `1-3m`). Step 2 takes about 2 to 6 minutes (longest with `--research deep`) and is the only Claude Code call; the trade-setups step is computed in under a second. Progress goes to standard error. Pass `--no-entries` to stop at the chart. `uv run python run_pipeline.py ...` is the same command. To stop typing the same options on every run, see [Your defaults](#your-defaults).
 
-Each run gets a new folder under the current directory:
+Each run gets a new folder under the current directory (or under `runs_dir`, see [Your defaults](#your-defaults)):
 
 ```
 runs/
@@ -122,6 +123,11 @@ A stage that happens again says so (`adjusting the zones`, `simulating again (rz
 | `--quiet` | off | No line per stage during step 2. Headers, errors and the duration and cost line stay. |
 | `--theme`, `--lang`, `--candles`, `--dpi` | step 3's own | Passed to `plot_projection.py` only when given. |
 | `--no-save` | off | Do not keep the new projection under `projections/` (see [Saved projections](#saved-projections)). |
+| `--runs-dir DIR` | `runs/` in the current directory | Where the run folders are made. |
+| `--history-dir DIR` | `$RZ_PROJECTIONS_DIR`, else `projections/` in the current directory | Where new projections are kept. |
+| `--show-config`, `--init-config`, `--no-config` | | Print the settings and their sources; write a template config file; ignore the config files. See [Your defaults](#your-defaults). |
+
+Every default in this table except the per-run files (`--out-dir`, `--name`, `--input`, `--projection`, `--chart`) can be changed once in a config file: see [Your defaults](#your-defaults). A switch that a file turns on has a `--no-` form for one run (`--no-open`, `--no-quiet`, `--no-volume`, ...), and `--entries` and `--save` undo a file's `entries = false` and `save = false`.
 
 ```bash
 RUN=runs/PETR4.SA/2026-11-18T1515_1-3m
@@ -155,6 +161,59 @@ To try step 3 without Claude, use the ready-made pair in [`examples/`](examples/
 uv run python plot_projection.py examples/petr4_input.json examples/petr4_projection.json -o chart.png
 ```
 
+## Your defaults
+
+Preferences you would otherwise type on every run can live in a file. With this one, plain `zones PETR4.SA` asks for a projection in Portuguese with no web research, uses the `sonnet` model, opens the chart, and keeps its folders in one place whatever directory you run it from:
+
+```toml
+# ~/.config/zones/config.toml
+language = "pt"            # the projection's text and the chart's labels
+research = "none"
+model = "sonnet"
+open = true
+
+runs_dir = "~/zones/runs"                # one folder per run
+history_dir = "~/zones/projections"      # the saved projections, the record used for scoring
+```
+
+```bash
+zones --init-config     # write a template with every setting commented out (never replaces a file)
+zones --show-config     # the files found, and every setting with its value and where it comes from
+zones PETR4.SA --no-config          # ignore the files for this run
+```
+
+**Files.** The user file is `$XDG_CONFIG_HOME/zones/config.toml`, by default `~/.config/zones/config.toml` on every platform (macOS and Windows included, so there is one path to remember). `ZONES_CONFIG=FILE` names another file instead. A `zones.toml` in the current directory, and only there (parent folders are not searched), is the project file: handy for a folder of US tickers that wants `language = "en"`. A file that does not exist is skipped. A run that used a file says so in its first line, with the settings taken from it:
+
+```text
+Config: ~/.config/zones/config.toml (language, research, model, open, runs_dir, history_dir)
+```
+
+**Precedence.** Command line > environment variable > project file (`./zones.toml`) > user file > built-in default. The only setting with an environment variable is `history_dir` (`RZ_PROJECTIONS_DIR`).
+
+**Settings.** A key is the option's name with underscores (`--max-rows` is `max_rows`); every key is top-level, without `[tables]`.
+
+| Key | Built-in default | Same as |
+|---|---|---|
+| `language`, `horizon`, `research`, `supports`, `resistances`, `volume`, `max_rows`, `shape`, `max_words`, `links`, `decimals` | see [Step 1](#options) | the `build_prompt.py` option of that name |
+| `model`, `timeout`, `quiet`, `entries_by_claude` | Claude Code's own, `1800`, `false`, `false` | `--model`, `--timeout`, `--quiet`, `--entries-by-claude` |
+| `entries`, `save` | `true`, `true` | `false` is `--no-entries`, `--no-save` |
+| `theme`, `lang`, `candles`, `dpi` | [step 3](#step-3-plot_projectionpy)'s own | the chart options; `lang` overrides `language` for the chart's labels only |
+| `open` | `false` | `--open` |
+| `runs_dir` | `runs/` in the current directory | `--runs-dir DIR` |
+| `history_dir` | `$RZ_PROJECTIONS_DIR`, else `projections/` in the current directory | `--history-dir DIR` |
+
+What belongs to one run stays on the command line: the ticker, `--event`, `--input`, `--projection`, `--name`, `--chart`, `--out-dir`. There are no per-ticker settings.
+
+**One run differently.** Whatever is typed wins, e.g. `zones NVDA --language en --research deep`. A switch that a file turns on has an off form for one run: `--no-open`, `--no-quiet`, `--no-entries-by-claude`, `--no-volume`; one that a file turns off has an on form: `--entries`, `--save`.
+
+**The two folders.** `runs_dir` is where the run folders are made (`runs_dir/TICKER/TIME_HORIZON/`), instead of `runs/` under the current directory; `--out-dir` still places one run's files exactly. `history_dir` is where each new projection is kept for [scoring](#scoring-the-saved-projections): `zones` passes it to `rz.py save` as `RZ_PROJECTIONS_DIR`, unless that variable is already set. `rz.py` and `score_projections.py` run by hand do not read the config file: give them the folder, or export `RZ_PROJECTIONS_DIR`. In a file, `~` and `$VARIABLES` expand and a relative path starts at the file's own folder, not at the current directory, so the file means the same wherever you run `zones`.
+
+**Mistakes.** A key the command does not know, a value of the wrong type or outside its choices, or a file that is not valid TOML stops the run before anything is downloaded, with one line naming the file and the key:
+
+```text
+Error: /home/you/.config/zones/config.toml: unknown setting 'langauge' (did you mean 'language'?). `zones --show-config` lists them all.
+```
+
 ## Step 1: build_prompt.py
 
 Downloads candles from Yahoo Finance and writes one JSON holding the data and the request.
@@ -166,6 +225,8 @@ uv run python build_prompt.py TICKER [options]
 `TICKER` is a Yahoo symbol, for example `NVDA`, `PETR4.SA` or `BTC-USD`. Without `-o` the JSON goes to standard output.
 
 ### Options
+
+When the step runs through `zones`, a [config file](#your-defaults) can set any of these except `--event` and `-o`.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -357,7 +418,7 @@ projections/
 - `save` refuses a projection that fails `check`, or whose ticker or time does not match the input.
 - `rz.py list` prints one line per saved projection with its horizon's last date and whether that date has passed (`ended`) or not (`open`). Only `ended` projections can be scored in full.
 - `run_pipeline.py` (`zones`) saves each projection it makes the same way, once it has passed `check`, and prints the folder. It does not save when `--projection` reuses an existing file or `--no-save` is given. Its own `runs/` folders use the same names but are a different thing: working output that can be deleted, while `projections/` is the record.
-- The folder is `projections/` in the directory the command runs from. Set `RZ_PROJECTIONS_DIR`, or pass a folder as the last argument, to keep them elsewhere.
+- The folder is `projections/` in the directory the command runs from. Set `RZ_PROJECTIONS_DIR`, or pass a folder as the last argument, to keep them elsewhere. For `zones`, `history_dir` in a [config file](#your-defaults) gives the history one home whatever directory you run it from.
 - `projections/` is in `.gitignore`: the history is local to your machine. Remove that line if you want to commit it.
 
 ### Scoring the saved projections
@@ -414,6 +475,8 @@ Both files are needed: the projection does not contain candles.
 | `--candles N` | automatic | How many past candles to show. The default is four times the horizon, with a minimum of 40. |
 | `--dpi N` | `160` | Resolution for raster formats, from 1 to 1200. |
 | `--no-check` | off | Plot a projection that fails the rules of `rz.py check`, printing them as warnings. |
+
+Through `zones`, `theme`, `lang`, `candles` and `dpi` can be set once in a [config file](#your-defaults).
 
 ### Validation
 
