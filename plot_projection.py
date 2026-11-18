@@ -3,10 +3,12 @@
 
     pip install matplotlib
     python plot_projection.py input.json projection.json -o petr4.png
-    python plot_projection.py input.json projection.json -o petr4.svg --theme dark --lang en
+    python plot_projection.py input.json projection.json -o petr4.svg --theme dark
 
 INPUT is the JSON written by build_prompt.py (it holds the candles).
 PROJECTION is the JSON returned by the reversal-zones-projection skill.
+The chart's labels follow the language the projection was asked for
+(reply.language in INPUT, set by build_prompt.py --language); --lang overrides it.
 The image format follows the extension of -o: png, svg, pdf or jpg.
 """
 import argparse
@@ -74,6 +76,27 @@ TEXT = {
         "decimal": ".",
     },
 }
+FALLBACK_LANG = "en"   # used when the input names no language, or one TEXT has no entry for
+
+
+def chart_language(requested, source):
+    """Pick the TEXT entry: --lang if given, else the input's reply.language.
+
+    reply.language is free text ("pt-BR", "EN_us", "es"...), so it is reduced to its
+    primary subtag. A language without a TEXT entry falls back to FALLBACK_LANG.
+    """
+    if requested:
+        return requested
+    reply = source.get("reply")
+    asked = reply.get("language") if isinstance(reply, dict) else None
+    if not isinstance(asked, str) or not asked.strip():
+        return FALLBACK_LANG
+    code = re.split(r"[-_]", asked.strip().lower())[0]
+    if code in TEXT:
+        return code
+    print(f"Note: the chart has no labels for language '{asked}' (supported: {', '.join(sorted(TEXT))}); "
+          f"using {FALLBACK_LANG}. Pass --lang to choose.", file=sys.stderr)
+    return FALLBACK_LANG
 
 
 def load_json(path):
@@ -87,7 +110,7 @@ def parse_day(text):
 
 def build(args):
     source, proj = load_json(args.input), load_json(args.projection)
-    theme, t = THEMES[args.theme], TEXT[args.lang]
+    theme, t = THEMES[args.theme], TEXT[chart_language(args.lang, source)]
     if source["asset"]["ticker"].upper() != proj["asset"]["ticker"].upper():
         print(f"Warning: candles are {source['asset']['ticker']} but the projection is "
               f"{proj['asset']['ticker']}.", file=sys.stderr)
@@ -338,7 +361,9 @@ def main():
     parser.add_argument("-o", "--output", default="projection.png",
                         help="image file; the extension picks the format (png, svg, pdf, jpg)")
     parser.add_argument("--theme", choices=THEMES, default="light")
-    parser.add_argument("--lang", choices=TEXT, default="pt")
+    parser.add_argument("--lang", choices=TEXT,
+                        help="language of the chart's own labels; default: reply.language of INPUT "
+                             f"(set by build_prompt.py --language), or {FALLBACK_LANG} if the chart lacks it")
     parser.add_argument("--candles", type=int, help="how many past candles to show")
     parser.add_argument("--dpi", type=int, default=160)
     args = parser.parse_args()

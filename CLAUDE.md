@@ -57,7 +57,7 @@ The three pieces share no code, only JSON conventions. Changing one side silentl
 
 ### Things that are easy to get wrong
 
-- Two unrelated language settings: `build_prompt.py --language` (default `en`) sets the language of the projection's free text; `plot_projection.py --lang` (default `pt`) only translates the chart's own labels.
+- One language setting: `build_prompt.py --language` (default `en`, free text) is stored as `reply.language`, sets the language of the projection's free text, and `plot_projection.py` follows it for the chart's own labels (`chart_language()`: primary subtag, so `pt-BR` -> `pt`; no `TEXT` entry or no `reply` -> `FALLBACK_LANG`). `--lang` has no default of its own: it is only an override, and it translates the labels, not the projection's text. A new chart language is one new `TEXT` entry, nothing else.
 - Prices are split-adjusted but deliberately **not** dividend-adjusted (`auto_adjust=False`); the `drop` shock in `rz.py` and the chart footer depend on that.
 - The project is not a package: `pyproject.toml` has no build system or entry points, only dependencies. The code is the two root scripts, run with `uv run python`.
 - The skill is a project skill, so Claude Code in this repo always uses the current files. A copy installed elsewhere (claude.ai, `~/.claude/skills/`) does not follow edits made here.

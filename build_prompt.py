@@ -268,7 +268,9 @@ def main():
                         default="one_search")
     parser.add_argument("--shape", choices=["table", "list"], default="table")
     parser.add_argument("--max-words", type=int, default=200)
-    parser.add_argument("--language", default="en")
+    parser.add_argument("--language", default="en",
+                        help="language of the projection's free text; plot_projection.py uses it "
+                             "for the chart labels too (default: en)")
     parser.add_argument("--links", choices=["none", "decisive_only", "all"],
                         default="decisive_only")
     parser.add_argument("--decimals", type=int, default=2)

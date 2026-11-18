@@ -14,8 +14,8 @@ Commands that produced them (from the repository root):
 uv run python build_prompt.py PETR4.SA --horizon 1-3m --max-rows 52 --research none --language en -o examples/petr4_input.json
 # step 2: Claude followed .claude/skills/reversal-zones-projection/SKILL.md and saved examples/petr4_projection.json
 uv run python .claude/skills/reversal-zones-projection/scripts/rz.py check examples/petr4_projection.json   # prints OK
-uv run python plot_projection.py examples/petr4_input.json examples/petr4_projection.json -o examples/petr4.png --lang en
-uv run python plot_projection.py examples/petr4_input.json examples/petr4_projection.json -o examples/petr4_dark.png --lang en --theme dark
+uv run python plot_projection.py examples/petr4_input.json examples/petr4_projection.json -o examples/petr4.png
+uv run python plot_projection.py examples/petr4_input.json examples/petr4_projection.json -o examples/petr4_dark.png --theme dark
 ```
 
 The projection used `research: none`: no web searches, so `drivers` is empty and the 21 Dec 2026 ex-dividend, whose amount is not in the input, is not part of the simulation.

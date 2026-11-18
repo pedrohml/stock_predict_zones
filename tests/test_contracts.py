@@ -76,6 +76,23 @@ def test_intraday_sets_agree():
     assert {build_prompt.LABEL[i] for i in build_prompt.INTRADAY} == {"15m", "1h"}   # plot_projection's `intraday`
 
 
+def test_default_request_language_is_a_chart_language(monkeypatch, capsys):
+    """Accepting every default must give a chart in one language, with no fallback note:
+    build_prompt.py's default --language has to be something the chart can follow."""
+    seen = {}
+
+    def stop(parser, *args, **kwargs):
+        seen["language"] = parser.get_default("language")
+        raise SystemExit(0)
+
+    monkeypatch.setattr(argparse.ArgumentParser, "parse_args", stop)
+    with pytest.raises(SystemExit):
+        build_prompt.main()
+    source = {"reply": {"language": seen["language"]}}
+    assert plot_projection.chart_language(None, source) == seen["language"]
+    assert capsys.readouterr().err == ""
+
+
 def test_languages_have_the_same_keys():
     keys = [set(plot_projection.TEXT[lang]) for lang in LANGS]
     assert all(k == keys[0] for k in keys)

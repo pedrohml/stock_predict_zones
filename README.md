@@ -69,7 +69,7 @@ uv run python plot_projection.py petr4_input.json petr4_projection.json -o petr4
 To try step 3 without Claude, use the ready-made pair in [`examples/`](examples/):
 
 ```bash
-uv run python plot_projection.py examples/petr4_input.json examples/petr4_projection.json -o chart.png --lang en
+uv run python plot_projection.py examples/petr4_input.json examples/petr4_projection.json -o chart.png
 ```
 
 ## Step 1: build_prompt.py
@@ -95,7 +95,7 @@ uv run python build_prompt.py TICKER [options]
 | `--research` | `one_search` | How much web research the skill may do: `none`, `one_search`, `deep`. |
 | `--shape` | `table` | Shape of the prose that follows the projection: `table` or `list`. |
 | `--max-words N` | `200` | Word limit for that prose. |
-| `--language` | `en` | Language of free-text values in the projection (`pt`, `en`, ...). |
+| `--language` | `en` | Language of the whole result: the free-text values in the projection and, in step 3, the chart's labels. The chart has labels for `pt` and `en`. |
 | `--links` | `decisive_only` | Links in the prose: `none`, `decisive_only`, `all`. |
 | `--decimals N` | `2` | Price rounding. |
 | `-o FILE` | stdout | Write to a file. |
@@ -264,7 +264,7 @@ Both files are needed: the projection does not contain candles.
 |---|---|---|
 | `-o FILE` | `projection.png` | Output image. The extension picks the format: `png`, `svg`, `pdf` or `jpg`. |
 | `--theme` | `light` | `light` or `dark`. |
-| `--lang` | `pt` | Language of the chart's own labels: `pt` or `en`. |
+| `--lang` | from the input | Override for the language of the chart's own labels: `pt` or `en`. Without it the chart uses `reply.language` of the input, i.e. `--language` from step 1. |
 | `--candles N` | automatic | How many past candles to show. The default is four times the horizon, with a minimum of 40. |
 | `--dpi N` | `160` | Resolution for raster formats. |
 
@@ -275,7 +275,9 @@ Both files are needed: the projection does not contain candles.
 - **Scenario bar.** The four scenarios as one segmented bar, with the rule for each written underneath.
 - **Notes.** Drivers with their direction, events, the confidence level and its caveats.
 
-`--lang` only translates the chart's own labels. Text that comes from the projection (drivers, caveats, event names) stays in the language the projection was written in, which is set by `--language` in step 1.
+The language is chosen once, with `--language` in step 1. It is stored in the input as `reply.language`; the projection's text (drivers, caveats, event names) is written in it and the chart's own labels, month names and decimal separator follow it. Region variants are accepted (`pt-BR`, `en_US`). If the chart has no labels for the language (say `es`), or the input has no `reply` block, the labels are in English; in the first case a note on standard error says so.
+
+`--lang` overrides the labels only: text that comes from the projection stays in the language it was written in.
 
 ## How the probabilities are produced
 
