@@ -5,6 +5,7 @@
   rz.py check  OUTPUT.json             -> validate the finished projection
   rz.py save   INPUT.json OUTPUT.json [DIR]  -> keep both under DIR/TICKER/TIME_HORIZON/
   rz.py list   [DIR]                   -> the saved projections, oldest first
+  rz.py score  INPUT.json OUTPUT.json CANDLES.json  -> what the price did to a projection
 DIR defaults to $RZ_PROJECTIONS_DIR, else ./projections.
 """
 import calendar, json, os, re, shutil, sys
@@ -15,10 +16,14 @@ HORIZON_DAYS = {"today": 1, "1-2w": 14, "1-3m": 91, "6-12m": 365}
 CANDLE_DAYS = {"1D": 1.4, "1W": 7, "1M": 30.44}
 
 
+def main_series(d):
+    basis = d["want"]["close_basis"]
+    return next((s for s in d["data"]["series"] if s["candles"] == basis), d["data"]["series"][-1])
+
+
 def load(path):
     d = json.load(open(path, encoding="utf-8"))
-    basis = d["want"]["close_basis"]
-    main = next((s for s in d["data"]["series"] if s["candles"] == basis), d["data"]["series"][-1])
+    main = main_series(d)
     cols = d["data"]["columns"]
     rows = main["rows"]
     get = lambda name: np.array([r[cols.index(name)] for r in rows], float)
@@ -101,9 +106,8 @@ def schedule(d, main, t):
     return dates, frac
 
 
-def sim(path, zones_path, paths=200_000):
-    d, main, t, h, l, c = load(path)
-    z = json.load(open(zones_path, encoding="utf-8"))
+def walk(d, main, t, c, z, paths):
+    """The simulated prices: one row per path, `sub` points per candle, in the order of `dates`."""
     price, touched = d["now"]["price"], d["want"]["probability"] == "touched_once"
     dates, frac = schedule(d, main, t)
     n, v, sub = len(dates), vol(c), 4 if touched else 1
@@ -117,24 +121,44 @@ def sim(path, zones_path, paths=200_000):
         if i is None: continue
         if "jump" in s: shock[:, i * sub] += rng.standard_normal(paths) * s["jump"]
         if "drop" in s: drop[i * sub:] += s["drop"]
-    p = price * np.exp(np.cumsum(shock, axis=1)) - drop
-    lo, hi = p.min(axis=1), p.max(axis=1)
+    return price * np.exp(np.cumsum(shock, axis=1)) - drop, dates, frac, v, sub
+
+
+def reached(price, ext, zones, is_support):
+    """Was each entry of one side reached: one mask per zone, nearest first, then one for the tail.
+    `ext` is the lowest price of each path for supports, the highest for resistances. The nearest
+    zone is reached at its near edge (always, if the price starts inside it or beyond); every
+    later entry is reached when the zone before it broke, strictly beyond its far edge.
+    sim() averages these masks over simulated paths; outcome() reads them for the one real path."""
+    near = [zn[1] if is_support else zn[0] for zn in zones]
+    far = [zn[0] if is_support else zn[1] for zn in zones]
+    passed = (lambda x: ext <= x) if is_support else (lambda x: ext >= x)
+    broke = (lambda x: ext < x) if is_support else (lambda x: ext > x)
+    inside = price <= near[0] if is_support else price >= near[0]
+    return [np.full(ext.shape, True) if inside else passed(near[0])] + [broke(x) for x in far]
+
+
+def middles(S, R):
+    """The far edges of the middle zones (second on each side, or the only one): the scenario lines."""
+    return S[min(1, len(S) - 1)][0], R[min(1, len(R) - 1)][1]
+
+
+def sim(path, zones_path, paths=200_000):
+    d, main, t, h, l, c = load(path)
+    z = json.load(open(zones_path, encoding="utf-8"))
+    price, touched = d["now"]["price"], d["want"]["probability"] == "touched_once"
+    p, dates, frac, v, _ = walk(d, main, t, c, z, paths)
+    n, lo, hi = len(dates), p.min(axis=1), p.max(axis=1)
 
     def side(zones, is_support):
-        ext = lo if is_support else hi
-        near = [zn[1] if is_support else zn[0] for zn in zones]
-        far = [zn[0] if is_support else zn[1] for zn in zones]
-        passed = (lambda x: ext <= x) if is_support else (lambda x: ext >= x)
-        broke = (lambda x: ext < x) if is_support else (lambda x: ext > x)
-        inside = price <= near[0] if is_support else price >= near[0]
-        reach = [1.0 if inside else float(passed(near[0]).mean())] + [float(broke(x).mean()) for x in far]
+        reach = [float(mask.mean()) for mask in reached(price, lo if is_support else hi, zones, is_support)]
         reach = [round(x, 2) for x in reach]   # round reach once and derive turn from it, so they always add up
         ids = [("S" if is_support else "R") + str(i + 1) for i in range(len(zones))] + ["below" if is_support else "above"]
         return [{"id": ids[i], "reach": reach[i],
                  "turn": round(reach[i] - (reach[i + 1] if i + 1 < len(reach) else 0), 2)} for i in range(len(reach))]
 
     S, R = z["supports"], z["resistances"]
-    s_mid, r_mid = S[min(1, len(S) - 1)][0], R[min(1, len(R) - 1)][1]
+    s_mid, r_mid = middles(S, R)
     down, up = lo < s_mid, hi > r_mid
     # Same rule as for reach and turn: round the totals once and take the rest by difference,
     # so breakdown + whipsaw equals the reach past the middle support and the four sum to 1.
@@ -250,5 +274,78 @@ def list_saved(folder=None):
         print(o["as_of"]["time"], o["asset"]["ticker"], o["horizon"]["label"], o["as_of"]["price"], "to", last, state, here)
 
 
+def closes_on(basis, start):
+    """The day the candle starting at `start` closes: the Friday of its week, the last day of its
+    month, else its own day. The same days schedule() gives the future closes."""
+    day = date.fromisoformat(start[:10])
+    if basis == "1W": return day + timedelta(days=(4 - day.weekday()) % 7)
+    if basis == "1M": return date(day.year, day.month, calendar.monthrange(day.year, day.month)[1])
+    return day
+
+
+def realised(d, main, o, rows, today):
+    """The candles of `rows` that fall in the projection's horizon -> (rows, closed, ended, partial).
+    The horizon starts with the input's last row if that row was still forming (its close is the
+    first close, as in schedule()), else with the candle after it, and runs to `horizon.last`.
+    Intraday it is one session: the first one with a candle from that point on. `closed` says, per
+    row, whether its close is final; `partial` that the first row began before the projection."""
+    basis, last, forming = main["candles"], main["rows"][-1][0], main["last_row"] == "forming"
+    if basis in CANDLE_DAYS:
+        key, end = (lambda start: closes_on(basis, start)), date.fromisoformat(o["horizon"]["last"])
+        rows = [r for r in rows if (key(r[0]) > key(last) or (forming and key(r[0]) == key(last))) and key(r[0]) <= end]
+        return rows, [key(r[0]) < today for r in rows], end < today, bool(rows) and key(rows[0][0]) == key(last)
+    rows = [r for r in rows if r[0] > last or (forming and r[0] == last)]
+    rows = [r for r in rows if r[0][:10] == rows[0][0][:10]]
+    ended = bool(rows) and date.fromisoformat(rows[0][0][:10]) < today
+    return rows, [ended or r is not rows[-1] for r in rows], ended, bool(rows) and rows[0][0] == last
+
+
+def outcome(d, o, rows, today=None):
+    """What the price did to projection `o`, made from input `d`, judged the way sim() counts one
+    simulated path. `rows` are realised candles of the close basis, in the input's column order
+    and on the input's price scale (split-adjusted, not dividend-adjusted); rows outside the
+    horizon are ignored. While the horizon is open (`final` false) an event that happened stays,
+    but `turned` and the scenario can still change. Raises ValueError if nothing can be judged."""
+    main, cols = main_series(d), d["data"]["columns"]
+    H, L, C = (cols.index(name) for name in ("high", "low", "close"))
+    price, touched = d["now"]["price"], d["want"]["probability"] == "touched_once"
+    rows, closed, ended, partial = realised(d, main, o, rows, today or date.today())
+    if touched:
+        lows, highs = [[r[0], r[L]] for r in rows], [[r[0], r[H]] for r in rows]
+        if partial:   # the first candle began before the projection: only a new extreme, or its close, is known to come after
+            was = main["rows"][-1]
+            if lows[0][1] >= was[L]: lows[0][1] = rows[0][C]
+            if highs[0][1] <= was[H]: highs[0][1] = rows[0][C]
+    else:
+        lows = highs = [[r[0], r[C]] for r, done in zip(rows, closed) if done]
+    if not lows: raise ValueError("no candle of the horizon has closed yet" if rows else "no candles after the projection")
+    low, high = min(lows, key=lambda x: x[1]), max(highs, key=lambda x: x[1])
+    out = {"state": "ended" if ended else "open", "final": ended, "measure": "touch" if touched else "close",
+           "closes": {"scheduled": o["horizon"]["closes"], "counted": len(lows)},
+           "window": [lows[0][0], lows[-1][0]], "low": [low[1], low[0]], "high": [high[1], high[0]]}
+    zones = {}
+    for name, ext, is_support in (("supports", low[1], True), ("resistances", high[1], False)):
+        zones[name] = [x["zone"] for x in o[name] if None not in x["zone"]]
+        hit = [bool(mask[0]) for mask in reached(price, np.array([ext]), zones[name], is_support)]
+        out[name] = [{"id": x["id"], "zone": x["zone"], "reach": x["reach"], "turn": x["turn"],
+                      "forced": i == 0 and bool(price <= x["zone"][1] if is_support else price >= x["zone"][0]),
+                      "reached": hit[i], "broken": hit[i + 1] if i + 1 < len(hit) else None,
+                      "turned": hit[i] and not (i + 1 < len(hit) and hit[i + 1])}
+                     for i, x in enumerate(o[name][:len(hit)])]
+    s_mid, r_mid = middles(zones["supports"], zones["resistances"])
+    down, up = bool(low[1] < s_mid), bool(high[1] > r_mid)
+    out["scenario"] = "whipsaw" if down and up else "breakdown" if down else "breakout" if up else "range"
+    out["scenarios"] = [{"name": s["name"], "p": s["p"], "happened": s["name"] == out["scenario"]} for s in o.get("scenarios", [])]
+    return out
+
+
+def score(input_path, output_path, candles_path):
+    d, o, rows = (json.load(open(p, encoding="utf-8")) for p in (input_path, output_path, candles_path))
+    try: out = outcome(d, o, rows["rows"] if isinstance(rows, dict) else rows)
+    except ValueError as e:
+        print("not scored:", e); sys.exit(1)
+    for key, value in out.items(): print(key, json.dumps(value))
+
+
 if __name__ == "__main__":
-    {"levels": levels, "sim": sim, "check": check, "save": save, "list": list_saved}[sys.argv[1]](*sys.argv[2:])
+    {"levels": levels, "sim": sim, "check": check, "save": save, "list": list_saved, "score": score}[sys.argv[1]](*sys.argv[2:])

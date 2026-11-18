@@ -192,6 +192,7 @@ rz.py sim    INPUT.json ZONES.json   -> baseline probabilities
 rz.py check  OUTPUT.json             -> validate the finished projection
 rz.py save   INPUT.json OUTPUT.json [DIR]  -> keep both under DIR/TICKER/TIME_HORIZON/
 rz.py list   [DIR]                   -> the saved projections, oldest first
+rz.py score  INPUT.json OUTPUT.json CANDLES.json  -> what the price did to a projection
 ```
 
 `DIR` defaults to `$RZ_PROJECTIONS_DIR`, else `projections` in the working directory. `save` refuses a projection that fails `check` or does not match the input, and never overwrites: a second projection of the same input gets a `_2` suffix.
