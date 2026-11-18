@@ -8,6 +8,23 @@
     zones --input FOLDER/input.json --projection FOLDER/projection.json  # plot again
     zones PETR4.SA --no-entries                                          # stop at the chart
 
+After a run, the same command looks at what is there (`zones COMMAND --help`
+for each):
+
+    zones list [TICKER]             the saved projections, newest last, open or ended
+    zones runs [TICKER]             the run folders under runs/ here, newest last
+    zones score [TICKER | FOLDER]   saved projections against later prices (hits Yahoo)
+    zones plot WHAT [plot options]  draw the chart of a run again
+    zones show WHAT                 print the summary of a run
+    zones entries WHAT              compute the trade setups of a run again
+
+WHAT is a folder holding input.json and projection.json, or a ticker, meaning
+its latest run under runs/ here, else its latest saved projection. A first
+argument is a command only when it is exactly one of these lowercase words;
+anything else is a ticker (`zones nvda` runs the pipeline for NVDA). For a
+ticker spelled like a command write it in capitals (`zones LIST`), or after
+`run` or `--` (`zones run list`).
+
 `zones` is this script (`uv run zones` in the repository, or plain `zones` after
 `uv tool install --editable .`); `python run_pipeline.py` does the same.
 
@@ -655,6 +672,335 @@ def trade_entries(input_path, projection_path, entries_path, timeout, model=None
     return checked_entries(input_path, projection_path, entries_path)
 
 
+# ---- commands after a run ------------------------------------------------------
+#
+# `zones list`, `runs`, `score`, `plot`, `show` and `entries` look at what earlier
+# runs left behind. Like the pipeline they share no code with the other scripts:
+# each one finds the files and runs the script that does the work.
+
+WHAT_HELP = ("a folder holding input.json and projection.json (a run folder or a saved "
+             f"projection), or a ticker: its latest run under {RUNS}/ here, else its latest "
+             "saved projection ($RZ_PROJECTIONS_DIR, else ./projections)")
+FOLDER_NAME = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{4})_(.+?)(?:_(\d+))?$")   # TIME_HORIZON[_N]
+
+
+def relay(command):
+    """Run a helper script on the user's own terminal (its output is this
+    command's output) and return its exit code."""
+    return subprocess.run([str(part) for part in command]).returncode
+
+
+def need(*scripts):
+    for script in scripts:
+        if not script.is_file():    # installed as a copy, away from the repository
+            raise PipelineError(f"{script} not found. This command works only from the repository "
+                                "checkout: install it with `uv tool install --editable PATH`.")
+
+
+def history():
+    """The folder of saved projections, as rz.py picks it."""
+    return Path(os.environ.get("RZ_PROJECTIONS_DIR") or "projections")
+
+
+def kept(path):
+    """Is this path inside the saved history? That record is append-only, so no
+    command here writes there. A folder named `projections` anywhere on the path
+    counts too: a history reached from another directory."""
+    path = Path(path).resolve()
+    return path.is_relative_to(history().resolve()) or "projections" in path.parts
+
+
+def ticker_folder(ticker):
+    """petr4.sa -> PETR4.SA, ^gspc -> _GSPC: the folder name run_folder() and rz.py save use."""
+    return re.sub(r"[^A-Za-z0-9._-]", "_", str(ticker).upper()).strip(".")
+
+
+def ticker_folders(base, ticker):
+    """The folders of this ticker directly under `base`, whatever their letter case."""
+    wanted, base = ticker_folder(ticker), Path(base)
+    if not wanted or not base.is_dir():
+        return []
+    return [path for path in sorted(base.iterdir())
+            if path.is_dir() and path.name.upper().strip(".") == wanted]
+
+
+def folder_key(folder):
+    """Sort key that puts the newest run last: the time in the folder's name, then its _N."""
+    found = FOLDER_NAME.match(Path(folder).name)
+    return (found.group(1), int(found.group(3) or 1), str(folder)) if found else ("", 0, str(folder))
+
+
+def folder_horizon(folder):
+    found = FOLDER_NAME.match(Path(folder).name)
+    return found.group(2) if found else None
+
+
+def pair(folder, name=None):
+    """The file stem of the input/projection pair in this folder: "" for
+    input.json and projection.json, STEM for STEM_input.json and
+    STEM_projection.json (--out-dir, --name). None when the folder has no pair."""
+    folder = Path(folder)
+    both = lambda stem: all((folder / file).is_file() for file in file_names(stem)[:2])
+    if name:
+        return name if both(name) else None
+    if both(None):
+        return ""
+    stems = [path.name[:-len("_input.json")] for path in sorted(folder.glob("*_input.json"))]
+    stems = [stem for stem in stems if stem and both(stem)]
+    if len(stems) > 1:
+        raise PipelineError(f"{folder} holds several pairs ({', '.join(stems)}): pick one with --name STEM.")
+    return stems[0] if stems else None
+
+
+def folders_under(base, horizon=None, name=None):
+    """Every folder at or below `base` that holds a pair, newest last."""
+    found = []
+    for here, _, _ in os.walk(base):
+        if (horizon is None or folder_horizon(here) == horizon) and pair(here, name) is not None:
+            found.append(Path(here))
+    return sorted(found, key=folder_key)
+
+
+def resolve(what, horizon=None, name=None):
+    """WHAT -> the files of one run, as a dict of paths (see WHAT_HELP)."""
+    given = Path(what)
+    if given.is_dir():
+        folder = given
+        if pair(given, name) is None:       # e.g. runs/PETR4.SA: the latest run inside it
+            inside = folders_under(given, horizon, name)
+            if not inside:
+                raise PipelineError(
+                    f"No input.json and projection.json in {given} or in a folder below it"
+                    + (f" for horizon {horizon}" if horizon else "") + ".")
+            folder = inside[-1]
+    else:
+        folder, looked = None, []
+        for base in (Path(RUNS), history()):    # this directory's runs first, then the history
+            looked.append(str(base.resolve() / ticker_folder(what)))
+            inside = sorted((found for path in ticker_folders(base, what)
+                             for found in folders_under(path, horizon, name)), key=folder_key)
+            if inside:
+                folder = inside[-1]
+                break
+        if folder is None:
+            raise PipelineError(
+                f"Nothing found for '{what}'" + (f" with horizon {horizon}" if horizon else "")
+                + ": it is not a folder, and no run or saved projection of that ticker is in "
+                + " or ".join(looked) + ".")
+        say(f"Using {folder}")
+    stem = pair(folder, name)
+    input_name, projection_name, chart_name = file_names(stem or None)
+    full = folder.resolve()
+    return {"folder": folder, "input": folder / input_name, "projection": folder / projection_name,
+            "chart": folder / chart_name, "kept": kept(folder),
+            "entries": folder / (f"{stem}_entries.json" if stem else "entries.json"),
+            "label": f"{full.parent.name}_{full.name}"}
+
+
+def target(found, given, beside, suffix):
+    """Where a command writes: the file asked for with -o; else beside the pair,
+    replacing the run's own file; else, for a saved projection, a file in the
+    current directory named after the ticker and the folder. Never inside the
+    saved history."""
+    if given:
+        if kept(Path(given).resolve().parent):
+            raise PipelineError(f"{given} is inside the saved projections, which are append-only. "
+                                "Choose a file somewhere else.")
+        return Path(given)
+    return Path(found["label"] + suffix) if found["kept"] else beside
+
+
+def command_parser(name, arguments, summary, what=True):
+    parser = argparse.ArgumentParser(prog=f"zones {name}", usage=f"%(prog)s {arguments}",
+                                     description=summary, allow_abbrev=False)
+    if what:
+        parser.add_argument("what", metavar="WHAT", help=WHAT_HELP)
+        parser.add_argument("--horizon", metavar="H",
+                            help="with a ticker: only its runs of this horizon (today, 1-2w, 1-3m, 6-12m)")
+        parser.add_argument("--name", metavar="STEM",
+                            help="the pair is STEM_input.json and STEM_projection.json "
+                                 "(found without this when the folder holds only one pair)")
+    return parser
+
+
+def what_first(parser, argv):
+    """Parse `WHAT [options]`. WHAT must come first, so that every later word can
+    belong to an option that is only passed on (`zones plot NVDA --theme dark`).
+    Returns (args, the options this command does not declare)."""
+    if argv and argv[0].startswith("-") and argv[0] not in ("-h", "--help"):
+        parser.error("WHAT (a folder or a ticker) comes first, before the options")
+    return parser.parse_known_args(argv)
+
+
+def list_saved(argv):
+    """zones list [TICKER]: `rz.py list`, optionally one ticker's lines."""
+    parser = command_parser("list", "[TICKER]", "The saved projections (the history kept for scoring), newest "
+                            "last: time, ticker, horizon, price, the horizon's last date, open or "
+                            "ended, folder. Read from $RZ_PROJECTIONS_DIR, else ./projections.", what=False)
+    parser.add_argument("ticker", nargs="?", metavar="TICKER", help="only this ticker, in any letter case")
+    args = parser.parse_args(argv)
+    need(RZ)
+    done = run([sys.executable, RZ, "list"])
+    if done.returncode != 0:
+        say("Error: rz.py list failed:\n" + (tail(done.stderr, 1) or tail(done.stdout)))
+        return done.returncode
+    lines = done.stdout.splitlines()
+    if args.ticker:     # rz.py list has no filter: the ticker is the second word of each line
+        lines = [line for line in lines
+                 if [word.upper() for word in line.split()[1:2]] == [args.ticker.upper()]]
+    if not lines:
+        say(f"No saved projections under {history().resolve()}"
+            + (f" for {args.ticker.upper()}" if args.ticker else "") + ".")
+    for line in lines:
+        print(line)
+    return 0
+
+
+def run_folders(argv):
+    """zones runs [TICKER]: the run folders under runs/ in the current directory."""
+    parser = command_parser("runs", "[TICKER]", f"The run folders under {RUNS}/ in the current directory, "
+                            "newest last: time, ticker, horizon, the files each one holds, folder.",
+                            what=False)
+    parser.add_argument("ticker", nargs="?", metavar="TICKER", help="only this ticker, in any letter case")
+    args = parser.parse_args(argv)
+    base, rows = Path(RUNS), []
+    if args.ticker:
+        tickers = ticker_folders(base, args.ticker)
+    else:
+        tickers = [path for path in sorted(base.iterdir()) if path.is_dir()] if base.is_dir() else []
+    for ticker in tickers:
+        for folder in ticker.iterdir():
+            found = FOLDER_NAME.match(folder.name)
+            files = sorted(path.name for path in folder.iterdir()) if folder.is_dir() else []
+            if found and files:    # a failed run still has its input.json, and shows as such
+                rows.append((folder_key(folder), found.group(1), ticker.name, found.group(2),
+                             " ".join(files), str(folder)))
+    if not rows:
+        say(f"No runs under {base.resolve()}" + (f" for {args.ticker.upper()}" if args.ticker else "") + ".")
+    for _, stamp, ticker, horizon, files, folder in sorted(rows):
+        print(stamp, ticker, horizon, folder, f"({files})")
+    return 0
+
+
+def score_saved(argv):
+    """zones score [TICKER | FOLDER] [score_projections.py options]."""
+    parser = command_parser("score", "[TICKER | FOLDER] [score_projections.py options]", "Score the saved projections against what the price did later "
+                            "(score_projections.py; downloads prices from Yahoo Finance). Other "
+                            "options, such as --json, go to score_projections.py.", what=False)
+    parser.add_argument("target", nargs="?", metavar="TICKER | FOLDER",
+                        help="a ticker: only its saved projections; or a folder of saved projections "
+                             "or one saved projection (default: all of $RZ_PROJECTIONS_DIR, else ./projections)")
+    if argv[:1] in (["-h"], ["--help"]):
+        parser.parse_args(argv)
+    # only a first word is the ticker or folder: any later one may be an option's value
+    first, rest = (argv[:1], argv[1:]) if argv and not argv[0].startswith("-") else ([], argv)
+    script = ROOT / "score_projections.py"
+    need(script, RZ)
+    if first and not Path(first[0]).is_dir():
+        first = ["--ticker", first[0]]
+    return relay([sys.executable, script, *first, *rest])
+
+
+def plot_again(argv):
+    """zones plot WHAT [-o FILE] [--open] [plot_projection.py options]."""
+    parser = command_parser("plot", "WHAT [-o FILE] [--open] [--horizon H] [plot_projection.py options]", "Draw the chart of a run again (plot_projection.py). Other "
+                            "options (--theme, --lang, --candles, --dpi, --no-check) go to "
+                            "plot_projection.py.")
+    parser.add_argument("-o", "--output", metavar="FILE",
+                        help="chart file (default: the run folder's own chart.png, replaced; for a "
+                             "saved projection, TICKER_FOLDER.png in the current directory, because "
+                             "nothing is written into the saved history)")
+    parser.add_argument("--open", action="store_true", help="open the chart in the default viewer")
+    args, rest = what_first(parser, argv)
+    need(PLOT)
+    found = resolve(args.what, args.horizon, args.name)
+    chart = target(found, args.output, found["chart"], ".png")
+    code = relay([sys.executable, PLOT, found["input"], found["projection"], "-o", chart, *rest])
+    if code == 0:
+        print(f"chart:      {chart}")
+        if args.open:
+            open_chart(chart)
+    return code
+
+
+def show_summary(argv):
+    """zones show WHAT [show_run.py options]."""
+    parser = command_parser("show", "WHAT [--horizon H] [show_run.py options]", "Print the summary of a run (show_run.py). Other options "
+                            "(--lang, --width, --no-color) go to show_run.py.")
+    args, rest = what_first(parser, argv)
+    script = ROOT / "show_run.py"
+    if not script.is_file():
+        raise PipelineError(f"The summary script is not available ({script} not found).")
+    found = resolve(args.what, args.horizon, args.name)
+    files = [found["input"], found["projection"]] + ([found["entries"]] if found["entries"].is_file() else [])
+    return relay([sys.executable, script, *files, *rest])
+
+
+def entries_again(argv):
+    """zones entries WHAT [-o FILE]: trade_entries.py build, then check."""
+    parser = command_parser("entries", "WHAT [-o FILE] [--horizon H]", "Compute the three ranked trade setups of a run again "
+                            "(trade_entries.py build, then check). No Claude Code call.")
+    parser.add_argument("-o", "--output", metavar="FILE",
+                        help="setups file (default: the run folder's own entries.json, replaced; for "
+                             "a saved projection, TICKER_FOLDER_entries.json in the current "
+                             "directory, because nothing is written into the saved history)")
+    args, rest = what_first(parser, argv)
+    if rest:
+        parser.error("unrecognized arguments: " + " ".join(rest))
+    need(ENTRIES)
+    found = resolve(args.what, args.horizon, args.name)
+    path = target(found, args.output, found["entries"], "_entries.json")
+    with tempfile.TemporaryDirectory(prefix="rz_entries_") as folder:   # checked before it replaces anything
+        draft = Path(folder) / "entries.json"
+        for step in (["build", found["input"], found["projection"], "-o", draft],
+                     ["check", found["input"], found["projection"], draft]):
+            done = run([sys.executable, ENTRIES, *step])
+            if done.returncode != 0 or (step[0] == "check" and done.stdout.strip() != "OK"):
+                say(f"Error: trade_entries.py {step[0]} failed:\n"
+                    + (tail(done.stdout, 40) or tail(done.stderr)))
+                return done.returncode or 1
+        data = load_json(draft, "Trade setups")
+        if "error" in data:   # the files allow no setup, and the file says so
+            say(f"No setups: {printable(data['error'])}")
+            return 0
+        try:
+            shutil.copyfile(draft, path)
+        except OSError as error:
+            raise PipelineError(f"Cannot write {path}: {error}")
+    print(f"entries:    {path}")
+    return 0
+
+
+COMMANDS = {"list": list_saved, "runs": run_folders, "score": score_saved,
+            "plot": plot_again, "show": show_summary, "entries": entries_again}
+FORCE_PIPELINE = ("run", "--")
+
+
+def dispatch(argv=None):
+    """Tell `zones list` from `zones PETR4.SA`. Returns (exit code, argv): the
+    exit code of a command that ran here, or None with the arguments the
+    pipeline is to parse.
+
+    The first argument is a command only when it is exactly one of the lowercase
+    words in COMMANDS. Everything else is the pipeline's, as before: a ticker in
+    any letter case (`zones nvda`), `--input FILE`, `--help`, nothing at all.
+    `zones run ARGS` and `zones -- ARGS` are the pipeline whatever ARGS is, for
+    a ticker spelled like a command (`zones run list`; `zones LIST` works too)."""
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] in FORCE_PIPELINE:
+        return None, argv[1:]
+    if not argv or argv[0] not in COMMANDS:
+        return None, argv
+    try:
+        return COMMANDS[argv[0]](argv[1:]), argv
+    except PipelineError as error:
+        say(f"Error: {error}")
+        return 1, argv
+    except KeyboardInterrupt:
+        say("Interrupted.")
+        return 130, argv
+
+
 # ---- command line -------------------------------------------------------------
 
 def parse(argv=None):
@@ -793,6 +1139,9 @@ def pipeline(args, passthrough):
 
 
 def main(argv=None):
+    code, argv = dispatch(argv)   # `zones list`, `zones plot ...`: not the pipeline
+    if code is not None:
+        return code
     args, passthrough = parse(argv)
     try:
         result = pipeline(args, passthrough)
