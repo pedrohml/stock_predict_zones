@@ -18,9 +18,11 @@ build_prompt.py  ──input.json──►  reversal-zones-projection skill (Cla
 uv sync                                                                      # Python 3.15+ (.python-version)
 uv run python build_prompt.py PETR4.SA --horizon 1-3m -o petr4_input.json    # step 1, hits Yahoo Finance
 uv run python plot_projection.py petr4_input.json petr4_projection.json -o petr4.png   # step 3
+uv run pytest                                                                # all tests, offline, a few seconds
+uv run pytest tests/test_rz.py::test_sim_output_structure                    # a single test
 ```
 
-There is no test suite, linter or CI. Verify changes by running the scripts end to end.
+The tests in `tests/` never touch the network: they cover the pure functions of `build_prompt.py`, `rz.py`, a plot smoke test and the cross-file contracts below (`tests/test_contracts.py`). `tests/fixtures/input.json` is synthetic; regenerate it with `uv run python tests/fixtures/make_input.py`. There is no linter or CI, and nothing tests the Yahoo download itself, so still run the scripts end to end after changing them.
 
 Step 2 is the `reversal-zones-projection` project skill: given an input JSON, Claude follows `.claude/skills/reversal-zones-projection/SKILL.md`. Its helper can also be run directly:
 
@@ -31,7 +33,7 @@ uv run python $RZ sim    input.json zones.json   # baseline probabilities
 uv run python $RZ check  output.json             # validate a projection; prints OK or the violations
 ```
 
-`rz.py check` is the closest thing to a test: use it on any projection JSON you write or edit by hand.
+Use `rz.py check` on any projection JSON you write or edit by hand.
 
 ## Architecture
 
