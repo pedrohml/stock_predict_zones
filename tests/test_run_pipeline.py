@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 import run_pipeline
+import trade_entries
 from conftest import entries_reply
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
@@ -285,13 +286,36 @@ def test_web_tools_follow_the_input(tmp_path, input_data, write_json, stub_build
     assert ("WebSearch" in calls["claude"][0]) is web
 
 
-# ---- step 5: ranked trade setups ----------------------------------------------
+# ---- step 5 by default: the setups are computed, with no Claude Code call --------
+
+def test_entries_are_computed_without_claude_by_default(tmp_path, input_data, projection_data, store,
+                                                        stub_build, stub_claude, calls, capsys):
+    stub_claude()
+    out_dir = tmp_path / "runs"
+    assert run_main("PETR4.SA", "--out-dir", out_dir, "--dpi", "50") == 0
+    written = json.loads((out_dir / "petr4_entries.json").read_text(encoding="utf-8"))
+    assert written == trade_entries.build(input_data, projection_data) and len(written["entries"]) == 3
+    assert calls["entries"] == [] and len(calls["claude"]) == 1      # only the projection needed Claude
+    captured = capsys.readouterr()
+    assert f"entries:    {out_dir / 'petr4_entries.json'}" in captured.out
+    assert "[5/5] Trade setups: trade_entries.py" in captured.err
+    [kept] = list(store.rglob("entries.json"))                       # next to the pair it was derived from
+    assert json.loads(kept.read_text(encoding="utf-8")) == written
+
+
+def test_computed_entries_need_no_claude_at_all(tmp_path, input_path, projection_path, capsys):
+    """conftest makes the claude binary unfindable: a re-plot with setups must still succeed."""
+    assert run_main("--input", input_path, "--projection", projection_path, "--out-dir", tmp_path, "--dpi", "50") == 0
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["petr4.png", "petr4_entries.json"]
+
+
+# ---- step 5 with --entries-by-claude: Claude writes the setups' sentences ------
 
 def test_entries_are_written_checked_and_kept(tmp_path, input_data, projection_data, store,
                                               stub_build, stub_claude, calls, capsys):
     stub_claude()
     out_dir = tmp_path / "runs"
-    assert run_main("PETR4.SA", "--out-dir", out_dir, "--dpi", "50") == 0
+    assert run_main("PETR4.SA", "--out-dir", out_dir, "--dpi", "50", "--entries-by-claude") == 0
     written = json.loads((out_dir / "petr4_entries.json").read_text(encoding="utf-8"))
     assert written == entries_reply(input_data, projection_data) and len(written["entries"]) == 3
     captured = capsys.readouterr()
@@ -321,7 +345,7 @@ def test_no_entries_stops_at_the_chart(tmp_path, stub_build, stub_claude, calls,
 
 def test_entries_from_existing_files(tmp_path, input_path, projection_path, store, stub_build, stub_claude, calls):
     stub_claude()
-    assert run_main("--input", input_path, "--projection", projection_path, "--out-dir", tmp_path, "--dpi", "50") == 0
+    assert run_main("--input", input_path, "--projection", projection_path, "--out-dir", tmp_path, "--dpi", "50", "--entries-by-claude") == 0
     assert calls["claude"] == [] and len(calls["entries"]) == 1       # only the setups needed Claude
     assert sorted(path.name for path in tmp_path.iterdir()) == ["petr4.png", "petr4_entries.json"]
     assert not store.exists()                                          # nothing new to keep
@@ -329,7 +353,7 @@ def test_entries_from_existing_files(tmp_path, input_path, projection_path, stor
 
 def test_a_fenced_reply_is_accepted(tmp_path, input_path, projection_path, entries_data, stub_build, stub_claude):
     stub_claude(entries="```json\n" + json.dumps(entries_data) + "\n```")
-    assert run_main("--input", input_path, "--projection", projection_path, "--out-dir", tmp_path, "--dpi", "50") == 0
+    assert run_main("--input", input_path, "--projection", projection_path, "--out-dir", tmp_path, "--dpi", "50", "--entries-by-claude") == 0
     assert json.loads((tmp_path / "petr4_entries.json").read_text(encoding="utf-8")) == entries_data
 
 
@@ -337,7 +361,7 @@ def test_wrong_numbers_fail_but_keep_the_other_files(tmp_path, input_path, proje
                                                      stub_build, stub_claude, capsys):
     entries_data["entries"][0]["stop"]["price"] += 1.0
     stub_claude(entries=entries_data)
-    assert run_main("--input", input_path, "--projection", projection_path, "--out-dir", tmp_path, "--dpi", "50") == 1
+    assert run_main("--input", input_path, "--projection", projection_path, "--out-dir", tmp_path, "--dpi", "50", "--entries-by-claude") == 1
     captured = capsys.readouterr()
     assert "failed trade_entries.py check" in captured.err and "stop.price" in captured.err
     assert "Traceback" not in captured.err
@@ -351,7 +375,7 @@ def test_wrong_numbers_fail_but_keep_the_other_files(tmp_path, input_path, proje
 ])
 def test_entries_step_failures(tmp_path, input_path, projection_path, stub_build, stub_claude, capsys, stub, message):
     stub_claude(**stub)
-    assert run_main("--input", input_path, "--projection", projection_path, "--out-dir", tmp_path, "--dpi", "50") == 1
+    assert run_main("--input", input_path, "--projection", projection_path, "--out-dir", tmp_path, "--dpi", "50", "--entries-by-claude") == 1
     captured = capsys.readouterr()
     assert message in captured.err and "Traceback" not in captured.err
     assert (tmp_path / "petr4.png").is_file() and "chart:" in captured.out
@@ -359,8 +383,8 @@ def test_entries_step_failures(tmp_path, input_path, projection_path, stub_build
 
 def test_entries_without_claude_installed(tmp_path, input_path, projection_path, monkeypatch, capsys):
     monkeypatch.setattr(run_pipeline, "CLAUDE", "surely-not-a-real-claude-binary")
-    assert run_main("--input", input_path, "--projection", projection_path, "--out-dir", tmp_path, "--dpi", "50") == 1
-    assert "pass --no-entries" in capsys.readouterr().err
+    assert run_main("--input", input_path, "--projection", projection_path, "--out-dir", tmp_path, "--dpi", "50", "--entries-by-claude") == 1
+    assert "Without --entries-by-claude" in capsys.readouterr().err
 
 
 # ---- error paths: one short message, exit 1, no traceback ---------------------

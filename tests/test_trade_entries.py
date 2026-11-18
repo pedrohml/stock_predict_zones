@@ -135,3 +135,57 @@ def test_check_command(tmp_path, input_path, projection_path, entries_data, caps
     assert "target.price" in capsys.readouterr().out
     assert trade_entries.main(["check", str(input_path), str(projection_path), str(tmp_path / "missing.json")]) == 2
     assert trade_entries.main([]) == 2
+
+
+# ---- build: the whole reply computed, sentences included -----------------------------
+
+@pytest.mark.parametrize("language", ["en", "pt", "pt-BR", "es", None])
+def test_build_passes_its_own_check_in_every_language(input_data, projection_data, language):
+    if language is None:
+        input_data.pop("reply", None)
+    else:
+        input_data.setdefault("reply", {})["language"] = language
+    reply = trade_entries.build(input_data, projection_data)
+    assert trade_entries.problems(input_data, projection_data, reply) == []
+    assert [entry["rank"] for entry in reply["entries"]] == [1, 2, 3]
+    wanted = trade_entries.TEXT["pt" if language in ("pt", "pt-BR") else "en"]
+    assert reply["note"] == wanted["note"]
+    text = json.dumps(reply, ensure_ascii=False).lower()
+    assert "{" not in "".join(e["why"] + "".join(e["watch"]) + e["odds"]["basis"] for e in reply["entries"])
+    assert not any(word in text for word in ("you should", "we recommend", "position size", "leverage"))
+
+
+def test_every_language_has_every_sentence():
+    keys = set(trade_entries.TEXT[trade_entries.FALLBACK_LANG])
+    assert all(set(text) == keys for text in trade_entries.TEXT.values())
+
+
+def test_build_reproduces_the_prompt_example(example):
+    """The example in prompts/trade_entries.md was computed from the examples/ pair."""
+    source, proj = example
+    reply = trade_entries.build(source, proj)
+    first = reply["entries"][0]
+    assert (first["id"], first["entry"]["anchor"], first["stop"]["anchor"], first["target"]["anchor"]) == (
+        "short-S1-continuation", "S1 far edge", "S1 near edge 42.52 + buffer 0.70", "S2 far edge")
+    assert first["odds"]["basis"] == "fill = reach(S2) 0.67; win = reach(S3) 0.39 / reach(S2) 0.67"
+    second = reply["entries"][1]
+    assert second["stop"]["anchor"] == "S2 far edge 37.40 − buffer 0.70"
+    assert second["watch"][0] == "S1 40.65–42.52 lies between entry and target"
+    assert all(any("2026-12-21" in line for line in entry["watch"]) for entry in reply["entries"])
+    assert "8 setups were valid, 3 kept" in reply["method"]
+    assert trade_entries.problems(source, proj, reply) == []
+
+
+def test_build_reports_why_nothing_can_be_built(input_data, projection_data):
+    projection_data["as_of"]["time"] = "2020-01-01T10:00-03:00"
+    assert trade_entries.build(input_data, projection_data) == {
+        "task": "trade_entries", "error": "projection.as_of.time differs from input.now.time"}
+
+
+def test_build_command_writes_the_file(tmp_path, input_path, projection_path, capsys):
+    target = tmp_path / "entries.json"
+    assert trade_entries.main(["build", str(input_path), str(projection_path), "-o", str(target)]) == 0
+    assert trade_entries.main(["check", str(input_path), str(projection_path), str(target)]) == 0
+    assert capsys.readouterr().out.strip() == "OK"
+    assert trade_entries.main(["build", str(input_path), str(projection_path)]) == 0
+    assert json.loads(capsys.readouterr().out) == json.loads(target.read_text(encoding="utf-8"))

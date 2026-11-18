@@ -70,7 +70,7 @@ One command, from ticker to chart and ranked trade setups (needs [Claude Code](h
 uv run zones PETR4.SA --open          # plain `zones PETR4.SA --open` after the global install
 ```
 
-It runs the three steps below in order, validates the projection with `rz.py check` before plotting, then asks Claude for three ranked trade setups (see [Ranked trade setups](#ranked-trade-setups)). It prints where the files are and, with `--open`, shows the chart in your default image viewer. `--horizon` and the other step-1 options work here too (the default horizon is `1-3m`). Step 2 takes about 2 to 6 minutes (longest with `--research deep`) and the trade-setups step a few minutes more; progress goes to standard error. Pass `--no-entries` to stop at the chart. `uv run python run_pipeline.py ...` is the same command.
+It runs the three steps below in order, validates the projection with `rz.py check` before plotting, then computes three ranked trade setups (see [Ranked trade setups](#ranked-trade-setups)). It prints where the files are and, with `--open`, shows the chart in your default image viewer. `--horizon` and the other step-1 options work here too (the default horizon is `1-3m`). Step 2 takes about 2 to 6 minutes (longest with `--research deep`) and is the only Claude Code call; the trade-setups step is computed in under a second. Progress goes to standard error. Pass `--no-entries` to stop at the chart. `uv run python run_pipeline.py ...` is the same command.
 
 Each run gets a new folder under the current directory:
 
@@ -117,7 +117,8 @@ A stage that happens again says so (`adjusting the zones`, `simulating again (rz
 | `--open` | off | Open the chart in the default viewer when the run succeeds. A viewer that cannot be started is only a warning. |
 | `--model NAME` | Claude Code's own | Model for the headless run. |
 | `--timeout SECONDS` | `1800` | Give up on each Claude Code call after this long. |
-| `--no-entries` | off | Stop at the chart: skip the trade-setups step and its second Claude Code call. |
+| `--no-entries` | off | Stop at the chart: skip the trade-setups step. |
+| `--entries-by-claude` | off | Have Claude write the sentences of the trade setups: a second Claude Code call of a few minutes. The numbers are the same. |
 | `--quiet` | off | No line per stage during step 2. Headers, errors and the duration and cost line stay. |
 | `--theme`, `--lang`, `--candles`, `--dpi` | step 3's own | Passed to `plot_projection.py` only when given. |
 | `--no-save` | off | Do not keep the new projection under `projections/` (see [Saved projections](#saved-projections)). |
@@ -444,19 +445,24 @@ The language is chosen once, with `--language` in step 1. It is stored in the in
 
 ## Ranked trade setups
 
-The last step of `run_pipeline.py` asks Claude for three hypothetical trade setups, each with an entry, a stop and a target, ranked best first, and writes them to `petr4_entries.json`. It runs by default; `--no-entries` skips it. The setups are derived from the projection only, so they inherit every limit of it.
+The last step of `run_pipeline.py` writes three hypothetical trade setups, each with an entry, a stop and a target, ranked best first, to `entries.json` in the run folder. It runs by default; `--no-entries` skips it. The setups are derived from the projection only, so they inherit every limit of it.
 
-The step works in three parts:
+By default the step makes no Claude Code call. Every price, payoff and probability follows from the projection by fixed rules, so `trade_entries.py build` computes them, and writes the sentences around them (`anchor`, `basis`, `why`, `watch`, the limits) from fixed wording in the language of `reply.language` (English or Portuguese; any other language gets English). It takes under a second and costs nothing.
+
+With `--entries-by-claude`, Claude writes those sentences instead, for this projection in particular:
 
 1. `trade_entries.py prompt` fills `prompts/trade_entries.md` with the input and the projection.
-2. `claude -p` answers with one JSON object. This call gets no tools at all and runs outside the repository; in two test runs it took two to three minutes and cost about $0.70.
+2. `claude -p` answers with one JSON object. This call gets no tools at all and runs outside the repository; in three real runs it took two to three minutes and reported a cost of $0.50 to $0.70.
 3. `trade_entries.py check` validates the reply against `prompts/trade_entries.schema.json` and recomputes every price, payoff and probability from the projection. A reply that disagrees is kept for inspection, reported, and the run exits 1; the input, projection and chart are unaffected.
+
+The numbers are identical either way: both paths are checked by the same `trade_entries.py check`.
 
 When a new projection is saved under `projections/`, the setups are saved next to it as `entries.json`.
 
 The parts also run by hand, for example on the committed example:
 
 ```bash
+uv run python trade_entries.py build  examples/petr4_input.json examples/petr4_projection.json -o entries.json
 uv run python trade_entries.py prompt examples/petr4_input.json examples/petr4_projection.json > prompt.txt
 uv run python trade_entries.py check  examples/petr4_input.json examples/petr4_projection.json reply.json
 uv run python trade_entries.py expected examples/petr4_projection.json   # every valid setup, best first
@@ -534,7 +540,7 @@ stock_predict_zones/
 ├── plot_projection.py              step 3: input + projection to image
 ├── run_pipeline.py                 all steps in one command, also installed as `zones` (steps 2 and 5 through headless Claude Code)
 ├── score_projections.py            saved projections against later prices, and the calibration summary
-├── trade_entries.py                trade setups: fills the prompt, checks the reply
+├── trade_entries.py                trade setups: computes them, or fills the prompt and checks the reply
 ├── .claude/skills/reversal-zones-projection/
 │   ├── SKILL.md                    step 2: the skill
 │   └── scripts/rz.py               its helper: levels, simulation, validation, saving, outcomes

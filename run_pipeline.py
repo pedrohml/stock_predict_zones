@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Ticker to chart and ranked trade setups in one command: build_prompt.py, the skill
-(headless Claude Code), rz.py check, plot_projection.py, then prompts/trade_entries.md.
+(headless Claude Code), rz.py check, plot_projection.py, then trade_entries.py.
 
     zones PETR4.SA
     zones NVDA --horizon 1-2w --research none --lang en --open
@@ -33,10 +33,12 @@ skill, the helper script, and reads and writes inside a throwaway work folder
 one line per stage of the skill goes to standard error, then the duration,
 turns and cost that Claude Code reports; --quiet leaves only that last line.
 
-Step 5 sends prompts/trade_entries.md, filled with the two files, to `claude -p`
-with no tools at all, and checks every number of the reply with
-trade_entries.py. It writes three hypothetical setups (entry, stop, target),
-ranked best first. Pass --no-entries to skip it.
+Step 5 writes three hypothetical setups (entry, stop, target), ranked best
+first. trade_entries.py computes them from the projection by fixed rules, so it
+makes no Claude Code call. With --entries-by-claude it sends
+prompts/trade_entries.md, filled with the two files, to `claude -p` with no
+tools at all, so that Claude writes the sentences; every number of that reply is
+checked against the computed one. Pass --no-entries to skip the step.
 
 The result is analysis for study, not investment advice.
 """
@@ -596,9 +598,34 @@ def unfenced(text):
     return text.strip()
 
 
+def checked_entries(input_path, projection_path, entries_path):
+    """Keep the setups only if trade_entries.py agrees with every number. Returns the
+    path, or None when the two files allow no setup."""
+    done = run([sys.executable, ENTRIES, "check", input_path, projection_path, entries_path])
+    if done.returncode != 0 or done.stdout.strip() != "OK":
+        raise PipelineError(f"{entries_path} failed trade_entries.py check:\n"
+                            + (tail(done.stdout, 40) or tail(done.stderr, 1)))
+    data = load_json(entries_path, "Trade setups")
+    if "error" in data:   # the files allow no setup, and the file says so
+        entries_path.unlink()
+        say(f"      No setups: {printable(data['error'])}")
+        return None
+    return entries_path
+
+
+def built_entries(input_path, projection_path, entries_path):
+    """The ranked setups computed by trade_entries.py: every number and sentence
+    follows from the projection by fixed rules, so no Claude Code call is needed."""
+    done = run([sys.executable, ENTRIES, "build", input_path, projection_path, "-o", entries_path])
+    if done.returncode != 0:
+        raise PipelineError("trade_entries.py build failed:\n" + tail(done.stderr or done.stdout))
+    return checked_entries(input_path, projection_path, entries_path)
+
+
 def trade_entries(input_path, projection_path, entries_path, timeout, model=None, quiet=False):
-    """Ask for the ranked setups and keep them only if trade_entries.py agrees with every
-    number. Returns the path, or None when the two files allow no setup."""
+    """Ask Claude for the ranked setups (--entries-by-claude): the same numbers, with
+    sentences written for this projection. Returns the path, or None when the two
+    files allow no setup."""
     filled = run([sys.executable, ENTRIES, "prompt", input_path, projection_path])
     if filled.returncode != 0:
         raise PipelineError("trade_entries.py prompt failed:\n" + tail(filled.stderr or filled.stdout))
@@ -609,7 +636,8 @@ def trade_entries(input_path, projection_path, entries_path, timeout, model=None
     except PipelineError as error:
         if "was not found" in str(error):
             raise PipelineError(f"'{CLAUDE}' was not found. Step 5 needs Claude Code on PATH "
-                                "(https://claude.com/claude-code). To skip it, pass --no-entries.")
+                                "(https://claude.com/claude-code). Without --entries-by-claude the "
+                                "setups are computed with no Claude Code call.")
         raise
     result = claude_result(out)
     reply, failed = claude_reply(out)
@@ -621,16 +649,10 @@ def trade_entries(input_path, projection_path, entries_path, timeout, model=None
         data = json.loads(unfenced(reply))
     except ValueError:
         raise PipelineError("Claude Code did not reply with JSON. Last output:\n" + tail(reply))
+    if not isinstance(data, dict):
+        raise PipelineError("Claude Code did not reply with a JSON object. Last output:\n" + tail(reply))
     entries_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    done = run([sys.executable, ENTRIES, "check", input_path, projection_path, entries_path])
-    if done.returncode != 0 or done.stdout.strip() != "OK":
-        raise PipelineError(f"{entries_path} failed trade_entries.py check:\n"
-                            + (tail(done.stdout, 40) or tail(done.stderr, 1)))
-    if isinstance(data, dict) and "error" in data:   # the files allow no setup, and the reply says so
-        entries_path.unlink()
-        say(f"      No setups: {printable(data['error'])}")
-        return None
-    return entries_path
+    return checked_entries(input_path, projection_path, entries_path)
 
 
 # ---- command line -------------------------------------------------------------
@@ -659,9 +681,12 @@ def parse(argv=None):
                             "in --out-dir; the extension picks the format)")
     files.add_argument("--open", action="store_true",
                        help="open the chart in the default viewer when the run succeeds")
-    claude = parser.add_argument_group("steps 2 and 5, Claude Code")
+    claude = parser.add_argument_group("steps 2 and 5")
     claude.add_argument("--no-entries", action="store_true",
-                        help="stop at the chart: do not ask for the ranked trade setups (step 5)")
+                        help="stop at the chart: no ranked trade setups (step 5)")
+    claude.add_argument("--entries-by-claude", action="store_true",
+                        help="have Claude Code write the setups' sentences (a second call, a few "
+                             "minutes); the numbers are the same, computed by trade_entries.py")
     claude.add_argument("--model", help="model for `claude -p` (default: Claude Code's own)")
     claude.add_argument("--no-save", action="store_true",
                         help="do not keep the new projection under projections/ "
@@ -748,12 +773,18 @@ def pipeline(args, passthrough):
     if args.no_entries:
         return result
 
-    say("[5/5] Trade setups: Claude Code ranks three (entry, stop, target). "
-        f"This takes a few minutes; timeout {args.timeout:g} s")
+    if args.entries_by_claude:
+        say("[5/5] Trade setups: Claude Code writes up the three ranked setups (entry, stop, "
+            f"target). This takes a few minutes; timeout {args.timeout:g} s")
+    else:
+        say("[5/5] Trade setups: trade_entries.py ranks three (entry, stop, target)")
     entries_path = out_dir / (f"{stem}_entries.json" if stem else "entries.json")
     try:   # a failure here must not hide the three files already made
-        result["entries"] = trade_entries(input_path, projection_path, entries_path,
-                                          args.timeout, args.model, args.quiet)
+        if args.entries_by_claude:
+            result["entries"] = trade_entries(input_path, projection_path, entries_path,
+                                              args.timeout, args.model, args.quiet)
+        else:
+            result["entries"] = built_entries(input_path, projection_path, entries_path)
     except PipelineError as error:
         result["failed"] = str(error)
     if result["entries"] and saved:   # keep the setups with the pair they were derived from
