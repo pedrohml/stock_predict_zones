@@ -61,6 +61,7 @@ ROOT = Path(__file__).resolve().parent
 BUILD = ROOT / "build_prompt.py"
 PLOT = ROOT / "plot_projection.py"
 ENTRIES = ROOT / "trade_entries.py"
+SHOW = ROOT / "show_run.py"
 SKILL = "reversal-zones-projection"
 RZ = ROOT / ".claude" / "skills" / SKILL / "scripts" / "rz.py"
 CLAUDE = "claude"
@@ -165,6 +166,32 @@ def open_chart(path):
         start_viewer(path)
     except Exception as error:
         say(f"Warning: could not open {path}: {error}")
+
+
+def show_summary(result, lang=None):
+    """Print show_run.py's summary of the finished run on standard output. Like --open
+    it is a convenience after a run that has already succeeded: whatever goes wrong
+    is one warning line, and the file paths are printed all the same. The script
+    writes into a pipe here, so this side tells it whether a terminal is reading
+    (colour and width); NO_COLOR reaches it through the environment."""
+    command = [sys.executable, SHOW, result["input"], result["projection"]]
+    if result["entries"]:
+        command.append(result["entries"])
+    if lang:
+        command += ["--lang", lang]
+    try:
+        terminal = sys.stdout.isatty()
+        if terminal:
+            command += ["--color", "--width", shutil.get_terminal_size().columns]
+        else:
+            command.append("--no-color")
+        done = run(command, timeout=60)
+        if done.returncode != 0 or not done.stdout.strip():
+            raise PipelineError((done.stderr.strip() or "it printed nothing").splitlines()[-1])
+        # on a terminal the progress lines end just above: set the summary apart from them
+        print(("\n" if terminal else "") + done.stdout.rstrip("\n") + "\n")
+    except Exception as error:
+        say(f"Warning: no summary of the result ({SHOW.name}): {printable(error)}")
 
 
 # ---- step 1 -------------------------------------------------------------------
@@ -681,6 +708,9 @@ def parse(argv=None):
                             "in --out-dir; the extension picks the format)")
     files.add_argument("--open", action="store_true",
                        help="open the chart in the default viewer when the run succeeds")
+    files.add_argument("--no-summary", action="store_true",
+                       help="print only the file paths, without the summary of the result "
+                            "(show_run.py) before them")
     claude = parser.add_argument_group("steps 2 and 5")
     claude.add_argument("--no-entries", action="store_true",
                         help="stop at the chart: no ranked trade setups (step 5)")
@@ -802,6 +832,8 @@ def main(argv=None):
     except KeyboardInterrupt:
         say("Interrupted.")
         return 130
+    if not args.no_summary:   # before the paths, which stay last and easy to copy
+        show_summary(result, args.lang)
     print(f"input:      {result['input']}")
     print(f"projection: {result['projection']}")
     print(f"chart:      {result['chart']}")

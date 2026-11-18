@@ -70,7 +70,63 @@ One command, from ticker to chart and ranked trade setups (needs [Claude Code](h
 uv run zones PETR4.SA --open          # plain `zones PETR4.SA --open` after the global install
 ```
 
-It runs the three steps below in order, validates the projection with `rz.py check` before plotting, then computes three ranked trade setups (see [Ranked trade setups](#ranked-trade-setups)). It prints where the files are and, with `--open`, shows the chart in your default image viewer. `--horizon` and the other step-1 options work here too (the default horizon is `1-3m`). Step 2 takes about 2 to 6 minutes (longest with `--research deep`) and is the only Claude Code call; the trade-setups step is computed in under a second. Progress goes to standard error. Pass `--no-entries` to stop at the chart. `uv run python run_pipeline.py ...` is the same command.
+It runs the three steps below in order, validates the projection with `rz.py check` before plotting, then computes three ranked trade setups (see [Ranked trade setups](#ranked-trade-setups)). It prints a summary of the result and then where the files are and, with `--open`, shows the chart in your default image viewer. `--horizon` and the other step-1 options work here too (the default horizon is `1-3m`). Step 2 takes about 2 to 6 minutes (longest with `--research deep`) and is the only Claude Code call; the trade-setups step is computed in under a second. Progress goes to standard error. Pass `--no-entries` to stop at the chart. `uv run python run_pipeline.py ...` is the same command.
+
+The run ends with what it found, so no file has to be opened to see it (this is the committed example, `examples/petr4_*.json`):
+
+```text
+PETR4.SA  42.77 BRL · 18 Nov 2026 15:15 · 1–3 months to 12 Feb 2027 · trend down
+
+Zones            range  strength  reach  turn  ░ reach █ turn
+  above    above 52.71              17%   17%  ███
+  R3     50.24 – 52.71  moderate    31%   14%  ███░░░
+  R2     47.11 – 49.60  strong      57%   26%  █████░░░░░░
+  R1     43.23 – 45.69  strong      80%   23%  █████░░░░░░░░░░░
+  ── price 42.77 ───────────────────────────────────────────────
+  S1     40.65 – 42.52  strong      85%   18%  ████░░░░░░░░░░░░░
+  S2     37.40 – 38.80  strong      67%   28%  ██████░░░░░░░
+  S3     35.04 – 36.85  moderate    39%   16%  ███░░░░░
+  below    below 35.04              23%   23%  █████
+
+Scenarios
+  Breakdown  37%  ███████  below 37.40
+  Breakout   29%  ██████   above 49.60
+  Range      32%  ██████   neither
+  Whipsaw     2%           both
+
+Hypothetical setups · valid until 12 Feb 2027
+  #  id                     side   order  entry   stop  target
+  1  short-S1-continuation  short  stop   40.65  43.22   37.40
+  2  long-S2-reversal       long   limit  38.80  36.70   43.23
+  3  long-R1-continuation   long   stop   45.69  42.53   49.60
+  #  reward/risk  fill  win_if_filled  edge per order  quality
+  1         1.26   67%            58%            0.21  favourable
+  2         2.11   67%            38%            0.12  marginal
+  3         1.24   57%            54%            0.12  favourable
+  Hypothetical setups for study, derived mechanically from uncalibrated
+  probabilities. Not a recommendation to buy or sell.
+
+Events
+  21 Dec 2026 ex-dividend: price drops by the payout on the ex-date; the amount…
+Confidence: low
+  • S1's floor is 5% below the price, less than one week's move at the recent 8…
+  • 21 Dec ex-dividend: amount unknown, so the drop is not simulated
+
+input:      runs/PETR4.SA/2026-11-18T1515_1-3m/input.json
+projection: runs/PETR4.SA/2026-11-18T1515_1-3m/projection.json
+chart:      runs/PETR4.SA/2026-11-18T1515_1-3m/chart.png
+entries:    runs/PETR4.SA/2026-11-18T1515_1-3m/entries.json
+saved:      projections/PETR4.SA/2026-11-18T1515_1-3m
+```
+
+The summary reads top to bottom like the chart: resistances above the current price, supports below, each with its `reach` and `turn` (see the [Glossary](#glossary)); then the scenarios, the hypothetical trade setups with the note of their file, the events inside the horizon, the confidence level with its first limits, and the drivers. Every number and sentence comes from the JSON files, which hold the rest (evidence, sources, the reasoning of each setup). Its labels follow the chart's language, the columns fold into a second block on a narrow terminal, and colour is used only when the output is a terminal (never when piped or with `NO_COLOR` set). `--no-summary` leaves only the file paths. `show_run.py` prints the same for any run, old or new:
+
+```bash
+uv run python show_run.py runs/PETR4.SA/2026-11-18T1515_1-3m           # a run folder, or one under projections/
+uv run python show_run.py examples/petr4_input.json examples/petr4_projection.json [ENTRIES.json]
+```
+
+It takes `--lang CODE` (default: the input's `reply.language`), `--width N` (default: the terminal's width, at most 100; 80 when piped) and `--no-color`.
 
 Each run gets a new folder under the current directory:
 
@@ -115,6 +171,7 @@ A stage that happens again says so (`adjusting the zones`, `simulating again (rz
 | `--projection FILE` | none | Use an existing projection JSON and skip step 2. Needs `--input`. The run folder gets a copy. |
 | `--chart FILE` | `chart.png` in the run folder, `STEM.png` with `--out-dir` | Chart file. The extension picks the format. |
 | `--open` | off | Open the chart in the default viewer when the run succeeds. A viewer that cannot be started is only a warning. |
+| `--no-summary` | off | Print only the file paths, without the summary of the result before them. A summary that cannot be made is only a warning. |
 | `--model NAME` | Claude Code's own | Model for the headless run. |
 | `--timeout SECONDS` | `1800` | Give up on each Claude Code call after this long. |
 | `--no-entries` | off | Stop at the chart: skip the trade-setups step. |
@@ -541,6 +598,7 @@ stock_predict_zones/
 ├── run_pipeline.py                 all steps in one command, also installed as `zones` (steps 2 and 5 through headless Claude Code)
 ├── score_projections.py            saved projections against later prices, and the calibration summary
 ├── trade_entries.py                trade setups: computes them, or fills the prompt and checks the reply
+├── show_run.py                     one run as a text summary in the terminal
 ├── .claude/skills/reversal-zones-projection/
 │   ├── SKILL.md                    step 2: the skill
 │   └── scripts/rz.py               its helper: levels, simulation, validation, saving, outcomes
