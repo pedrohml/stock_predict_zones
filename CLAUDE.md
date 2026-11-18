@@ -22,13 +22,13 @@ uv run python plot_projection.py petr4_input.json petr4_projection.json -o petr4
 
 There is no test suite, linter or CI. Verify changes by running the scripts end to end.
 
-Step 2 runs inside Claude, not from this repo. Its helper script `rz.py` exists only as a fenced code block at the end of `reversal-zones-projection/SKILL.md`. To run it locally, extract it first:
+Step 2 is the `reversal-zones-projection` project skill: given an input JSON, Claude follows `.claude/skills/reversal-zones-projection/SKILL.md`. Its helper can also be run directly:
 
 ```bash
-awk '/^```python/{f=1;next} /^```/{f=0} f' reversal-zones-projection/SKILL.md > /tmp/rz.py
-uv run python /tmp/rz.py levels input.json              # facts for choosing zones
-uv run python /tmp/rz.py sim    input.json zones.json   # baseline probabilities
-uv run python /tmp/rz.py check  output.json             # validate a projection; prints OK or the violations
+RZ=.claude/skills/reversal-zones-projection/scripts/rz.py
+uv run python $RZ levels input.json              # facts for choosing zones
+uv run python $RZ sim    input.json zones.json   # baseline probabilities
+uv run python $RZ check  output.json             # validate a projection; prints OK or the violations
 ```
 
 `rz.py check` is the closest thing to a test: use it on any projection JSON you write or edit by hand.
@@ -36,7 +36,7 @@ uv run python /tmp/rz.py check  output.json             # validate a projection;
 ## Architecture
 
 - **`build_prompt.py`** (step 1): `PRESETS` maps each horizon to a main series, an optional coarser context series, the `close_basis` and the probability meaning. The context series is filtered to candles that start *before* the main series, so the two never overlap. `render()` uses placeholder substitution to keep each candle row and event on one line inside otherwise indented JSON.
-- **`reversal-zones-projection/SKILL.md`** (step 2): the prompt that defines the workflow, the zone-selection rules, the limits on adjusting simulated probabilities, the exact output schema, and the embedded `rz.py` (Monte Carlo with a fixed seed, so the same input and zones give the same baseline).
+- **`.claude/skills/reversal-zones-projection/`** (step 2): `SKILL.md` is the prompt that defines the workflow, the zone-selection rules, the limits on adjusting simulated probabilities and the exact output schema. `scripts/rz.py` is its helper (Monte Carlo with a fixed seed, so the same input and zones give the same baseline).
 - **`plot_projection.py`** (step 3): one `build()` function that draws five matplotlib axes (candles + zones, probability bars sharing the price axis, scenario bar, notes, side panel). `THEMES` and `TEXT` hold all colours and translated strings.
 
 ### Contracts that span files
@@ -56,7 +56,7 @@ The three pieces share no code, only JSON conventions. Changing one side silentl
 - Two unrelated language settings: `build_prompt.py --language` (default `en`) sets the language of the projection's free text; `plot_projection.py --lang` (default `pt`) only translates the chart's own labels.
 - Prices are split-adjusted but deliberately **not** dividend-adjusted (`auto_adjust=False`); the `drop` shock in `rz.py` and the chart footer depend on that.
 - The project is not a package: `pyproject.toml` has no build system or entry points, only dependencies. The code is the two root scripts, run with `uv run python`.
-- The repo copy of `SKILL.md` is the source of truth, but editing it does not update a copy already installed as a skill (e.g. in `.claude/skills/`).
+- The skill is a project skill, so Claude Code in this repo always uses the current files. A copy installed elsewhere (claude.ai, `~/.claude/skills/`) does not follow edits made here.
 - `rz.py` must not be rewritten per run or have its seed changed: reproducible baselines are a design requirement.
 - Session and week-end logic assumes a Monday-to-Friday exchange, so crypto tickers get wrong `forming` labels (listed under Known limits in the README).
 

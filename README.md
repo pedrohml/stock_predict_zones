@@ -45,7 +45,7 @@ uv sync
 
 `uv sync` installs the four declared dependencies: `yfinance`, `matplotlib`, `numpy` and `pandas`.
 
-Step 2 needs Claude with the skill in `reversal-zones-projection/` installed. See [Installing the skill](#installing-the-skill).
+Step 2 needs Claude with the skill in `.claude/skills/reversal-zones-projection/`. Claude Code picks it up automatically when run in this repository; other Claude apps need it installed. See [Installing the skill](#installing-the-skill).
 
 ## Quick start
 
@@ -140,11 +140,13 @@ Abridged example (real files have many more rows):
 
 ## Step 2: the reversal-zones-projection skill
 
-The skill is a single file, `reversal-zones-projection/SKILL.md`. It tells Claude how to turn an input JSON into a projection JSON and contains a helper script that does the arithmetic.
+The skill lives in `.claude/skills/reversal-zones-projection/`. `SKILL.md` tells Claude how to turn an input JSON into a projection JSON, and `scripts/rz.py` is the helper that does the arithmetic.
 
 ### Installing the skill
 
-Add the `reversal-zones-projection` folder as a custom skill in Claude. In Claude Code, copy the folder into `.claude/skills/`. The copy in this repository is the source of truth for the text; editing it does not change a skill that is already installed.
+In Claude Code there is nothing to install: the skill sits in `.claude/skills/`, so it is available whenever Claude Code runs in this repository.
+
+For other Claude apps, add the `.claude/skills/reversal-zones-projection` folder (with its `scripts/` subfolder) as a custom skill. The copy in this repository is the source of truth; editing it does not change a skill that is already installed elsewhere.
 
 ### Using it
 
@@ -217,12 +219,13 @@ On each side, `turn` values add up to the `reach` of the nearest zone, and each 
 
 ### Running the helper by hand
 
-The helper is the Python block at the end of `SKILL.md`. Saved as `rz.py`, it can be used without Claude:
+The helper, `.claude/skills/reversal-zones-projection/scripts/rz.py`, can be used without Claude:
 
 ```bash
-uv run python rz.py levels input.json              # facts for choosing zones
-uv run python rz.py sim input.json zones.json      # baseline probabilities
-uv run python rz.py check projection.json          # validate a projection
+RZ=.claude/skills/reversal-zones-projection/scripts/rz.py
+uv run python $RZ levels input.json              # facts for choosing zones
+uv run python $RZ sim input.json zones.json      # baseline probabilities
+uv run python $RZ check projection.json          # validate a projection
 ```
 
 `zones.json` lists the zones nearest first, plus optional scheduled shocks:
@@ -318,8 +321,9 @@ The simulation knows nothing about chart levels. The skill may therefore move a 
 stock_predict_zones/
 ├── build_prompt.py                 step 1: Yahoo Finance to input JSON
 ├── plot_projection.py              step 3: input + projection to image
-├── reversal-zones-projection/
-│   └── SKILL.md                    step 2: the skill, with its helper script embedded
+├── .claude/skills/reversal-zones-projection/
+│   ├── SKILL.md                    step 2: the skill
+│   └── scripts/rz.py               its helper: levels, simulation, validation
 ├── pyproject.toml                  dependencies and Python version
 ├── uv.lock
 └── README.md
