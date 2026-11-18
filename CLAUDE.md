@@ -33,6 +33,8 @@ uv run python $RZ check  output.json             # validate a projection; prints
 
 `rz.py check` is the closest thing to a test: use it on any projection JSON you write or edit by hand.
 
+`examples/` holds a ready-made input/projection pair (`petr4_input.json`, `petr4_projection.json`) for trying `plot_projection.py` and `rz.py check` without Yahoo or step 2.
+
 ## Architecture
 
 - **`build_prompt.py`** (step 1): `PRESETS` maps each horizon to a main series, an optional coarser context series, the `close_basis` and the probability meaning. The context series is filtered to candles that start *before* the main series, so the two never overlap. `render()` uses placeholder substitution to keep each candle row and event on one line inside otherwise indented JSON.

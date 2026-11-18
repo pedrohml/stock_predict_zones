@@ -1,0 +1,67 @@
+{
+  "task": "reversal_zones",
+  "asset": { "ticker": "PETR4.SA", "currency": "BRL" },
+  "as_of": { "time": "2026-11-18T15:15-03:00", "price": 42.77 },
+  "horizon": { "label": "1-3m", "close_basis": "1W", "closes": 13, "first": "2026-11-20", "last": "2027-02-12" },
+
+  "structure": {
+    "trend": "down",
+    "swing": { "low": [29.53, "2026-01-05"], "high": [59.79, "2026-10-19"] },
+    "retraced": 0.56,
+    "from_high": -0.285,
+    "volatility": { "per": "1W", "last_8": 0.087, "last_52": 0.051, "assumed": [0.065, 0.051] }
+  },
+
+  "legend": {
+    "zone": "[from, to]; null means open-ended",
+    "reach": "P(the zone comes into play: price closes into it, or beyond the zone before it)",
+    "turn": "P(the horizon's most extreme close is made here: reached and not broken)",
+    "hold": "turn / reach"
+  },
+
+  "supports": [
+    { "id": "S1", "zone": [40.65, 42.52], "strength": "strong", "reach": 0.85, "turn": 0.18,
+      "evidence": ["week of 16 Nov 2026 low 42.52", "Jun 2026 weekly lows 40.65 and 40.70, Aug 2026 lows 40.83, 41.01 and 40.97", "61.8% retracement 41.09"] },
+    { "id": "S2", "zone": [37.4, 38.8], "strength": "strong", "reach": 0.67, "turn": 0.28,
+      "evidence": ["Jun-Jul 2026 weekly lows 37.41, 37.92, 37.40 and 37.61; 37.40 is a pivot low", "Jan-Feb 2026 weekly highs 38.58, 38.32, 38.46 and 38.24, old ceiling", "Jun 2026 weekly closes 38.80, 38.06 and 38.25"] },
+    { "id": "S3", "zone": [35.04, 36.85], "strength": "moderate", "reach": 0.39, "turn": 0.16,
+      "evidence": ["Jan-Feb 2026 weekly lows 35.04, 36.45, 36.53 and 36.85", "78.6% retracement 36.01"] },
+    { "id": "below", "zone": [null, 35.04], "reach": 0.23, "turn": 0.23,
+      "evidence": ["next reference 32.53, the high of the week of 12 Jan 2026"] }
+  ],
+
+  "resistances": [
+    { "id": "R1", "zone": [43.23, 45.69], "strength": "strong", "reach": 0.80, "turn": 0.23,
+      "evidence": ["weekly highs 45.69 (9 Nov 2026) and 45.39 (16 Nov 2026)", "weekly closes of 45.30 on 2 and 9 Nov 2026", "9 Nov 2026 weekly low 43.23, a floor now above the price", "50% retracement 44.66"] },
+    { "id": "R2", "zone": [47.11, 49.6], "strength": "strong", "reach": 0.57, "turn": 0.26,
+      "evidence": ["week of 7 Sep 2026 ran from a low of 47.11 to a high of 49.60", "Mar-Apr 2026 weekly highs 49.44, 49.56 and 49.38", "38.2% retracement 48.23"] },
+    { "id": "R3", "zone": [50.24, 52.71], "strength": "moderate", "reach": 0.31, "turn": 0.14,
+      "evidence": ["Mar-Sep 2026 ceiling: weekly highs 50.69, 50.24, 50.70, 50.24 and 51.35", "week of 26 Oct 2026 opened 51.20 and closed 52.71; the 2 Nov 2026 high is also 52.71"] },
+    { "id": "above", "zone": [52.71, null], "reach": 0.17, "turn": 0.17,
+      "evidence": ["next reference the open gap 54.23-56.91 left by the week of 26 Oct 2026"] }
+  ],
+
+  "scenarios": [
+    { "name": "breakdown", "p": 0.37, "low": "below 37.4", "high": "49.6 or lower" },
+    { "name": "breakout", "p": 0.29, "low": "37.4 or higher", "high": "above 49.6" },
+    { "name": "range", "p": 0.32, "low": "37.4 or higher", "high": "49.6 or lower" },
+    { "name": "whipsaw", "p": 0.02, "low": "below 37.4", "high": "above 49.6" }
+  ],
+
+  "events": [
+    { "date": "2026-12-21", "what": "ex-dividend", "effect": "price drops by the payout on the ex-date; the amount is not in the input", "certainty": "medium" }
+  ],
+
+  "drivers": [],
+
+  "confidence": {
+    "level": "low",
+    "limits": [
+      "S1's floor is 5% below the price, less than one week's move at the recent 8.7% volatility",
+      "21 Dec ex-dividend: amount unknown, so the drop is not simulated",
+      "no research done: the cause of the fall from 59.79 is not examined"
+    ]
+  },
+
+  "method": "200,000 simulated paths of 13 weekly closes (fat-tailed, no drift, weekly volatility 6.5% decaying to 5.1%, first step halved for the forming week, no scheduled shocks); moved 0.04 from the support tail into S1 and S2 (0.02 each) and 0.03 from the resistance tail into R1, R2 and R3 (0.01 each) for clustered evidence; whipsaw kept at the simulated 0.02"
+}

@@ -18,6 +18,10 @@ build_prompt.py  ──►  reversal-zones-projection  ──►  plot_projectio
 | 2. Project | `reversal-zones-projection` skill, run by Claude | `input.json` | `projection.json`: zones, probabilities, scenarios |
 | 3. Plot | `plot_projection.py` | both JSON files | an image |
 
+![Example chart: PETR4.SA reversal zones, 1 to 3 month horizon](examples/petr4.png)
+
+*Example output from the files in [`examples/`](examples/), using data as of 18 Nov 2026. It shows what the pipeline produces; it is not a forecast.*
+
 > **Read this first.** The probabilities are internally consistent but have **not been backtested**. Nobody has yet checked whether a zone given a 20% chance of holding actually holds about 20% of the time. Treat the output as a structured way to look at a chart, not as a forecast you can rely on. Nothing here is investment advice.
 
 ## Contents
@@ -58,6 +62,12 @@ uv run python build_prompt.py PETR4.SA --horizon 1-3m -o petr4_input.json
 
 # 3. Chart
 uv run python plot_projection.py petr4_input.json petr4_projection.json -o petr4.png
+```
+
+To try step 3 without Claude, use the ready-made pair in [`examples/`](examples/):
+
+```bash
+uv run python plot_projection.py examples/petr4_input.json examples/petr4_projection.json -o chart.png --lang en
 ```
 
 ## Step 1: build_prompt.py
@@ -324,6 +334,7 @@ stock_predict_zones/
 ├── .claude/skills/reversal-zones-projection/
 │   ├── SKILL.md                    step 2: the skill
 │   └── scripts/rz.py               its helper: levels, simulation, validation
+├── examples/                       one complete run: input, projection and charts
 ├── pyproject.toml                  dependencies and Python version
 ├── uv.lock
 └── README.md
