@@ -101,6 +101,11 @@ def test_languages_have_the_same_keys():
         assert all(n == nested[0] for n in nested)
     assert set(plot_projection.TEXT["en"]["names"]) == {"breakdown", "breakout", "range", "whipsaw"}
     assert set(plot_projection.TEXT["en"]["levels"]) == {"low", "medium"}   # never "high"
+    for lang in LANGS:                                    # what build() reads to write numbers and times
+        t = plot_projection.TEXT[lang]
+        assert len(t["months"]) == 12
+        assert t["decimal"] and t["thousands"] and t["decimal"] != t["thousands"]
+        assert t["intraday_tick"].format(day=1, month=2, mon=t["months"][1], hour=3, minute=4)
 
 
 def test_fixture_matches_a_preset(input_data):
@@ -176,8 +181,8 @@ def test_plot_recovers_the_scenario_thresholds_from_sim(
     projection = write_json("projection.json", projection_from_sim(out, zones))
     for lang in LANGS:
         t = plot_projection.TEXT[lang]
-        note = t["scenario_note"].format(s=s_text.replace(".", t["decimal"]),
-                                         r=r_text.replace(".", t["decimal"]))
+        shown = lambda text: plot_projection.format_number(float(text), 2, t)   # as the zone labels: 40.60
+        note = t["scenario_note"].format(s=shown(s_text), r=shown(r_text))
         fig = plot(input_path, projection, lang=lang)
         notes = [text.get_text() for text in fig.axes[3].texts]
         assert any(text.startswith(note) for text in notes), notes

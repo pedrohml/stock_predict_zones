@@ -58,7 +58,8 @@ TEXT = {
         "drivers": "Fatores", "events": "Eventos", "no_date": "sem data",
         "confidence": "Confiança: {level}", "levels": {"low": "baixa", "medium": "média"},
         "footer": "Estimativas probabilísticas, não recomendação de compra ou venda. Preços sem ajuste por dividendos.",
-        "decimal": ",",
+        "decimal": ",", "thousands": ".",
+        "intraday_tick": "{day:02d}/{month:02d} {hour:02d}:{minute:02d}",
     },
     "en": {
         "months": "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(),
@@ -78,7 +79,8 @@ TEXT = {
         "drivers": "Drivers", "events": "Events", "no_date": "no date",
         "confidence": "Confidence: {level}", "levels": {"low": "low", "medium": "medium"},
         "footer": "Probabilistic estimates, not a recommendation to buy or sell. Prices are not dividend-adjusted.",
-        "decimal": ".",
+        "decimal": ".", "thousands": ",",
+        "intraday_tick": "{day} {mon} {hour:02d}:{minute:02d}",   # fields: day, month, mon (its name), hour, minute
     },
 }
 FALLBACK_LANG = "en"   # used when the input names no language, or one TEXT has no entry for
@@ -410,6 +412,70 @@ def preflight(args):
         print(f"Warning: {line}", file=sys.stderr)
 
 
+# ---- small layout helpers for build() ------------------------------------------
+
+def format_number(value, digits, t):
+    """1234.5 -> "1,234.50" or "1.234,50": the separators are the language's."""
+    return f"{value:,.{digits}f}".translate({ord(","): t["thousands"], ord("."): t["decimal"]})
+
+
+def price_digits(price):
+    """Decimals for this asset's prices: 2 as a rule, none from 10 000 up, four significant digits below 1."""
+    size = abs(price)
+    if size >= 10_000:
+        return 0
+    if size >= 1 or size == 0:
+        return 2
+    return min(8, 3 - math.floor(math.log10(size)))
+
+
+def step_digits(ticks):
+    """Decimals that tell neighbouring axis ticks apart (step 5 -> 0, 0.5 -> 1, 0.25 -> 2, 0.005 -> 3)."""
+    steps = [b - a for a, b in zip(ticks, ticks[1:]) if b > a]
+    if not steps:
+        return 2
+    step = min(steps)
+    digits = max(0, -math.floor(math.log10(step) + 1e-9))
+    scaled = step * 10 ** digits
+    return min(8, digits + (abs(scaled - round(scaled)) > 1e-6))
+
+
+def spread(centres, widths, low, high, gap):
+    """Left edges for labels that want to be centred at `centres` (ascending): pushed apart
+    so that none overlaps its neighbour, then pushed back inside [low, high]."""
+    lefts, edge = [], low
+    for centre, width in zip(centres, widths):
+        lefts.append(max(centre - width / 2, edge))
+        edge = lefts[-1] + width + gap
+    edge = high
+    for i in reversed(range(len(lefts))):
+        lefts[i] = min(lefts[i], edge - widths[i])
+        edge = lefts[i] - gap
+    return lefts
+
+
+def share_lines(wanted, fixed, room, keep=0):
+    """How many lines each item of a list gets when only `room` lines fit.
+
+    wanted: the lines each item would like. fixed: lines used by headings. Every item gets
+    one line, then spare lines go round in list order, one at a time. Items are dropped
+    only when one line each does not fit: from the end, the last `keep` items after all
+    the others. Returns a list as long as `wanted` (0 = dropped)."""
+    given = [min(lines, 1) for lines in wanted]
+    others = len(wanted) - keep
+    order = list(range(others - 1, -1, -1)) + list(range(len(wanted) - 1, others - 1, -1))
+    while sum(given) + fixed > room and any(given):
+        given[next(i for i in order if given[i])] = 0
+    grew = True
+    while grew:
+        grew = False
+        for i, lines in enumerate(wanted):
+            if 0 < given[i] < lines and sum(given) + fixed < room:
+                given[i] += 1
+                grew = True
+    return given
+
+
 def build(args):
     source, proj = load_json(args.input), load_json(args.projection)
     theme, t = THEMES[args.theme], TEXT[chart_language(args.lang, source)]
@@ -417,7 +483,9 @@ def build(args):
         print(f"Warning: candles are {source['asset']['ticker']} but the projection is "
               f"{proj['asset']['ticker']}.", file=sys.stderr)
 
-    num = lambda x, digits=2: f"{x:,.{digits}f}".replace(",", " ").replace(".", t["decimal"])
+    price = proj["as_of"]["price"]
+    decimals = price_digits(price)
+    num = lambda x, digits=decimals: format_number(x, digits, t)
     pct = lambda p: f"{round(p * 100):d}%"
     day = lambda d, year=True: f"{d.day} {t['months'][d.month - 1]}" + (f" {d.year}" if year else "")
     plain = lambda text: str(text).replace("$", r"\$")   # keep matplotlib from reading $...$ as maths
@@ -434,14 +502,12 @@ def build(args):
     col = lambda name: [row[cols.index(name)] for row in rows]
     starts, opens, highs, lows, ends = col("start"), col("open"), col("high"), col("low"), col("close")
     n = len(rows)
-    price = proj["as_of"]["price"]
     as_of = parse_day(proj["as_of"]["time"])
     last_day = parse_day(proj["horizon"]["last"])
 
-    # The future occupies one slot per close still to come.
-    # It is drawn at least 28% as wide as the history so the zone labels always fit.
+    # The future occupies one slot per close still to come. It is drawn at least 28% as wide as
+    # the history, and wider when the zone labels need it (see below, once text can be measured).
     future = max(1, closes - (1 if series["last_row"] == "forming" else 0), round(0.28 * n))
-    x_now, x_end = n - 0.5, n - 0.5 + future
 
     def x_of(day_value):
         span = max((last_day - as_of).days, 1)
@@ -476,6 +542,45 @@ def build(args):
     side = fig.add_subplot(grid[1:, 1])
     for axis in (ax, px, sx, notes, side):
         axis.set_facecolor(theme["surface"])
+    # Text is measured, not guessed: labels are placed after the size they will really have.
+    renderer = fig.canvas.get_renderer()
+    extent = lambda artist: artist.get_window_extent(renderer)
+    pt = fig.dpi / 72   # pixels per typographic point
+
+    def text_width(string, **font):
+        probe = fig.text(0, 0, string, **font)
+        width = extent(probe).width
+        probe.remove()
+        return width
+
+    # A zone's id, its price range and the price box must fit side by side in the future area:
+    # long prices (1,234.56 or 0.04607) widen it, up to half of the panel.
+    id_width = max(text_width(zone["id"], fontsize=8.5, fontweight="bold") for zone in zones)
+    range_width = max(text_width(f"{num(z['zone'][0])} – {num(z['zone'][1])}", fontsize=8.5) for z in zones)
+    box_width = text_width(num(price), fontsize=8.5, fontweight="bold") + 12 * pt
+
+    def labels_fit(slots):
+        slot = ax.get_window_extent().width / (n + slots + 0.8)
+        column = 0.35 * slot + max(id_width + 0.35 * slot, 0.14 * slots * slot)
+        return column + range_width + 0.5 * slot + box_width <= slots * slot
+
+    while future < n and not labels_fit(future):
+        future += 1
+    x_now, x_end = n - 0.5, n - 0.5 + future
+
+    def unstack(axis, rows):
+        """Move apart, vertically, rows of labels that thin or close zones put on top of each
+        other. rows: lists of texts that share one height on the price scale."""
+        rows = sorted(rows, key=lambda row: row[0].get_position()[1])
+        scale = axis.get_window_extent().height / (y_max - y_min)   # pixels per unit of price
+        tall = [max(extent(text).height for text in row) for row in rows]
+        lows = spread([(row[0].get_position()[1] - y_min) * scale for row in rows], tall,
+                      0, (y_max - y_min) * scale, pt)
+        for row, low, height in zip(rows, lows, tall):
+            y = y_min + (low + height / 2) / scale
+            if abs(y - row[0].get_position()[1]) * scale > 0.5:   # a label that had room stays where it was
+                for text in row:
+                    text.set_y(y)
 
     structure = proj.get("structure", {})
     swing = structure.get("swing", {})
@@ -494,17 +599,23 @@ def build(args):
     ax.text(x_now + 0.35, y_max - 0.012 * (y_max - y_min), t["horizon"].format(last=day(last_day)),
             ha="left", va="top", fontsize=8.5, color=theme["muted"])
     halo = [effects.withStroke(linewidth=2.2, foreground=theme["surface"])]
+    ax.set_xlim(-1, x_end + 0.3)
+    ax.set_ylim(y_min, y_max)
+    slot = ax.get_window_extent().width / (x_end + 1.3)   # pixels per candle slot
 
+    # The price ranges form one column, after the widest zone id.
+    ids = [ax.text(x_now + 0.35, sum(zone["zone"]) / 2, zone["id"], fontweight="bold", fontsize=8.5,
+                   va="center", ha="left", zorder=7, path_effects=halo) for zone in zones]
+    x_range = x_now + 0.35 + max(max(extent(label).width for label in ids) / slot + 0.35, 0.14 * future)
+    ranges = []
     for zone in zones:
         color = theme["support"] if zone in supports else theme["resistance"]
         low, high = zone["zone"]
         ax.add_patch(Rectangle((-0.5, low), x_now + 0.5, high - low, color=color, alpha=0.10, lw=0))
         ax.add_patch(Rectangle((x_now, low), future, high - low, color=color, alpha=0.30, lw=0))
         ax.hlines([low, high], -0.5, x_end, color=theme["surface"], lw=1.6, zorder=1)   # gap between touching zones
-        ax.text(x_now + 0.35, (low + high) / 2, zone["id"], fontweight="bold", fontsize=8.5,
-                va="center", ha="left", zorder=7, path_effects=halo)
-        ax.text(x_now + 0.35 + 0.14 * future, (low + high) / 2, f"{num(low)} – {num(high)}",
-                fontsize=8.5, va="center", ha="left", zorder=7, path_effects=halo)
+        ranges.append(ax.text(x_range, (low + high) / 2, f"{num(low)} – {num(high)}",
+                              fontsize=8.5, va="center", ha="left", zorder=7, path_effects=halo))
 
     body = 0.62
     for i in range(n):
@@ -517,11 +628,31 @@ def build(args):
 
     # The price line starts after the zone labels when the price sits inside a zone, so it never strikes them out.
     in_zone = any(z["zone"][0] - typical * 0.3 <= price <= z["zone"][1] + typical * 0.3 for z in zones)
-    ax.hlines(price, x_now + 0.62 * future if in_zone else n - 1, x_end, color=theme["text"], lw=1.0,
-              linestyles=(0, (4, 3)), zorder=5)
-    ax.annotate(num(price), (x_end, price), xytext=(-4, 0), textcoords="offset points",
-                ha="right", va="center", fontsize=8.5, fontweight="bold", zorder=6,
-                bbox={"boxstyle": "round,pad=0.25", "fc": theme["surface"], "ec": theme["text"], "lw": 0.8})
+    unstack(ax, list(zip(ids, ranges)))
+    labels_end = x_range + max(extent(label).width for label in ranges) / slot + 0.5
+    ax.hlines(price, min(max(x_now + 0.62 * future, labels_end), x_end) if in_zone else n - 1, x_end,
+              color=theme["text"], lw=1.0, linestyles=(0, (4, 3)), zorder=5)
+    price_box = ax.annotate(num(price), (x_end, price), xytext=(-4, 0), textcoords="offset points",
+                            ha="right", va="center", fontsize=8.5, fontweight="bold", zorder=6,
+                            bbox={"boxstyle": "round,pad=0.25", "fc": theme["surface"], "ec": theme["text"], "lw": 0.8})
+    # A long range label can reach the price box: the box then steps above or below the labels
+    # in its way, whichever is nearer. The dashed line still marks the price itself.
+    frame = extent(price_box).padded(3.5 * pt)   # the text plus the box drawn around it
+    reaching = [box for box in map(extent, ranges) if box.x1 > frame.x0]
+
+    def step(direction):
+        shift = 0
+        for _ in reaching:
+            hits = [box for box in reaching if box.y0 < frame.y1 + shift and box.y1 > frame.y0 + shift]
+            if not hits:
+                break
+            shift = (max(box.y1 for box in hits) - frame.y0 + pt if direction > 0 else
+                     min(box.y0 for box in hits) - frame.y1 - pt)
+        return shift
+
+    shift = min(step(1), step(-1), key=abs)
+    if shift:
+        price_box.set_position((-4, shift / pt))
 
     for key, marker, offset in (("high", "v", 1), ("low", "^", -1)):
         point = swing.get(key)
@@ -529,8 +660,11 @@ def build(args):
             i = starts.index(point[1])
             y = (highs[i] if key == "high" else lows[i]) + offset * 0.018 * (y_max - y_min)
             ax.plot(i, y, marker=marker, ms=6, color=theme["text"], zorder=6)
-            ax.text(i + 1.2, y, t[f"swing_{key}"].format(x=num(point[0])), fontsize=8.5,
-                    va="center", ha="left", color=theme["muted"])
+            note = ax.text(i + 1.2, y, t[f"swing_{key}"].format(x=num(point[0])), fontsize=8.5,
+                           va="center", ha="left", color=theme["muted"])
+            area = extent(note).padded(3 * pt)
+            if any(area.overlaps(extent(label)) for label in ids + ranges):   # on a zone label: write it leftwards
+                note.set(x=i - 1.2, ha="right")
 
     event_ticks = {}
     for event in proj.get("events", []):
@@ -543,35 +677,53 @@ def build(args):
             if x_now + 0.1 * future < x < x_end - 0.2 * future:   # room for a date between the neighbouring labels
                 event_ticks[x] = day(when, False)
 
+    # Intraday labels carry date and time, so they are wider: fewer of them, the first one moved
+    # inwards so that it does not hang over the price axis.
     intraday = basis in ("15m", "1h")
-    step = max(1, n // 8)
-    ticks = list(range(0, n, step))
+    step = max(1, n // (6 if intraday else 8))
+    ticks = list(range(step // 2 if intraday else 0, n, step))
     labels = []
     for i in ticks:
         stamp = datetime.fromisoformat(starts[i])
-        labels.append(stamp.strftime("%d/%m %H:%M") if intraday else
+        labels.append(t["intraday_tick"].format(day=stamp.day, month=stamp.month, mon=t["months"][stamp.month - 1],
+                                                hour=stamp.hour, minute=stamp.minute) if intraday else
                       day(stamp.date(), False) if basis == "1D" else
                       f"{t['months'][stamp.month - 1]} {stamp.year % 100:02d}")
+    # An event date is written only where it clears the labels already on the axis.
+    width_of = lambda label: text_width(label, fontsize=8.5) / slot
+    taken = [(x - width_of(label) / 2, x + width_of(label) / 2) for x, label in zip(ticks, labels)]
+    taken.append((x_end - width_of(day(last_day, False)), x_end))
+    clear = 8.5 * pt / slot
+    for x, label in sorted(event_ticks.items()):
+        span = (x - width_of(label) / 2, x + width_of(label) / 2)
+        if any(span[0] < right + clear and span[1] > left - clear for left, right in taken):
+            del event_ticks[x]
+        else:
+            taken.append(span)
     ax.set_xticks(ticks + list(event_ticks) + [x_end], labels + list(event_ticks.values()) + [day(last_day, False)])
     ax.get_xticklabels()[-1].set_ha("right")
-    ax.set_xlim(-1, x_end + 0.3)
-    ax.set_ylim(y_min, y_max)
-    spread = y_max - y_min
-    ax.yaxis.set_major_formatter(lambda value, _: num(value, 0 if spread > 12 else 1 if spread > 1.5 else 2))
+    ax.yaxis.set_major_formatter(lambda value, _: num(value, step_digits(
+        [tick for tick in ax.get_yticks() if y_min <= tick <= y_max])))
     ax.grid(axis="y", color=theme["grid"], lw=0.8)
     ax.set_axisbelow(True)
     ax.tick_params(length=0, labelsize=8.5)
+    ax.tick_params(axis="x", pad=6)   # clear of a price label that falls on the bottom edge
     for spine in ("top", "right", "left"):
         ax.spines[spine].set_visible(False)
 
     # ---- probability panel: one bar per zone, on the same price scale --------
+    captions, shares = [], []   # (reach, pixels of text after the bar); the percentages
+
     def bar(entry, low, high, color, label):
         px.add_patch(Rectangle((0, low), entry["reach"], high - low, fill=False, ec=color, lw=1.2))
         px.add_patch(Rectangle((0, low), entry["turn"], high - low, color=color, alpha=0.9, lw=0))
-        px.text(entry["reach"] + 0.035, (low + high) / 2, pct(entry["turn"]), fontweight="bold",
-                fontsize=9.5, va="center", ha="left")
-        px.text(entry["reach"] + 0.035 + 0.16, (low + high) / 2, plain(label), fontsize=8.5,
-                va="center", ha="left", color=theme["muted"])
+        share = px.text(entry["reach"] + 0.035, (low + high) / 2, pct(entry["turn"]), fontweight="bold",
+                        fontsize=9.5, va="center", ha="left")
+        # The label starts a fixed gap after the percentage, whatever its number of digits.
+        note = px.annotate(plain(label), (1, 0.5), xycoords=share, xytext=(4, 0), textcoords="offset points",
+                           fontsize=8.5, va="center", ha="left", color=theme["muted"])
+        shares.append([share])
+        captions.append((entry["reach"], extent(share).width + 4 * pt + extent(note).width))
 
     for zone in zones:
         color = theme["support"] if zone in supports else theme["resistance"]
@@ -584,7 +736,11 @@ def build(args):
         edge = tail_high["zone"][0]
         bar(tail_high, edge + gap, edge + gap + typical, theme["resistance"], t["above"].format(x=num(edge)))
 
-    px.set_xlim(0, 1.72)
+    unstack(px, shares)   # each label follows its percentage
+    # 1.72 leaves room for the usual captions; a long one after a long bar widens the scale just enough.
+    panel = px.get_window_extent().width
+    px.set_xlim(0, max([1.72] + [(reach + 0.035) * panel / max(panel - text - 3 * pt, 0.2 * panel)
+                                 for reach, text in captions]))
     px.set_xticks([0, 0.5, 1.0], ["0%", "50%", "100%"])
     px.tick_params(length=0, labelsize=8.5, labelleft=False)
     px.grid(axis="y", color=theme["grid"], lw=0.8)
@@ -599,23 +755,38 @@ def build(args):
         px.text(x + 0.05, 1.036, label, transform=px.transAxes, fontsize=8.5, va="center", color=theme["muted"])
 
     # ---- scenarios: one segmented bar -----------------------------------------
-    scenarios = sorted(proj.get("scenarios", []), key=lambda s: -s["p"])
-    left = 0.0
+    scenarios = sorted(proj.get("scenarios", []), key=lambda s: -s["p"])[:len(theme["scenario"])]
+    total = max(sum(s["p"] for s in scenarios), 1)
+    sx.set_xlim(0, total)
+    sx.set_ylim(-0.5, 0.5)
+    unit = sx.get_window_extent().width / total   # pixels per unit of probability
+    left, under = 0.0, []
     for scenario, shade in zip(scenarios, theme["scenario"]):
         sx.barh(0, scenario["p"], left=left, color=shade, edgecolor=theme["surface"], lw=2, height=0.9)
-        name = t["names"].get(scenario["name"], scenario["name"])
-        wide = scenario["p"] >= 0.13
-        if scenario["p"] >= 0.04:
-            sx.text(left + scenario["p"] / 2, 0, f"{name} {pct(scenario['p'])}" if wide else pct(scenario["p"]),
-                    ha="center", va="center", fontsize=9, fontweight="bold")
-        if not wide:   # too narrow for its name: write it under the segment
-            at_end = left + scenario["p"] > 0.93
-            sx.text(left + scenario["p"] if at_end else left + scenario["p"] / 2, -0.62,
-                    name if scenario["p"] >= 0.04 else f"{name} {pct(scenario['p'])}",
-                    ha="right" if at_end else "center", va="top", fontsize=8.5, color=theme["muted"], clip_on=False)
+        name, share = plain(t["names"].get(scenario["name"], scenario["name"])), pct(scenario["p"])
+        middle, room = left + scenario["p"] / 2, scenario["p"] * unit - 8 * pt
+        inside = sx.text(middle, 0, f"{name} {share}", ha="center", va="center", fontsize=9, fontweight="bold")
+        if extent(inside).width > room:   # too narrow for its name: write it under the segment
+            inside.set_text(share)
+            below = name
+            if extent(inside).width > room:   # and for its percentage
+                inside.remove()
+                below = f"{name} {share}"
+            under.append((middle, f"{name} {share}", sx.text(middle, -0.62, below, ha="left", va="top", fontsize=8.5,
+                                                             color=theme["muted"], clip_on=False)))
         left += scenario["p"]
-    sx.set_xlim(0, max(left, 1))
-    sx.set_ylim(-0.5, 0.5)
+    # Names under the bar keep the order of their segments, apart from each other and inside the bar.
+    # One pushed away from under its segment repeats the percentage, so it can be read on its own.
+    moved = True
+    while moved:   # ends: a label changes its text at most once
+        widths = [extent(label).width for _, _, label in under]
+        edges = spread([middle * unit for middle, _, _ in under], widths, 0, total * unit, 8 * pt)
+        moved = False
+        for (middle, full, label), edge, width in zip(under, edges, widths):
+            label.set_x(edge / unit)
+            if not edge <= middle * unit <= edge + width and label.get_text() != full:
+                label.set_text(full)
+                moved = True
     sx.axis("off")
     sx.set_title(t["scenarios"], fontsize=10.5, fontweight="bold", loc="left", pad=4)
 
@@ -625,7 +796,8 @@ def build(args):
     lines = []
     if {"breakdown", "breakout"} <= set(by_name):
         s_mid, r_mid = number(by_name["breakdown"].get("low")), number(by_name["breakout"].get("high"))
-        lines.append(t["scenario_note"].format(s=s_mid.replace(".", t["decimal"]), r=r_mid.replace(".", t["decimal"])))
+        shown = lambda found: found if found == "?" else num(float(found))   # written like every other price
+        lines.append(t["scenario_note"].format(s=shown(s_mid), r=shown(r_mid)))
         lines.append("")
     drivers = proj.get("drivers", [])[:4]
     if drivers:
@@ -641,18 +813,36 @@ def build(args):
     confidence = proj.get("confidence", {})
     block = [t["confidence"].format(level=t["levels"].get(confidence.get("level"), confidence.get("level", "?")))]
     side.text(0, 1.0, block[0], va="top", fontsize=10.5, fontweight="bold")
-    body_lines = []
-    for limit in confidence.get("limits", [])[:3]:
-        body_lines += textwrap.wrap(limit, 50, initial_indent="•  ", subsequent_indent="    ")
-    events = proj.get("events", [])
-    if events:
-        body_lines += ["", "◆  " + t["events"] + ":"]
-        for event in events[:3]:
-            when = day(parse_day(event["date"])) if event.get("date") else t["no_date"]
-            body_lines += textwrap.wrap(f"{when}: {event['what']}", 50, initial_indent="•  ", subsequent_indent="    ")
-    side.text(0, 0.88, plain("\n".join(body_lines)), va="top", fontsize=8.8, color=theme["muted"], linespacing=1.45)
+    limits = confidence.get("limits", [])[:3]
+    happenings = [f"{day(parse_day(event['date'])) if event.get('date') else t['no_date']}: {event['what']}"
+                  for event in proj.get("events", [])[:3]]
+    body = side.text(0, 0.88, "", va="top", fontsize=8.8, color=theme["muted"], linespacing=1.45)
 
-    fig.text(0.045, 0.014, t["footer"], fontsize=8, color=theme["muted"], va="bottom")
+    def body_size(text):
+        body.set_text(plain(text))
+        return extent(body)
+
+    # The block must end above the footer and inside the figure. Lines that do not fit are cut
+    # with an ellipsis: every caveat and event keeps its first line, spare lines go to the
+    # caveats first, and a caveat is dropped (the last one first) only when one line each is too much.
+    footer = fig.text(0.045, 0.014, t["footer"], fontsize=8, color=theme["muted"], va="bottom")
+    panel = side.get_window_extent()
+    pitch = body_size("X\nX").height - body_size("X").height
+    room = int((body_size("X").y0 - extent(footer).y1 - 0.3 * pitch) / pitch) + 1
+    for width in range(50, 19, -2):   # 50 characters fit the panel unless the letters are unusually wide
+        wrap = lambda text, lines=None: textwrap.wrap(text, width, initial_indent="•  ", subsequent_indent="    ",
+                                                      max_lines=lines, placeholder=" …")
+        wanted = [len(wrap(text)) for text in limits] + [min(len(wrap(text)), 2) for text in happenings]
+        given = share_lines(wanted, 2 if happenings else 0, room, keep=len(happenings))
+        body_lines = []
+        for text, lines in zip(limits, given):
+            body_lines += wrap(text, lines) if lines else []
+        if happenings:
+            body_lines += ["", "◆  " + t["events"] + ":"]
+            for text, lines in zip(happenings, given[len(limits):]):
+                body_lines += wrap(text, lines) if lines else []
+        if body_size("\n".join(body_lines)).x1 <= panel.x1:
+            break
     return fig
 
 
