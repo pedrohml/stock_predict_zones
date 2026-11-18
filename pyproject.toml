@@ -1,0 +1,15 @@
+[project]
+name = "ai-stock-test"
+version = "0.1.0"
+description = "Support and resistance zones with probabilities from price candles"
+readme = "README.md"
+authors = [
+    { name = "Pedro Lira", email = "pedrohml@gmail.com" }
+]
+requires-python = ">=3.15"
+dependencies = [
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.5",
+    "pandas>=3.1.1",
+    "yfinance>=1.8.0",
+]
