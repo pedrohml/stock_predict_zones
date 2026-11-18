@@ -16,11 +16,14 @@ wheels/
 # Saved projections (local history, see README)
 projections/
 
-# run_pipeline.py outputs when run with the default --out-dir (the repo root)
+# run_pipeline.py (`zones`) outputs: one folder per run
+runs/
+
+# Files written into the repo root by the step-by-step commands of the README
+# or by `--out-dir .`
 /*_input.json
 /*_projection.json
 /*.png
-/.input.json.part
 
 # Subagent worktrees
 .claude/worktrees/

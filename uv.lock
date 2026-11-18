@@ -11,33 +11,6 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "ai-stock-test"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "matplotlib" },
-    { name = "numpy" },
-    { name = "pandas" },
-    { name = "yfinance" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "matplotlib", specifier = ">=3.11.2" },
-    { name = "numpy", specifier = ">=2.5.5" },
-    { name = "pandas", specifier = ">=3.1.1" },
-    { name = "yfinance", specifier = ">=1.8.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=9.2.0" }]
-
-[[package]]
 name = "beautifulsoup4"
 version = "4.15.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1126,6 +1099,33 @@ sdist = { url = "https://files.pythonhosted.org/packages/1f/52/ee5646b65d98a252e
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cd/65/7fae69a095696195334a934eab23aeb12e2715e6c3f08025d2f91942750e/soupsieve-4.1.1-py3-none-any.whl", hash = "sha256:8ff3422dab0b720fb667ee79864d80531a0e57994a13eb701697719ffcb751f6", size = 55089, upload-time = "2026-11-14T17:23:31.001Z" },
 ]
+
+[[package]]
+name = "stock-predict-zones"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "matplotlib" },
+    { name = "numpy" },
+    { name = "pandas" },
+    { name = "yfinance" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "matplotlib", specifier = ">=3.11.2" },
+    { name = "numpy", specifier = ">=2.5.5" },
+    { name = "pandas", specifier = ">=3.1.1" },
+    { name = "yfinance", specifier = ">=1.8.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=9.2.0" }]
 
 [[package]]
 name = "typing-extensions"

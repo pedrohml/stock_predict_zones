@@ -48,7 +48,15 @@ cd stock_predict_zones
 uv sync
 ```
 
-`uv sync` installs the four declared dependencies: `yfinance`, `matplotlib`, `numpy` and `pandas`.
+`uv sync` installs the four declared dependencies (`yfinance`, `matplotlib`, `numpy` and `pandas`) and the `zones` command, which is `run_pipeline.py`. Inside the repository run it as `uv run zones`.
+
+To have `zones` in any directory, install it once from the repository folder:
+
+```bash
+uv tool install --editable .    # undo with: uv tool uninstall stock-predict-zones
+```
+
+The install must be editable. `zones` keeps running the scripts and the skill of this checkout, so edits and `git pull` take effect at once, and the folder must stay where it is. If the shell does not find `zones` afterwards, run `uv tool update-shell` and open a new terminal. Output folders and relative paths such as `--input` and `--out-dir` are taken from the directory you are in, not from the repository.
 
 Tests: `uv run pytest` runs the offline suite in `tests/` (no network, a few seconds). It does not exercise the Yahoo Finance download.
 
@@ -59,10 +67,26 @@ Step 2 needs Claude with the skill in `.claude/skills/reversal-zones-projection/
 One command, from ticker to chart (needs [Claude Code](https://claude.com/claude-code) installed and signed in):
 
 ```bash
-uv run python run_pipeline.py PETR4.SA --horizon 1-3m
+uv run zones PETR4.SA --open          # plain `zones PETR4.SA --open` after the global install
 ```
 
-It runs the three steps below in order, validates the projection with `rz.py check` before plotting, and prints where the files are: `petr4_input.json`, `petr4_projection.json` and `petr4.png`. Names come from the ticker, lowercased and without the exchange suffix. Step 2 takes about 2 to 6 minutes (longest with `--research deep`); progress goes to standard error.
+It runs the three steps below in order, validates the projection with `rz.py check` before plotting, prints where the files are and, with `--open`, shows the chart in your default image viewer. `--horizon` and the other step-1 options work here too (the default horizon is `1-3m`). Step 2 takes about 2 to 6 minutes (longest with `--research deep`); progress goes to standard error. `uv run python run_pipeline.py ...` is the same command.
+
+Each run gets a new folder under the current directory:
+
+```
+runs/
+└── PETR4.SA/
+    ├── 2026-11-18T1515_1-3m/
+    │   ├── input.json
+    │   ├── projection.json
+    │   └── chart.png
+    └── 2026-11-18T1515_1-3m_2/     the same input run a second time
+```
+
+The timestamp is the input's `now.time` (the last candle, in the exchange's local time), followed by the horizon, so folders sort by date. Nothing is overwritten: a name already taken gets `_2`, `_3`, ... A run that fails in step 2 leaves its folder with `input.json` only, ready for `--input`. `runs/` is in `.gitignore` and is only this command's output: delete any of it at any time. The record used for scoring later is the separate [`projections/`](#saved-projections) folder.
+
+With `--out-dir DIR` the files go exactly into `DIR` instead, named after the ticker, lowercased and without the exchange suffix (`petr4_input.json`, `petr4_projection.json`, `petr4.png`), and the next run of that ticker replaces them. `--out-dir .` is the behaviour of earlier versions.
 
 While Claude works, each stage of the skill gets one line with the time elapsed, and the step ends with the duration, the number of turns and the cost:
 
@@ -84,11 +108,12 @@ A stage that happens again says so (`adjusting the zones`, `simulating again (rz
 | Option | Default | Meaning |
 |---|---|---|
 | `TICKER` and any `build_prompt.py` option | | Passed to step 1 untouched (`--horizon`, `--research`, `--event`, `--language`, ...). See [Step 1](#step-1-build_promptpy). |
-| `--out-dir DIR` | current directory | Where the three files go. |
-| `--name STEM` | from the ticker | File name stem. |
-| `--input FILE` | none | Use an existing input JSON and skip step 1 (no download). |
-| `--projection FILE` | none | Use an existing projection JSON and skip step 2. Needs `--input`. |
-| `--chart FILE` | `STEM.png` | Chart file. The extension picks the format. |
+| `--out-dir DIR` | a new `runs/TICKER/TIME_HORIZON/` | Put the files exactly in `DIR`, as `STEM_input.json`, `STEM_projection.json` and `STEM.png`. Files given with `--input` and `--projection` stay where they are. |
+| `--name STEM` | none in a run folder, the ticker with `--out-dir` | File name stem. In a run folder it turns `input.json`, `projection.json`, `chart.png` into `STEM_input.json`, `STEM_projection.json`, `STEM.png`. |
+| `--input FILE` | none | Use an existing input JSON and skip step 1 (no download). The run folder gets a copy. |
+| `--projection FILE` | none | Use an existing projection JSON and skip step 2. Needs `--input`. The run folder gets a copy. |
+| `--chart FILE` | `chart.png` in the run folder, `STEM.png` with `--out-dir` | Chart file. The extension picks the format. |
+| `--open` | off | Open the chart in the default viewer when the run succeeds. A viewer that cannot be started is only a warning. |
 | `--model NAME` | Claude Code's own | Model for the headless run. |
 | `--timeout SECONDS` | `1800` | Give up on Claude Code after this long. |
 | `--quiet` | off | No line per stage during step 2. Headers, errors and the duration and cost line stay. |
@@ -96,9 +121,13 @@ A stage that happens again says so (`adjusting the zones`, `simulating again (rz
 | `--no-save` | off | Do not keep the new projection under `projections/` (see [Saved projections](#saved-projections)). |
 
 ```bash
-uv run python run_pipeline.py --input petr4_input.json                                     # project and plot again, no download
-uv run python run_pipeline.py --input petr4_input.json --projection petr4_projection.json  # plot again only
+RUN=runs/PETR4.SA/2026-11-18T1515_1-3m
+uv run zones --input $RUN/input.json                                         # project and plot again, no download
+uv run zones --input $RUN/input.json --projection $RUN/projection.json       # plot again only
+uv run zones --input $RUN/input.json --projection $RUN/projection.json --chart dark.svg --theme dark
 ```
+
+The first two make a new, complete run folder each (`..._2`, then `..._3`), so the earlier chart stays. The third writes only `dark.svg`: plotting again into a named `--chart` creates no folder.
 
 Step 2 runs `claude -p` in this repository without bypassing permissions. Claude gets only the skill, the helper script and a throwaway work folder to write in (it can also read files of this repository), plus web search and page fetching when `--research` is not `none`; anything else is denied.
 
@@ -323,7 +352,7 @@ projections/
 - Nothing is overwritten. Projecting the same input again adds a `_2`, `_3`, ... folder.
 - `save` refuses a projection that fails `check`, or whose ticker or time does not match the input.
 - `rz.py list` prints one line per saved projection with its horizon's last date and whether that date has passed (`ended`) or not (`open`). Only `ended` projections can be scored in full.
-- `run_pipeline.py` saves each projection it makes the same way, once it has passed `check`, and prints the folder. It does not save when `--projection` reuses an existing file or `--no-save` is given.
+- `run_pipeline.py` (`zones`) saves each projection it makes the same way, once it has passed `check`, and prints the folder. It does not save when `--projection` reuses an existing file or `--no-save` is given. Its own `runs/` folders use the same names but are a different thing: working output that can be deleted, while `projections/` is the record.
 - The folder is `projections/` in the directory the command runs from. Set `RZ_PROJECTIONS_DIR`, or pass a folder as the last argument, to keep them elsewhere.
 - `projections/` is in `.gitignore`: the history is local to your machine. Remove that line if you want to commit it.
 
@@ -450,7 +479,7 @@ The simulation knows nothing about chart levels. The skill may therefore move a 
 stock_predict_zones/
 ├── build_prompt.py                 step 1: Yahoo Finance to input JSON
 ├── plot_projection.py              step 3: input + projection to image
-├── run_pipeline.py                 all steps in one command (step 2 through headless Claude Code)
+├── run_pipeline.py                 all steps in one command, also installed as `zones` (step 2 through headless Claude Code)
 ├── .claude/skills/reversal-zones-projection/
 │   ├── SKILL.md                    step 2: the skill
 │   └── scripts/rz.py               its helper: levels, simulation, validation, saving
@@ -459,7 +488,8 @@ stock_predict_zones/
 │   ├── trade_entries.md            optional prompt: three ranked trade setups from one run
 │   └── trade_entries.schema.json   JSON Schema of its reply
 ├── projections/                    every projection made, with its input (local, not committed)
-├── pyproject.toml                  dependencies and Python version
+├── runs/                           one folder per `zones` run: input, projection, chart (local, not committed)
+├── pyproject.toml                  dependencies, Python version and the `zones` command
 ├── uv.lock
 └── README.md
 ```
