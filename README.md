@@ -64,6 +64,23 @@ uv run python run_pipeline.py PETR4.SA --horizon 1-3m
 
 It runs the three steps below in order, validates the projection with `rz.py check` before plotting, and prints where the files are: `petr4_input.json`, `petr4_projection.json` and `petr4.png`. Names come from the ticker, lowercased and without the exchange suffix. Step 2 can take several minutes; progress goes to standard error.
 
+While Claude works, each stage of the skill gets one line with the time elapsed, and the step ends with the duration, the number of turns and the cost:
+
+```text
+[2/4] Projection: Claude Code runs the skill (research: none). This can take several minutes; timeout 1800 s
+      reading the skill's instructions                    0:02
+      reading the input                                   0:04
+      measuring the candles (rz.py levels)                0:08
+      ... still running                                   0:39
+      choosing zones                                      0:58
+      simulating price paths (rz.py sim)                  1:02
+      writing the projection                              2:30
+      validating (rz.py check)                            2:33
+      done in 2:39 · 9 turns · $0.80
+```
+
+A stage that happens again says so (`adjusting the zones`, `simulating again (rz.py sim, run 2)`). With web research each search shows its query and each page its host, never the content. `... still running` appears after 30 seconds without a new line. Turns and cost are the figures Claude Code reports for the run, and either is left out when it reports none. `--quiet` drops the stage lines and keeps the step headers, errors and the last line.
+
 | Option | Default | Meaning |
 |---|---|---|
 | `TICKER` and any `build_prompt.py` option | | Passed to step 1 untouched (`--horizon`, `--research`, `--event`, `--language`, ...). See [Step 1](#step-1-build_promptpy). |
@@ -74,6 +91,7 @@ It runs the three steps below in order, validates the projection with `rz.py che
 | `--chart FILE` | `STEM.png` | Chart file. The extension picks the format. |
 | `--model NAME` | Claude Code's own | Model for the headless run. |
 | `--timeout SECONDS` | `1800` | Give up on Claude Code after this long. |
+| `--quiet` | off | No line per stage during step 2. Headers, errors and the duration and cost line stay. |
 | `--theme`, `--lang`, `--candles`, `--dpi` | step 3's own | Passed to `plot_projection.py` only when given. |
 | `--no-save` | off | Do not keep the new projection under `projections/` (see [Saved projections](#saved-projections)). |
 

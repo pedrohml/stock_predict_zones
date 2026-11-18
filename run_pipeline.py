@@ -15,18 +15,23 @@ Options this script does not know (the ticker, --horizon, --research, --event,
 
 Step 2 runs `claude -p` in this repository with a narrow tool allowlist: the
 skill, the helper script, and reads and writes inside a throwaway work folder
-(plus web search when the input's `research` is not `none`).
+(plus web search when the input's `research` is not `none`). While it runs,
+one line per stage of the skill goes to standard error, then the duration,
+turns and cost that Claude Code reports; --quiet leaves only that last line.
 
 The result is analysis for study, not investment advice.
 """
 import argparse
 import json
+import queue
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+import urllib.parse
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -36,8 +41,9 @@ SKILL = "reversal-zones-projection"
 RZ = ROOT / ".claude" / "skills" / SKILL / "scripts" / "rz.py"
 CLAUDE = "claude"
 DEFAULT_TIMEOUT = 1800   # seconds; a run with research usually takes a few minutes
-HEARTBEAT = 30           # seconds between "still running" lines
+HEARTBEAT = 30           # seconds without a progress line before "still running"
 TAIL_LINES = 15
+WORK_INPUT, WORK_PROJECTION = "input.json", "projection.json"   # names inside the work folder
 
 
 class PipelineError(Exception):
@@ -141,7 +147,7 @@ def claude_command(input_path, projection_path, work, research, model=None,
         allowed += ["WebSearch", "WebFetch"]
     command = [
         CLAUDE, "-p", claude_prompt(input_path, projection_path, work, python),
-        "--output-format", "json",
+        "--output-format", "stream-json", "--verbose",   # one JSON event per line (needs --verbose)
         "--permission-mode", "dontAsk",
         "--strict-mcp-config",
         "--add-dir", str(work),
@@ -153,61 +159,300 @@ def claude_command(input_path, projection_path, work, research, model=None,
     return command
 
 
-def call_claude(command, timeout, cwd=ROOT):
-    """The only place that starts Claude Code. Returns (exit code, stdout, stderr)."""
+def clock(seconds):
+    """95.4 -> '1:35'."""
+    seconds = int(seconds)
+    return f"{seconds // 60}:{seconds % 60:02d}"
+
+
+def printable(text, limit=200):
+    """Text that came from the model, safe to show on one terminal line."""
+    return "".join(ch if ch.isprintable() else " " for ch in str(text))[:limit].strip()
+
+
+def is_number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+# The skill's workflow, recognised by the tool call that starts each stage:
+# (first time, later times). None: said once only.
+STAGES = {
+    "input": ("reading the input", None),
+    "skill": ("reading the skill's instructions", None),
+    "levels": ("measuring the candles (rz.py levels)", "measuring the candles again (rz.py levels)"),
+    "zones": ("choosing zones", "adjusting the zones"),
+    "sim": ("simulating price paths (rz.py sim)", "simulating again (rz.py sim, run {n})"),
+    "projection": ("writing the projection", "revising the projection"),
+    "check": ("validating (rz.py check)", "validating again (rz.py check, run {n})"),
+}
+HELPER_CALL = re.compile(r"rz\.py['\"]?\s+(levels|sim|check)\b")
+LABEL_WIDTH = 50
+
+
+class Progress:
+    """Turns Claude Code's event stream (one JSON object per line) into a few
+    calm lines on stderr: one per stage of the skill, not one per tool call."""
+
+    def __init__(self, quiet=False):
+        self.quiet = quiet
+        self.started = self.last_line = time.monotonic()
+        self.seen, self.checks, self.counts = set(), set(), {}
+        self.previous, self.searches = None, 0
+
+    def elapsed(self):
+        return time.monotonic() - self.started
+
+    def line(self, label):
+        self.last_line = time.monotonic()
+        if not self.quiet:
+            if len(label) > LABEL_WIDTH:
+                label = label[:LABEL_WIDTH - 3] + "..."
+            say(f"      {label:<{LABEL_WIDTH}} {clock(self.elapsed()):>5}")
+
+    def beat(self):
+        """Called regularly while Claude runs: a sign of life after a long silence."""
+        if time.monotonic() - self.last_line >= HEARTBEAT:
+            self.line("... still running")
+
+    def feed(self, text):
+        """One line of the stream. Progress is a courtesy, so anything that is
+        not an event this class knows (other event types, other tools, text
+        that is not JSON at all) is skipped without a word."""
+        try:
+            event = json.loads(text)
+            if event.get("type") not in ("assistant", "user"):
+                return
+            for block in event["message"]["content"]:
+                if isinstance(block, dict):
+                    self.block(block)
+        except (ValueError, KeyError, TypeError, AttributeError):
+            pass
+
+    def block(self, block):
+        kind, ident = block.get("type"), block.get("id")
+        if kind == "tool_result":
+            if block.get("tool_use_id") in self.checks and result_text(block).strip() != "OK":
+                self.line("the check found problems to fix")
+            return
+        if kind not in ("tool_use", "server_tool_use") or (ident is not None and ident in self.seen):
+            return
+        self.seen.add(ident)
+        name, given = block.get("name"), block.get("input")
+        given = given if isinstance(given, dict) else {}
+        if name == "WebSearch":     # the query only, never what the search returned
+            self.searches += 1
+            self.previous = None
+            self.line(f"web search {self.searches}: {printable(given.get('query', ''))}")
+        elif name == "WebFetch":    # the host only, never the page
+            self.previous = None
+            host = urllib.parse.urlsplit(str(given.get("url", ""))).hostname
+            self.line(f"reading a web page ({printable(host or 'unknown host')})")
+        else:
+            stage = self.stage(name, given)
+            if stage and stage != self.previous:   # three edits in a row are one stage
+                self.previous = stage
+                count = self.counts[stage] = self.counts.get(stage, 0) + 1
+                first, later = STAGES[stage]
+                if count == 1:
+                    self.line(first)
+                elif later:
+                    self.line(later.format(n=count))
+            if stage == "check":
+                self.checks.add(ident)
+
+    @staticmethod
+    def stage(name, given):
+        if name == "Skill":
+            return "skill"
+        if name == "Bash":
+            found = HELPER_CALL.search(str(given.get("command", "")))
+            return found.group(1) if found else None
+        file = str(given.get("file_path", "")).replace("\\", "/").rsplit("/", 1)[-1]
+        if name == "Read":
+            return {WORK_INPUT: "input", "SKILL.md": "skill"}.get(file)
+        if name in ("Write", "Edit"):
+            return "projection" if file == WORK_PROJECTION else "zones" if "zone" in file.lower() else None
+        return None
+
+
+def result_text(block):
+    """The text of a tool_result block, whose content is a string or a list of parts."""
+    content = block.get("content")
+    if isinstance(content, list):
+        return "".join(str(part.get("text", "")) for part in content if isinstance(part, dict))
+    return str(content or "")
+
+
+def call_claude(command, timeout, progress=None, cwd=ROOT):
+    """The only place that starts Claude Code. Returns (exit code, stdout, stderr).
+
+    Two threads drain the pipes, so neither can fill up and stall Claude. This
+    thread takes stdout line by line from a queue, hands each line to
+    `progress` and watches the clock itself, so the timeout fires whether the
+    stream is silent or busy."""
+    progress = progress or Progress()
     started = time.monotonic()
     try:
         process = subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL,
-                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   text=True, encoding="utf-8", errors="replace")
     except FileNotFoundError:
         raise PipelineError(
             f"'{command[0]}' was not found. Step 2 needs Claude Code on PATH "
             "(https://claude.com/claude-code). To skip it, pass --projection FILE.")
-    while True:
-        left = timeout - (time.monotonic() - started)
+    lines, out, err = queue.Queue(), [], []
+
+    def read_stdout():
+        for line in process.stdout:
+            lines.put(line)
+        lines.put(None)
+
+    readers = [threading.Thread(target=read_stdout, daemon=True),
+               threading.Thread(target=lambda: err.append(process.stderr.read()), daemon=True)]
+    for reader in readers:
+        reader.start()
+    streaming, timed_out = True, False
+    try:
+        while True:
+            left = timeout - (time.monotonic() - started)
+            if left <= 0:
+                timed_out = True
+                break
+            wait = max(0.01, min(left, 1.0, HEARTBEAT / 4))
+            if streaming:
+                try:
+                    line = lines.get(timeout=wait)
+                except queue.Empty:
+                    line = ""
+                if line is None:
+                    streaming = False       # stdout closed: only the exit code is left
+                elif line:
+                    out.append(line)
+                    progress.feed(line)
+            else:
+                try:
+                    process.wait(timeout=wait)
+                    break
+                except subprocess.TimeoutExpired:
+                    pass
+            progress.beat()
+    finally:                                # also on Ctrl-C: never leave Claude running
+        if process.poll() is None:
+            process.kill()
+        process.wait()
+        for reader in readers:
+            reader.join(timeout=5)
+        for pipe, reader in zip((process.stdout, process.stderr), readers):
+            if not reader.is_alive():
+                pipe.close()
+    while not lines.empty():
+        line = lines.get_nowait()
+        if line:
+            out.append(line)
+    out, err = "".join(out), "".join(err)
+    if timed_out:
+        raise PipelineError(
+            f"Claude Code did not finish within {timeout:g} s (raise it with --timeout). "
+            "Last output:\n" + tail(readable(out) or err))
+    return process.returncode, out, err
+
+
+def events(stdout):
+    """The JSON objects in Claude's output: one per line (stream-json), or the
+    whole text as one object (plain json). Lines that are not JSON come back as str."""
+    try:
+        whole = json.loads(stdout)
+        if isinstance(whole, dict):
+            return [whole]
+    except ValueError:
+        pass
+    found = []
+    for line in stdout.splitlines():
         try:
-            out, err = process.communicate(timeout=max(0.1, min(HEARTBEAT, left)))
-            return process.returncode, out, err
-        except subprocess.TimeoutExpired:
-            elapsed = time.monotonic() - started
-            if elapsed >= timeout:
-                process.kill()
-                out, err = process.communicate()
-                raise PipelineError(
-                    f"Claude Code did not finish within {timeout:g} s (raise it with --timeout). "
-                    "Last output:\n" + tail(out or err))
-            say(f"      ... still running ({elapsed:.0f} s)")
+            event = json.loads(line)
+        except ValueError:
+            event = None
+        found.append(event if isinstance(event, dict) else line)
+    return found
+
+
+def claude_result(stdout):
+    """The final result event (cost, turns, is_error, permission_denials), or None."""
+    for event in reversed(events(stdout)):
+        if isinstance(event, dict) and (event.get("type") == "result" or (
+                "type" not in event and ("result" in event or "is_error" in event))):
+            return event
+    return None
+
+
+def readable(stdout):
+    """What a person can read in the stream: Claude's own sentences and any
+    line that is not an event. Used for the tail of an error message."""
+    kept = []
+    for event in events(stdout):
+        if isinstance(event, str):
+            kept.append(event[:300])
+        elif event.get("type") == "assistant":
+            content = (event.get("message") or {}).get("content")
+            for block in content if isinstance(content, list) else []:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    kept.append(str(block.get("text", "")))
+    return "\n".join(kept)
 
 
 def claude_reply(stdout):
-    """(final text, failed?) from the --output-format json envelope, or the raw text."""
-    try:
-        envelope = json.loads(stdout)
-    except ValueError:
-        return stdout, False
-    if not isinstance(envelope, dict):
-        return stdout, False
-    text = str(envelope.get("result") or "")
-    denied = envelope.get("permission_denials") or []
+    """(final text, failed?) from the result event, or whatever is readable without one."""
+    result = claude_result(stdout)
+    if result is None:
+        return readable(stdout), False
+    failed = bool(result.get("is_error"))
+    text = str(result.get("result") or "")
+    if failed and not text:    # e.g. error_max_turns carries no sentence
+        text = " ".join(str(part) for part in [result.get("subtype"), *(result.get("errors") or [])] if part)
+    denied = result.get("permission_denials") or []
     if denied:
         names = sorted({str(d.get("tool_name", "?")) for d in denied if isinstance(d, dict)})
         text += f"\n({len(denied)} tool call(s) denied by the allowlist: {', '.join(names)})"
-    return text, bool(envelope.get("is_error"))
+    return text, failed
 
 
-def project(input_path, data, projection_path, timeout, model=None):
+def summary(result, seconds, failed=False):
+    """'done in 2:17 · 8 turns · $0.75', with only the figures Claude Code reported."""
+    result = result or {}
+    parts = [("stopped after " if failed else "done in ") + clock(seconds)]
+    turns, cost = result.get("num_turns"), result.get("total_cost_usd")
+    if is_number(turns):
+        parts.append(f"{turns} turn" + ("" if turns == 1 else "s"))
+    if is_number(cost):
+        parts.append(f"${cost:.2f}")
+    return " · ".join(parts)
+
+
+def stream_hint(result, err):
+    """An older Claude Code refuses the streaming flags before doing any work."""
+    if result is None and re.search(r"stream-json|--verbose|unknown option|output-format", err or ""):
+        return ("\nStep 2 reads Claude Code's event stream (--output-format stream-json --verbose). "
+                "If this version rejects those flags, update Claude Code.")
+    return ""
+
+
+def project(input_path, data, projection_path, timeout, model=None, quiet=False):
     """Run the skill headless in a throwaway folder, then keep only the projection."""
     with tempfile.TemporaryDirectory(prefix="rz_pipeline_") as folder:
         work = Path(folder).resolve()
-        work_input, work_projection = work / "input.json", work / "projection.json"
+        work_input, work_projection = work / WORK_INPUT, work / WORK_PROJECTION
         shutil.copyfile(input_path, work_input)
         command = claude_command(work_input, work_projection, work,
                                  data.get("research", "none"), model)
-        code, out, err = call_claude(command, timeout)
+        progress = Progress(quiet)
+        code, out, err = call_claude(command, timeout, progress)
+        result = claude_result(out)
         reply, failed = claude_reply(out)
-        if code != 0 or failed:
+        failed = failed or code != 0
+        say("      " + summary(result, progress.elapsed(), failed))
+        if failed:
             raise PipelineError(f"Claude Code failed (exit {code}). Last output:\n"
-                                + tail(reply or err))
+                                + tail(reply or err) + stream_hint(result, err))
         if not work_projection.is_file():
             raise PipelineError("Claude Code finished without writing the projection file. "
                                 "Last output:\n" + tail(reply or err))
@@ -279,6 +524,9 @@ def parse(argv=None):
     claude.add_argument("--no-save", action="store_true",
                         help="do not keep the new projection under projections/ "
                              "(see `rz.py save`)")
+    claude.add_argument("--quiet", action="store_true",
+                        help="no line per stage while Claude Code works; step headers, "
+                             "errors and the duration and cost line stay")
     claude.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT, metavar="SECONDS",
                         help=f"give up on Claude Code after this long (default: {DEFAULT_TIMEOUT})")
     chart = parser.add_argument_group(
@@ -319,9 +567,7 @@ def pipeline(args, passthrough):
         research = data.get("research", "none")
         say(f"[2/4] Projection: Claude Code runs the skill (research: {research}). "
             f"This can take several minutes; timeout {args.timeout:g} s")
-        started = time.monotonic()
-        project(input_path, data, projection_path, args.timeout, args.model)
-        say(f"      done in {time.monotonic() - started:.0f} s")
+        project(input_path, data, projection_path, args.timeout, args.model, args.quiet)
 
     say("[3/4] Check: rz.py check")
     check(projection_path)
