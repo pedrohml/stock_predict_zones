@@ -12,3 +12,9 @@ wheels/
 
 # macOS
 .DS_Store
+
+# run_pipeline.py outputs when run with the default --out-dir (the repo root)
+/*_input.json
+/*_projection.json
+/*.png
+/.input.json.part

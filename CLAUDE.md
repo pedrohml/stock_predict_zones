@@ -16,13 +16,14 @@ build_prompt.py  ──input.json──►  reversal-zones-projection skill (Cla
 
 ```bash
 uv sync                                                                      # Python 3.12+ (.python-version)
+uv run python run_pipeline.py PETR4.SA --horizon 1-3m                        # all steps: Yahoo, headless `claude -p`, rz.py check, chart
 uv run python build_prompt.py PETR4.SA --horizon 1-3m -o petr4_input.json    # step 1, hits Yahoo Finance
 uv run python plot_projection.py petr4_input.json petr4_projection.json -o petr4.png   # step 3
 uv run pytest                                                                # all tests, offline, a few seconds
 uv run pytest tests/test_rz.py::test_sim_output_structure                    # a single test
 ```
 
-The tests in `tests/` never touch the network: they cover the pure functions of `build_prompt.py`, `rz.py`, a plot smoke test and the cross-file contracts below (`tests/test_contracts.py`). `tests/fixtures/input.json` is synthetic; regenerate it with `uv run python tests/fixtures/make_input.py`. There is no linter or CI, and nothing tests the Yahoo download itself, so still run the scripts end to end after changing them.
+The tests in `tests/` never touch the network: they cover the pure functions of `build_prompt.py`, `rz.py`, a plot smoke test, `run_pipeline.py` with Yahoo and Claude stubbed, and the cross-file contracts below (`tests/test_contracts.py`). `tests/fixtures/input.json` is synthetic; regenerate it with `uv run python tests/fixtures/make_input.py`. There is no linter or CI, and nothing tests the Yahoo download itself, so still run the scripts end to end after changing them.
 
 Step 2 is the `reversal-zones-projection` project skill: given an input JSON, Claude follows `.claude/skills/reversal-zones-projection/SKILL.md`. Its helper can also be run directly:
 
@@ -42,6 +43,7 @@ Use `rz.py check` on any projection JSON you write or edit by hand.
 - **`build_prompt.py`** (step 1): `PRESETS` maps each horizon to a main series, an optional coarser context series, the `close_basis` and the probability meaning. The context series is filtered to candles that start *before* the main series, so the two never overlap. `render()` uses placeholder substitution to keep each candle row and event on one line inside otherwise indented JSON.
 - **`.claude/skills/reversal-zones-projection/`** (step 2): `SKILL.md` is the prompt that defines the workflow, the zone-selection rules, the limits on adjusting simulated probabilities and the exact output schema. `scripts/rz.py` is its helper (Monte Carlo with a fixed seed, so the same input and zones give the same baseline).
 - **`plot_projection.py`** (step 3): one `build()` function that draws five matplotlib axes (candles + zones, probability bars sharing the price axis, scenario bar, notes, side panel). `THEMES` and `TEXT` hold all colours and translated strings.
+- **`run_pipeline.py`** (all steps): a thin orchestrator that shares no code with the others. It runs the two scripts and `rz.py check` as subprocesses and step 2 as `claude -p` (`claude_command()` holds the exact flags and the tool allowlist, `call_claude()` is the only place that starts Claude). Options it does not declare go to `build_prompt.py` untouched, so a new step-1 flag needs no change here; plot options are forwarded only when given, so step 3 keeps its own defaults. File names come from `asset.ticker` in the input JSON. The tests stub `run` (for Yahoo) and `call_claude`.
 
 ### Contracts that span files
 
@@ -59,7 +61,7 @@ The three pieces share no code, only JSON conventions. Changing one side silentl
 
 - Two unrelated language settings: `build_prompt.py --language` (default `en`) sets the language of the projection's free text; `plot_projection.py --lang` (default `pt`) only translates the chart's own labels.
 - Prices are split-adjusted but deliberately **not** dividend-adjusted (`auto_adjust=False`); the `drop` shock in `rz.py` and the chart footer depend on that.
-- The project is not a package: `pyproject.toml` has no build system or entry points, only dependencies. The code is the two root scripts, run with `uv run python`.
+- The project is not a package: `pyproject.toml` has no build system or entry points, only dependencies. The code is the three root scripts, run with `uv run python`.
 - The skill is a project skill, so Claude Code in this repo always uses the current files. A copy installed elsewhere (claude.ai, `~/.claude/skills/`) does not follow edits made here.
 - `rz.py` must not be rewritten per run or have its seed changed: reproducible baselines are a design requirement.
 - Session and week-end logic assumes a Monday-to-Friday exchange, so crypto tickers get wrong `forming` labels (listed under Known limits in the README).

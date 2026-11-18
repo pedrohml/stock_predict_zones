@@ -55,6 +55,35 @@ Step 2 needs Claude with the skill in `.claude/skills/reversal-zones-projection/
 
 ## Quick start
 
+One command, from ticker to chart (needs [Claude Code](https://claude.com/claude-code) installed and signed in):
+
+```bash
+uv run python run_pipeline.py PETR4.SA --horizon 1-3m
+```
+
+It runs the three steps below in order, validates the projection with `rz.py check` before plotting, and prints where the files are: `petr4_input.json`, `petr4_projection.json` and `petr4.png`. Names come from the ticker, lowercased and without the exchange suffix. Step 2 can take several minutes; progress goes to standard error.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `TICKER` and any `build_prompt.py` option | | Passed to step 1 untouched (`--horizon`, `--research`, `--event`, `--language`, ...). See [Step 1](#step-1-build_promptpy). |
+| `--out-dir DIR` | current directory | Where the three files go. |
+| `--name STEM` | from the ticker | File name stem. |
+| `--input FILE` | none | Use an existing input JSON and skip step 1 (no download). |
+| `--projection FILE` | none | Use an existing projection JSON and skip step 2. Needs `--input`. |
+| `--chart FILE` | `STEM.png` | Chart file. The extension picks the format. |
+| `--model NAME` | Claude Code's own | Model for the headless run. |
+| `--timeout SECONDS` | `1800` | Give up on Claude Code after this long. |
+| `--theme`, `--lang`, `--candles`, `--dpi` | step 3's own | Passed to `plot_projection.py` only when given. |
+
+```bash
+uv run python run_pipeline.py --input petr4_input.json                                     # project and plot again, no download
+uv run python run_pipeline.py --input petr4_input.json --projection petr4_projection.json  # plot again only
+```
+
+Step 2 runs `claude -p` in this repository without bypassing permissions. Claude gets only the skill, the helper script and a throwaway work folder to read and write in, plus web search when `--research` is not `none`; anything else is denied.
+
+The same thing by hand, one step at a time:
+
 ```bash
 # 1. Candles and request for Petrobras, 1 to 3 month horizon
 uv run python build_prompt.py PETR4.SA --horizon 1-3m -o petr4_input.json
@@ -333,6 +362,7 @@ The simulation knows nothing about chart levels. The skill may therefore move a 
 stock_predict_zones/
 ├── build_prompt.py                 step 1: Yahoo Finance to input JSON
 ├── plot_projection.py              step 3: input + projection to image
+├── run_pipeline.py                 all steps in one command (step 2 through headless Claude Code)
 ├── .claude/skills/reversal-zones-projection/
 │   ├── SKILL.md                    step 2: the skill
 │   └── scripts/rz.py               its helper: levels, simulation, validation
