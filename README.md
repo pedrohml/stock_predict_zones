@@ -49,6 +49,8 @@ uv sync
 
 `uv sync` installs the four declared dependencies: `yfinance`, `matplotlib`, `numpy` and `pandas`.
 
+Tests: `uv run pytest` runs the offline suite in `tests/` (no network, a few seconds). It does not exercise the Yahoo Finance download.
+
 Step 2 needs Claude with the skill in `.claude/skills/reversal-zones-projection/`. Claude Code picks it up automatically when run in this repository; other Claude apps need it installed. See [Installing the skill](#installing-the-skill).
 
 ## Quick start

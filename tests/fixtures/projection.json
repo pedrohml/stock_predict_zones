@@ -1,0 +1,65 @@
+{
+  "task": "reversal_zones",
+  "asset": { "ticker": "PETR4.SA", "currency": "BRL" },
+  "as_of": { "time": "2026-11-17T17:36-03:00", "price": 44.06 },
+  "horizon": { "label": "1-3m", "close_basis": "1W", "closes": 13, "first": "2026-11-20", "last": "2027-02-12" },
+
+  "structure": {
+    "trend": "down",
+    "swing": { "low": [28.86, "2025-06-09"], "high": [59.79, "2026-10-19"] },
+    "retraced": 0.51,
+    "from_high": -0.263,
+    "volatility": { "per": "1W", "last_8": 0.085, "last_52": 0.05, "assumed": [0.063, 0.046] }
+  },
+
+  "legend": {
+    "zone": "[from, to]; null means open-ended",
+    "reach": "P(the zone comes into play: price closes into it, or beyond the zone before it)",
+    "turn": "P(the horizon's most extreme close is made here: reached and not broken)",
+    "hold": "turn / reach"
+  },
+
+  "supports": [
+    { "id": "S1", "zone": [43.2, 44.6], "strength": "strong", "reach": 1.00, "turn": 0.20,
+      "evidence": ["Nov 2026 weekly lows 43.23 and 43.65", "Jul-Aug 2026 highs 43.1-44.6, old ceiling", "50% retracement 44.33"] },
+    { "id": "S2", "zone": [40.6, 42.2], "strength": "moderate", "reach": 0.80, "turn": 0.24,
+      "evidence": ["Jun and Aug 2026 lows 40.65-41.01", "61.8% retracement 40.68"] },
+    { "id": "S3", "zone": [37.4, 38.6], "strength": "strong", "reach": 0.56, "turn": 0.24,
+      "evidence": ["Jun-Jul 2026 lows 37.40-37.92", "Jan-Feb 2026 highs 38.2-38.6, old ceiling"] },
+    { "id": "below", "zone": [null, 37.4], "reach": 0.32, "turn": 0.32,
+      "evidence": ["next reference 35.48, the 78.6% retracement"] }
+  ],
+
+  "resistances": [
+    { "id": "R1", "zone": [45.3, 47.1], "strength": "moderate", "reach": 0.69, "turn": 0.18,
+      "evidence": ["weekly closes of 45.30 on 2 and 9 Nov", "weekly highs 45.39 and 45.69 rejected"] },
+    { "id": "R2", "zone": [47.1, 49.6], "strength": "moderate", "reach": 0.51, "turn": 0.20,
+      "evidence": ["Sep 2026 range 47.1-49.6", "38.2% retracement 47.97"] },
+    { "id": "R3", "zone": [50.2, 52.7], "strength": "strong", "reach": 0.31, "turn": 0.17,
+      "evidence": ["Mar-Sep 2026 ceiling 50.2-51.35", "week of 26 Oct opened 51.20, closed 52.71"] },
+    { "id": "above", "zone": [52.7, null], "reach": 0.14, "turn": 0.14,
+      "evidence": ["open gap 54.23-56.91"] }
+  ],
+
+  "scenarios": [
+    { "name": "breakdown", "p": 0.50, "low": "below 40.6", "high": "49.6 or lower" },
+    { "name": "breakout", "p": 0.25, "low": "40.6 or higher", "high": "above 49.6" },
+    { "name": "range", "p": 0.19, "low": "40.6 or higher", "high": "49.6 or lower" },
+    { "name": "whipsaw", "p": 0.06, "low": "below 40.6", "high": "above 49.6" }
+  ],
+
+  "events": [
+    { "date": "2026-12-21", "what": "ex-dividend", "effect": "price drops by the payout, about 1.19", "certainty": "medium" }
+  ],
+
+  "drivers": [
+    { "what": "Brent fell from about US$118 to about US$98", "pull": "down", "source": "https://example.com/article" }
+  ],
+
+  "confidence": {
+    "level": "low",
+    "limits": ["S1's floor is 2% below the price; the December dividend alone is a 2.7% drop", "oil and fuel-policy news will outweigh chart levels"]
+  },
+
+  "method": "200,000 simulated paths of 13 weekly closes (fat-tailed, weekly volatility 6.3% decaying to 4.6%, 1.19 ex-dividend drop); moved 0.08 from the support tail into S1-S3 and 0.07 from the resistance tail into R1-R3 for clustered evidence"
+}
