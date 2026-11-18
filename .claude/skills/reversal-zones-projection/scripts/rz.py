@@ -158,11 +158,22 @@ def sim(path, zones_path, paths=200_000):
     for key, value in out.items(): print(key, json.dumps(value))
 
 
-def problems(o):
+def problems(o, complete=True):
+    """The rules a projection breaks, one line each; [] when it is sound. Never raises: a file too
+    malformed to judge gets a line saying so. `complete=False` is for drafts: a missing
+    `scenarios` or `confidence` section is skipped instead of reported."""
     bad = []
+    try: rules(o, bad, complete)
+    except (KeyError, IndexError, TypeError, AttributeError, ValueError) as e:
+        bad.append(f"malformed projection, rules not fully checked ({type(e).__name__}: {e})")
+    return bad
+
+
+def rules(o, bad, complete):
     price = o["as_of"]["price"]
     for name in ("supports", "resistances"):
         zs = o[name]
+        if not zs: bad.append(f"{name}: no zones"); continue
         turn, reach = [x["turn"] for x in zs], [x["reach"] for x in zs]
         for i, x in enumerate(zs):
             if abs(reach[i] - sum(turn[i:])) > 0.011: bad.append(f"{x['id']}: reach must equal the sum of turn from here outward")
@@ -172,20 +183,23 @@ def problems(o):
         edges = [e for x in zs for e in (reversed(x["zone"]) if support else x["zone"]) if e is not None]
         if edges != sorted(edges, reverse=support): bad.append(f"{name}: zones must run nearest first without overlapping")
         nearest = zs[0]["zone"]
-        if name == "supports" and nearest[0] > price: bad.append("S1 lies above the price")
-        if name == "resistances" and nearest[1] < price: bad.append("R1 lies below the price")
-    sc = {s["name"]: s["p"] for s in o["scenarios"]}
-    if set(sc) != {"breakdown", "breakout", "range", "whipsaw"}: bad.append("scenarios are breakdown, breakout, range, whipsaw")
+        if name == "supports" and nearest[0] is not None and nearest[0] > price: bad.append("S1 lies above the price")
+        if name == "resistances" and nearest[1] is not None and nearest[1] < price: bad.append("R1 lies below the price")
+    sc = {s["name"]: s["p"] for s in o.get("scenarios", [])}
+    if "scenarios" not in o and not complete: pass
+    elif set(sc) != {"breakdown", "breakout", "range", "whipsaw"}: bad.append("scenarios are breakdown, breakout, range, whipsaw")
     else:
         if abs(sum(sc.values()) - 1) > 0.011: bad.append("scenarios must sum to 1")
         for name, key in (("supports", "breakdown"), ("resistances", "breakout")):
-            zs = o[name]; broken = zs[min(1, len(zs) - 2) + 1]["reach"]   # chance the middle zone breaks
+            zs = o[name]
+            if not zs: continue
+            broken = zs[min(1, len(zs) - 2) + 1]["reach"]   # chance the middle zone breaks
             if abs(sc[key] + sc["whipsaw"] - broken) > 0.021:
                 bad.append(f"{key} + whipsaw must equal {broken}, the reach of the entry after the middle {name[:-1]}")
-    if o["confidence"]["level"] not in ("low", "medium"): bad.append("confidence is low or medium, never high")
+    if "confidence" not in o and not complete: pass
+    elif o.get("confidence", {}).get("level") not in ("low", "medium"): bad.append("confidence is low or medium, never high")
     for dr in o.get("drivers", []):
         if not str(dr.get("source", "")).startswith("http"): bad.append("driver without a source URL")
-    return bad
 
 
 def check(path):

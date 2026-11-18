@@ -366,3 +366,51 @@ def test_check_accepts_an_unadjusted_sim_baseline(rz, capsys, run_sim, zones, pr
     out = run_sim(zones)
     proj = projection_from_sim(out, zones)
     assert run_check(rz, capsys, write_json("baseline.json", proj)) == (0, "OK")
+
+
+# ---- problems: the rules as a function, shared with plot_projection.py ----------
+
+def test_problems_returns_the_violations_check_prints(rz, capsys, projection_data, write_json):
+    assert rz.problems(projection_data) == []
+    confidence_high(projection_data)
+    scenarios_do_not_sum_to_one(projection_data)
+    found = rz.problems(projection_data)
+    assert found == ["scenarios must sum to 1", "confidence is low or medium, never high"]
+    assert run_check(rz, capsys, write_json("broken.json", projection_data)) == (1, "\n".join(found))
+
+
+@pytest.mark.parametrize("section, message", [
+    ("scenarios", "scenarios are breakdown, breakout, range, whipsaw"),
+    ("confidence", "confidence is low or medium, never high"),
+])
+def test_a_missing_section_fails_check_but_not_a_draft(rz, projection_data, section, message):
+    del projection_data[section]
+    assert rz.problems(projection_data) == [message]
+    assert rz.problems(projection_data, complete=False) == []
+
+
+def test_problems_on_a_side_without_zones(rz, projection_data):
+    projection_data["supports"] = []
+    assert rz.problems(projection_data) == ["supports: no zones"]
+    projection_data["supports"] = [{"id": "below", "zone": [None, 40.6], "reach": 0.56, "turn": 0.56,
+                                    "evidence": ["nothing nearer"]}]
+    assert rz.problems(projection_data) == []      # only a tail: 0.50 + 0.06 is its reach
+
+
+@pytest.mark.parametrize("wreck", [
+    lambda p: p.pop("as_of"),
+    lambda p: p.pop("supports"),
+    lambda p: p["supports"][0].pop("turn"),
+    lambda p: p["resistances"][1].update(zone="47.1-49.6"),
+    lambda p: p["resistances"][1].update(reach="half"),
+    lambda p: p.update(scenarios={"range": 1.0}),
+    lambda p: p.update(confidence="low"),
+    lambda p: p.update(drivers=["oil fell"]),
+], ids=["no as_of", "no supports", "no turn", "zone as text", "reach as text", "scenarios mapping",
+        "confidence text", "driver text"])
+def test_problems_never_raises_on_a_malformed_projection(rz, capsys, projection_data, write_json, wreck):
+    wreck(projection_data)
+    found = rz.problems(projection_data)
+    assert found[-1].startswith("malformed projection, rules not fully checked (")
+    code, out = run_check(rz, capsys, write_json("wreck.json", projection_data))
+    assert (code, out) == (1, "\n".join(found))

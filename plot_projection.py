@@ -10,17 +10,22 @@ PROJECTION is the JSON returned by the reversal-zones-projection skill.
 The image format follows the extension of -o: png, svg, pdf or jpg.
 """
 import argparse
+import importlib.util
 import json
+import math
+import os
 import re
 import sys
 import textwrap
 from datetime import date, datetime
+from pathlib import Path
 
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.patheffects as effects
 import matplotlib.pyplot as plt
+from matplotlib.backend_bases import FigureCanvasBase
 from matplotlib.patches import Rectangle
 
 THEMES = {
@@ -76,13 +81,310 @@ TEXT = {
 }
 
 
+# The skill's helper holds the rules of a sound projection (`rz.py check`); the plot applies them too.
+RZ_PATH = Path(__file__).resolve().parent / ".claude" / "skills" / "reversal-zones-projection" / "scripts" / "rz.py"
+MAX_DPI = 1200          # the figure is 14 x 9 inches: more than this needs gigabytes of memory
+ROW_ERRORS_SHOWN = 5    # a broken series repeats the same mistake on every row
+
+
+class Problem(Exception):
+    """Something the user has to fix. Its text goes to stderr as it is, without a traceback."""
+
+
 def load_json(path):
-    with open(path, encoding="utf-8") as handle:
-        return json.load(handle)
+    try:
+        with open(path, encoding="utf-8-sig") as handle:   # utf-8-sig also reads files saved with a BOM
+            text = handle.read()
+    except UnicodeDecodeError:
+        raise Problem(f"{path}: not a UTF-8 text file") from None
+    except OSError as error:
+        raise Problem(f"{path}: cannot read the file ({error.strerror or error})") from None
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as error:
+        hint = ("the file is empty" if not text.strip() else
+                "remove the Markdown code fence around the JSON" if text.lstrip().startswith("```") else
+                f"{error.msg}: line {error.lineno}, column {error.colno}")
+        raise Problem(f"{path}: not valid JSON ({hint})") from None
 
 
 def parse_day(text):
     return datetime.fromisoformat(text).date() if "T" in text else date.fromisoformat(text[:10])
+
+
+# ---- validation: everything build() relies on, checked before any drawing -----
+
+def _is_number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _parses(parser):
+    def test(value):
+        try:
+            return isinstance(value, str) and bool(parser(value))
+        except ValueError:
+            return False
+    return test
+
+
+KINDS = {
+    "object": ("an object", lambda v: isinstance(v, dict)),
+    "list": ("a list", lambda v: isinstance(v, list)),
+    "text": ("a non-empty string", lambda v: isinstance(v, str) and bool(v.strip())),
+    "number": ("a number", _is_number),
+    "share": ("a number from 0 to 1", lambda v: _is_number(v) and 0 <= v <= 1),
+    "count": ("a whole number of at least 1", lambda v: _is_number(v) and v >= 1 and v == int(v)),
+    "day": ("an ISO date such as 2026-12-21 or 2026-11-18T15:15-03:00", _parses(parse_day)),
+    "start": ("an ISO date or date-time string", _parses(datetime.fromisoformat)),
+}
+ABSENT = object()
+
+
+def _shown(value):
+    text = json.dumps(value, ensure_ascii=False, default=str)
+    return text if len(text) <= 60 else text[:57] + "..."
+
+
+class Report:
+    """Collects every error instead of stopping at the first one."""
+
+    def __init__(self):
+        self.errors = []
+
+    def add(self, path, expected, value=ABSENT):
+        self.errors.append(f"{path}: missing, expected {expected}" if value is ABSENT else
+                           f"{path}: expected {expected}, got {_shown(value)}")
+
+    def field(self, node, path, key, kind, optional=False, nullable=False):
+        """node[key] when it has the right kind; otherwise None, with an error recorded
+        unless the field may be left out (optional) or may also be null (nullable)."""
+        value = node.get(key, ABSENT)
+        if (optional or nullable) and value is ABSENT or nullable and value is None:
+            return None
+        if value is ABSENT or not KINDS[kind][1](value):
+            self.add(f"{path}.{key}", KINDS[kind][0], value)
+            return None
+        return value
+
+    def objects(self, node, path, key, optional=False):
+        """[(path, item)] for the objects of the list node[key]; anything else in it is reported."""
+        found = []
+        for i, item in enumerate(self.field(node, path, key, "list", optional) or []):
+            if isinstance(item, dict):
+                found.append((f"{path}.{key}[{i}]", item))
+            else:
+                self.add(f"{path}.{key}[{i}]", "an object", item)
+        return found
+
+
+def validate_input(source, report):
+    """Check the candles file. Returns the names of its series, or None when they cannot all be read."""
+    asset = report.field(source, "input", "asset", "object")
+    if asset is not None:
+        report.field(asset, "input.asset", "ticker", "text")
+    data = report.field(source, "input", "data", "object")
+    if data is None:
+        return None
+    columns = report.field(data, "input.data", "columns", "list")
+    needed = ("start", "open", "high", "low", "close")
+    if columns is not None and not set(needed) <= {c for c in columns if isinstance(c, str)}:
+        report.add("input.data.columns", "the names " + ", ".join(needed), columns)
+        columns = None
+    series = report.objects(data, "input.data", "series")
+    if data.get("series") == []:
+        report.add("input.data.series", "at least one series", [])
+    names = [report.field(one, path, "candles", "text") for path, one in series]
+    for path, one in series:
+        if report.field(one, path, "last_row", "text") not in (None, "forming", "closed"):
+            report.add(f"{path}.last_row", '"forming" or "closed"', one["last_row"])
+        rows = report.field(one, path, "rows", "list")
+        if rows is not None and not rows:
+            report.add(f"{path}.rows", "at least one candle", rows)
+        if not rows or columns is None:
+            continue
+        width, bad = max(columns.index(name) for name in needed) + 1, 0
+        for i, row in enumerate(rows):
+            good = (isinstance(row, list) and len(row) >= width
+                    and KINDS["start"][1](row[columns.index("start")])
+                    and all(_is_number(row[columns.index(name)]) for name in needed[1:]))
+            bad += not good
+            if not good and bad <= ROW_ERRORS_SHOWN:
+                report.add(f"{path}.rows[{i}]", "[start, open, high, low, close] as an ISO date and four numbers", row)
+        if bad > ROW_ERRORS_SHOWN:
+            report.errors.append(f"{path}.rows: and {bad - ROW_ERRORS_SHOWN} more rows like these")
+    complete = isinstance(data.get("series"), list) and len(series) == len(data["series"]) and None not in names
+    return names if complete else None
+
+
+def validate_projection(proj, report):
+    path = "projection"
+    asset = report.field(proj, path, "asset", "object")
+    if asset is not None:
+        report.field(asset, f"{path}.asset", "ticker", "text")
+        report.field(asset, f"{path}.asset", "currency", "text", optional=True)
+    as_of, last = None, None
+    now = report.field(proj, path, "as_of", "object")
+    if now is not None:
+        report.field(now, f"{path}.as_of", "price", "number")
+        as_of = report.field(now, f"{path}.as_of", "time", "day")
+    horizon = report.field(proj, path, "horizon", "object")
+    if horizon is not None:
+        report.field(horizon, f"{path}.horizon", "label", "text")
+        report.field(horizon, f"{path}.horizon", "close_basis", "text")
+        report.field(horizon, f"{path}.horizon", "closes", "count")
+        last = report.field(horizon, f"{path}.horizon", "last", "day")
+    if as_of and last and parse_day(last) < parse_day(as_of):
+        report.errors.append(f"{path}.horizon.last: {last} is before as_of.time ({as_of})")
+
+    bounded = 0
+    for side, tail_at, tail_form in (("supports", 0, "[null, price]"), ("resistances", 1, "[price, null]")):
+        tails = 0
+        for here, entry in report.objects(proj, path, side):
+            report.field(entry, here, "id", "text")
+            report.field(entry, here, "reach", "share")
+            report.field(entry, here, "turn", "share")
+            zone = entry.get("zone", ABSENT)
+            if (not isinstance(zone, list) or len(zone) != 2
+                    or not all(edge is None or _is_number(edge) for edge in zone) or zone == [None, None]):
+                report.add(f"{here}.zone", "[low, high] as two numbers, or one number and one null for a tail", zone)
+            elif None not in zone:
+                bounded += 1
+                if zone[0] >= zone[1]:
+                    report.add(f"{here}.zone", "[low, high] with low below high", zone)
+            elif zone[tail_at] is not None:
+                report.add(f"{here}.zone", f"{tail_form} for the tail of the {side}", zone)
+            else:
+                tails += 1
+                if tails == 2:
+                    report.errors.append(f"{here}.zone: second open-ended zone in {side}, only one tail can be drawn")
+    if all(isinstance(proj.get(side), list) for side in ("supports", "resistances")) and not bounded:
+        report.errors.append(f"{path}: supports and resistances hold no zone with both edges, so there is nothing to draw")
+
+    names = []
+    for here, scenario in report.objects(proj, path, "scenarios", optional=True):
+        names.append(report.field(scenario, here, "name", "text"))
+        report.field(scenario, here, "p", "share")
+        for key in ("low", "high"):
+            report.field(scenario, here, key, "text", nullable=True)
+        if names[-1] and names[-1] in names[:-1]:
+            report.errors.append(f"{here}.name: {_shown(names[-1])} appears twice")
+    if len(names) > 4:
+        report.errors.append(f"{path}.scenarios: {len(names)} scenarios, the chart has room for 4")
+
+    structure = report.field(proj, path, "structure", "object", optional=True) or {}
+    report.field(structure, f"{path}.structure", "trend", "text", nullable=True)
+    report.field(structure, f"{path}.structure", "from_high", "number", optional=True)
+    swing = report.field(structure, f"{path}.structure", "swing", "object", optional=True) or {}
+    for key in ("high", "low"):
+        point = swing.get(key)
+        if point is not None and not (isinstance(point, list) and len(point) == 2
+                                      and _is_number(point[0]) and isinstance(point[1], str)):
+            report.add(f"{path}.structure.swing.{key}", "[price, date]", point)
+
+    for here, event in report.objects(proj, path, "events", optional=True):
+        report.field(event, here, "date", "day", nullable=True)
+        report.field(event, here, "what", "text")
+    for here, driver in report.objects(proj, path, "drivers", optional=True):
+        report.field(driver, here, "what", "text")
+    confidence = report.field(proj, path, "confidence", "object", optional=True) or {}
+    report.field(confidence, f"{path}.confidence", "level", "text", optional=True)
+    limits = report.field(confidence, f"{path}.confidence", "limits", "list", optional=True) or []
+    for i, limit in enumerate(limits):
+        if not isinstance(limit, str):
+            report.add(f"{path}.confidence.limits[{i}]", "a string", limit)
+
+
+def validate(source, proj):
+    """(errors, doubts) for a parsed input and projection.
+
+    errors: the chart cannot be drawn, or would not show what the files say.
+    doubts: both files are drawable but do not belong together."""
+    for name, doc in (("input", source), ("projection", proj)):
+        if not isinstance(doc, dict):
+            return [f"{name}: expected a JSON object, got {_shown(doc)}"], []
+    kind = lambda doc: "projection" if "supports" in doc else "input" if "data" in doc else None
+    if kind(source) == "projection" and kind(proj) == "input":
+        return ["the two files are swapped: pass the candles (the build_prompt.py output) first, then the projection"], []
+    if kind(source) == "projection":
+        return ["input: this is a projection (it has `supports`); the first file must be the build_prompt.py output"], []
+    if kind(proj) == "input":
+        return ["projection: this is a build_prompt.py output (it has `data` and no `supports`); "
+                "the second file must be the projection"], []
+    report = Report()
+    series = validate_input(source, report)
+    validate_projection(proj, report)
+    doubts = []
+    basis = proj["horizon"].get("close_basis") if isinstance(proj.get("horizon"), dict) else None
+    if series and isinstance(basis, str) and basis not in series:
+        doubts.append(f"projection.horizon.close_basis: {_shown(basis)} is not a series of the input (it has "
+                      f"{', '.join(series)}); the chart shows the {series[-1]} candles instead")
+    return report.errors, doubts
+
+
+def rule_problems(proj):
+    """(problems, note): what `rz.py check` says about the projection, and, when rz.py
+    cannot be used, a line explaining that the rules were not checked."""
+    if not RZ_PATH.is_file():
+        return [], f"rz.py not found at {RZ_PATH}: only the structure of the files was checked, not the projection's rules"
+    try:
+        spec = importlib.util.spec_from_file_location("rz", RZ_PATH)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        # complete=False: the chart can do without scenarios and confidence, so a draft may lack them
+        return list(module.problems(proj, complete=False)), None
+    except Exception as error:   # an older or broken copy of the helper must not stop the chart
+        return [], (f"rz.py could not be used ({type(error).__name__}: {error}): only the structure of the "
+                    "files was checked, not the projection's rules")
+
+
+def output_error(path):
+    """Why the image cannot be written to `path`, or None."""
+    formats = sorted(FigureCanvasBase.get_supported_filetypes())
+    extension = os.path.splitext(path)[1][1:].lower()
+    folder = os.path.dirname(os.path.abspath(path))
+    if os.path.isdir(path):
+        return f"{path}: is a folder, not an image file"
+    if extension not in formats:
+        return (f"{path}: {'.' + extension if extension else 'a name without extension'} is not an image format "
+                f"this can write; use png, svg, pdf or jpg")
+    if not os.path.isdir(folder):
+        return f"{path}: the folder {folder} does not exist"
+    if not os.access(path if os.path.exists(path) else folder, os.W_OK):
+        return f"{path}: no permission to write there"
+    return None
+
+
+def preflight(args):
+    """Raise Problem, listing everything wrong at once, unless the chart can be drawn as asked."""
+    errors, loaded = [], []
+    if args.candles is not None and args.candles < 1:
+        errors.append(f"--candles: expected at least 1, got {args.candles}")
+    if not 1 <= args.dpi <= MAX_DPI:
+        errors.append(f"--dpi: expected 1 to {MAX_DPI}, got {args.dpi}")
+    errors += filter(None, [output_error(args.output)])
+    for path in (args.input, args.projection):
+        try:
+            loaded.append(load_json(path))
+        except Problem as problem:
+            errors.append(str(problem))
+    doubts = []
+    if len(loaded) == 2:
+        found, doubts = validate(*loaded)
+        errors += found
+    if errors:
+        count = "1 problem" if len(errors) == 1 else f"{len(errors)} problems"
+        raise Problem(f"Cannot plot, {count}:\n" + "\n".join("  " + line for line in errors))
+    broken, note = rule_problems(loaded[1])
+    broken = doubts + broken
+    if note:
+        print(f"Note: {note}.", file=sys.stderr)
+    if broken and not args.no_check:
+        count = "1 check" if len(broken) == 1 else f"{len(broken)} checks"
+        raise Problem(f"Not plotted, the projection fails {count}:\n"
+                      + "\n".join("  " + line for line in broken)
+                      + "\nFix the projection, or pass --no-check to plot it as it is.")
+    for line in broken:
+        print(f"Warning: {line}", file=sys.stderr)
 
 
 def build(args):
@@ -341,10 +643,22 @@ def main():
     parser.add_argument("--lang", choices=TEXT, default="pt")
     parser.add_argument("--candles", type=int, help="how many past candles to show")
     parser.add_argument("--dpi", type=int, default=160)
+    parser.add_argument("--no-check", action="store_true",
+                        help="plot a projection that fails the rules of `rz.py check`, printing them as warnings")
     args = parser.parse_args()
 
-    fig = build(args)
-    fig.savefig(args.output, dpi=args.dpi, facecolor=fig.get_facecolor())
+    try:
+        preflight(args)
+        try:
+            fig = build(args)
+            fig.savefig(args.output, dpi=args.dpi, facecolor=fig.get_facecolor())
+        except OSError as error:
+            raise Problem(f"{args.output}: cannot write the image ({error.strerror or error})") from None
+        except Exception as error:   # validation missed something: still no traceback for the user
+            raise Problem(f"Cannot plot, unexpected {type(error).__name__} while drawing: {error}\n"
+                          "  The files passed validation, so this is a bug in plot_projection.py.") from None
+    except Problem as problem:
+        sys.exit(str(problem))
     print(f"Wrote {args.output}", file=sys.stderr)
 
 

@@ -293,7 +293,25 @@ Both files are needed: the projection does not contain candles.
 | `--theme` | `light` | `light` or `dark`. |
 | `--lang` | `pt` | Language of the chart's own labels: `pt` or `en`. |
 | `--candles N` | automatic | How many past candles to show. The default is four times the horizon, with a minimum of 40. |
-| `--dpi N` | `160` | Resolution for raster formats. |
+| `--dpi N` | `160` | Resolution for raster formats, from 1 to 1200. |
+| `--no-check` | off | Plot a projection that fails the rules of `rz.py check`, printing them as warnings. |
+
+### Validation
+
+Both files are checked before anything is drawn. If something is wrong, the script prints every problem it found on stderr, one per line with the field's name, and exits with status 1 without writing an image:
+
+```
+Cannot plot, 2 problems:
+  projection.as_of.price: missing, expected a number
+  projection.supports[1].zone: expected [low, high] as two numbers, or one number and one null for a tail, got [42.2, "x"]
+```
+
+There are two levels:
+
+- **Structure** (always blocks): unreadable or invalid JSON, swapped files, missing or mistyped fields, probabilities outside 0 to 1, unparseable dates, no zone with both edges, an output path that cannot be written. `structure`, `scenarios`, `events`, `drivers` and `confidence` may be left out; if present they must be well formed.
+- **Rules** (block unless `--no-check`): the same rules as `rz.py check` (reach and turn add up, zones in order, scenarios sum to 1 and so on), plus `horizon.close_basis` naming a series the input has. A missing `scenarios` or `confidence` section is not counted here, so a draft can be plotted; `rz.py check` itself still demands them.
+
+The rules are read from the skill's `rz.py`. If `plot_projection.py` is copied somewhere without it, only the structure is checked and a one-line note says so.
 
 ### Reading the chart
 
