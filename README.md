@@ -31,7 +31,7 @@ build_prompt.py  ──►  reversal-zones-projection  ──►  plot_projectio
 - [Step 1: build_prompt.py](#step-1-build_promptpy)
 - [Step 2: the reversal-zones-projection skill](#step-2-the-reversal-zones-projection-skill)
 - [Step 3: plot_projection.py](#step-3-plot_projectionpy)
-- [Optional: ranked trade setups](#optional-ranked-trade-setups)
+- [Ranked trade setups](#ranked-trade-setups)
 - [How the probabilities are produced](#how-the-probabilities-are-produced)
 - [Glossary](#glossary)
 - [Known limits](#known-limits)
@@ -64,13 +64,13 @@ Step 2 needs Claude with the skill in `.claude/skills/reversal-zones-projection/
 
 ## Quick start
 
-One command, from ticker to chart (needs [Claude Code](https://claude.com/claude-code) installed and signed in):
+One command, from ticker to chart and ranked trade setups (needs [Claude Code](https://claude.com/claude-code) installed and signed in):
 
 ```bash
 uv run zones PETR4.SA --open          # plain `zones PETR4.SA --open` after the global install
 ```
 
-It runs the three steps below in order, validates the projection with `rz.py check` before plotting, prints where the files are and, with `--open`, shows the chart in your default image viewer. `--horizon` and the other step-1 options work here too (the default horizon is `1-3m`). Step 2 takes about 2 to 6 minutes (longest with `--research deep`); progress goes to standard error. `uv run python run_pipeline.py ...` is the same command.
+It runs the three steps below in order, validates the projection with `rz.py check` before plotting, then asks Claude for three ranked trade setups (see [Ranked trade setups](#ranked-trade-setups)). It prints where the files are and, with `--open`, shows the chart in your default image viewer. `--horizon` and the other step-1 options work here too (the default horizon is `1-3m`). Step 2 takes about 2 to 6 minutes (longest with `--research deep`) and the trade-setups step a few minutes more; progress goes to standard error. Pass `--no-entries` to stop at the chart. `uv run python run_pipeline.py ...` is the same command.
 
 Each run gets a new folder under the current directory:
 
@@ -80,18 +80,19 @@ runs/
     ├── 2026-11-18T1515_1-3m/
     │   ├── input.json
     │   ├── projection.json
-    │   └── chart.png
+    │   ├── chart.png
+    │   └── entries.json
     └── 2026-11-18T1515_1-3m_2/     the same input run a second time
 ```
 
 The timestamp is the input's `now.time` (the last candle, in the exchange's local time), followed by the horizon, so folders sort by date. Nothing is overwritten: a name already taken gets `_2`, `_3`, ... A run that fails in step 2 leaves its folder with `input.json` only, ready for `--input`. `runs/` is in `.gitignore` and is only this command's output: delete any of it at any time. The record used for scoring later is the separate [`projections/`](#saved-projections) folder.
 
-With `--out-dir DIR` the files go exactly into `DIR` instead, named after the ticker, lowercased and without the exchange suffix (`petr4_input.json`, `petr4_projection.json`, `petr4.png`), and the next run of that ticker replaces them. `--out-dir .` is the behaviour of earlier versions.
+With `--out-dir DIR` the files go exactly into `DIR` instead, named after the ticker, lowercased and without the exchange suffix (`petr4_input.json`, `petr4_projection.json`, `petr4.png`, `petr4_entries.json`), and the next run of that ticker replaces them. `--out-dir .` is the behaviour of earlier versions.
 
 While Claude works, each stage of the skill gets one line with the time elapsed, and the step ends with the duration, the number of turns and the cost:
 
 ```text
-[2/4] Projection: Claude Code runs the skill (research: none). This can take several minutes; timeout 1800 s
+[2/5] Projection: Claude Code runs the skill (research: none). This can take several minutes; timeout 1800 s
       reading the skill's instructions                    0:02
       reading the input                                   0:04
       measuring the candles (rz.py levels)                0:08
@@ -108,14 +109,15 @@ A stage that happens again says so (`adjusting the zones`, `simulating again (rz
 | Option | Default | Meaning |
 |---|---|---|
 | `TICKER` and any `build_prompt.py` option | | Passed to step 1 untouched (`--horizon`, `--research`, `--event`, `--language`, ...). See [Step 1](#step-1-build_promptpy). |
-| `--out-dir DIR` | a new `runs/TICKER/TIME_HORIZON/` | Put the files exactly in `DIR`, as `STEM_input.json`, `STEM_projection.json` and `STEM.png`. Files given with `--input` and `--projection` stay where they are. |
+| `--out-dir DIR` | a new `runs/TICKER/TIME_HORIZON/` | Put the files exactly in `DIR`, as `STEM_input.json`, `STEM_projection.json`, `STEM.png` and `STEM_entries.json`. Files given with `--input` and `--projection` stay where they are. |
 | `--name STEM` | none in a run folder, the ticker with `--out-dir` | File name stem. In a run folder it turns `input.json`, `projection.json`, `chart.png` into `STEM_input.json`, `STEM_projection.json`, `STEM.png`. |
 | `--input FILE` | none | Use an existing input JSON and skip step 1 (no download). The run folder gets a copy. |
 | `--projection FILE` | none | Use an existing projection JSON and skip step 2. Needs `--input`. The run folder gets a copy. |
 | `--chart FILE` | `chart.png` in the run folder, `STEM.png` with `--out-dir` | Chart file. The extension picks the format. |
 | `--open` | off | Open the chart in the default viewer when the run succeeds. A viewer that cannot be started is only a warning. |
 | `--model NAME` | Claude Code's own | Model for the headless run. |
-| `--timeout SECONDS` | `1800` | Give up on Claude Code after this long. |
+| `--timeout SECONDS` | `1800` | Give up on each Claude Code call after this long. |
+| `--no-entries` | off | Stop at the chart: skip the trade-setups step and its second Claude Code call. |
 | `--quiet` | off | No line per stage during step 2. Headers, errors and the duration and cost line stay. |
 | `--theme`, `--lang`, `--candles`, `--dpi` | step 3's own | Passed to `plot_projection.py` only when given. |
 | `--no-save` | off | Do not keep the new projection under `projections/` (see [Saved projections](#saved-projections)). |
@@ -440,11 +442,25 @@ The language is chosen once, with `--language` in step 1. It is stored in the in
 
 `--lang` overrides the labels only: text that comes from the projection stays in the language it was written in.
 
-## Optional: ranked trade setups
+## Ranked trade setups
 
-`prompts/trade_entries.md` is a separate prompt template, not part of the pipeline or the skill. Given the input and the projection of one run, it asks Claude for three hypothetical trade setups, each with an entry, a stop and a target, ranked best first. The reply is one JSON object described by `prompts/trade_entries.schema.json`.
+The last step of `run_pipeline.py` asks Claude for three hypothetical trade setups, each with an entry, a stop and a target, ranked best first, and writes them to `petr4_entries.json`. It runs by default; `--no-entries` skips it. The setups are derived from the projection only, so they inherit every limit of it.
 
-To use it, replace `{{INPUT_JSON}}` and `{{PROJECTION_JSON}}` with the two files, unchanged, and send everything below the opening comment as one message.
+The step works in three parts:
+
+1. `trade_entries.py prompt` fills `prompts/trade_entries.md` with the input and the projection.
+2. `claude -p` answers with one JSON object. This call gets no tools at all and runs outside the repository; in two test runs it took two to three minutes and cost about $0.70.
+3. `trade_entries.py check` validates the reply against `prompts/trade_entries.schema.json` and recomputes every price, payoff and probability from the projection. A reply that disagrees is kept for inspection, reported, and the run exits 1; the input, projection and chart are unaffected.
+
+When a new projection is saved under `projections/`, the setups are saved next to it as `entries.json`.
+
+The parts also run by hand, for example on the committed example:
+
+```bash
+uv run python trade_entries.py prompt examples/petr4_input.json examples/petr4_projection.json > prompt.txt
+uv run python trade_entries.py check  examples/petr4_input.json examples/petr4_projection.json reply.json
+uv run python trade_entries.py expected examples/petr4_projection.json   # every valid setup, best first
+```
 
 How the setups are built:
 
@@ -516,14 +532,15 @@ The simulation knows nothing about chart levels. The skill may therefore move a 
 stock_predict_zones/
 ├── build_prompt.py                 step 1: Yahoo Finance to input JSON
 ├── plot_projection.py              step 3: input + projection to image
-├── run_pipeline.py                 all steps in one command, also installed as `zones` (step 2 through headless Claude Code)
+├── run_pipeline.py                 all steps in one command, also installed as `zones` (steps 2 and 5 through headless Claude Code)
 ├── score_projections.py            saved projections against later prices, and the calibration summary
+├── trade_entries.py                trade setups: fills the prompt, checks the reply
 ├── .claude/skills/reversal-zones-projection/
 │   ├── SKILL.md                    step 2: the skill
 │   └── scripts/rz.py               its helper: levels, simulation, validation, saving, outcomes
 ├── examples/                       one complete run: input, projection and charts
 ├── prompts/
-│   ├── trade_entries.md            optional prompt: three ranked trade setups from one run
+│   ├── trade_entries.md            prompt: three ranked trade setups from one run
 │   └── trade_entries.schema.json   JSON Schema of its reply
 ├── projections/                    every projection made, with its input (local, not committed)
 ├── runs/                           one folder per `zones` run: input, projection, chart (local, not committed)

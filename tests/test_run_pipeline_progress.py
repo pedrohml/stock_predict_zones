@@ -251,7 +251,8 @@ def test_timeout_tail_is_readable_not_raw_events():
 # ---- the whole pipeline, with a script in place of `claude` -------------------
 
 def run_main(*argv):
-    return run_pipeline.main([str(arg) for arg in argv])
+    # these runs are about step 2's stream, so they stop at the chart
+    return run_pipeline.main([str(arg) for arg in argv] + ["--no-entries"])
 
 
 def test_a_run_shows_stages_then_duration_turns_and_cost(tmp_path, input_path, fake_claude, capsys):

@@ -102,3 +102,42 @@ def projection_from_sim(projection_data):
         proj["scenarios"] = sim_out["scenarios"]
         return proj
     return make
+
+
+def entries_reply(source, proj):
+    """A reply to prompts/trade_entries.md that follows its rules, built without Claude:
+    the numbers come from trade_entries.py, the sentences are placeholders."""
+    import trade_entries
+    reason = trade_entries.precondition(source, proj)
+    if reason:
+        return {"task": "trade_entries", "error": reason}
+    entries = []
+    for rank, item in enumerate(trade_entries.pick(trade_entries.setups(proj)), 1):
+        entries.append({
+            "rank": rank, "id": item["id"], "side": item["side"], "setup": item["setup"],
+            "entry": {"order": item["order"], "price": item["entry"], "anchor": "zone edge"},
+            "stop": {"price": item["stop"], "anchor": "zone edge and buffer"},
+            "target": {"price": item["target"], "anchor": "zone edge"},
+            "payoff": {"risk": item["risk"], "reward": item["reward"], "ratio": item["ratio"]},
+            "odds": {"fill": item["fill"], "win_if_filled": item["win_if_filled"], "basis": "reach and turn"},
+            "edge": {"if_filled": item["if_filled"], "per_order": item["per_order"]},
+            "quality": item["quality"], "why": "placeholder", "watch": []})
+    return {
+        "task": "trade_entries", "asset": {"ticker": proj["asset"]["ticker"], "currency": proj["asset"]["currency"]},
+        "as_of": proj["as_of"], "valid_until": proj["horizon"]["last"],
+        "probability": source["want"]["probability"], "units": trade_entries.units(proj), "entries": entries,
+        "confidence": {"level": "low", "limits": ["win_if_filled is a ceiling"]},
+        "method": "placeholder", "note": "Hypothetical setups for study. Not a recommendation to buy or sell."}
+
+
+@pytest.fixture
+def entries_data(input_data, projection_data):
+    return entries_reply(input_data, projection_data)
+
+
+@pytest.fixture(autouse=True)
+def no_real_claude(monkeypatch):
+    """No test may start the real Claude Code: a run costs money and minutes. A test that
+    forgets to stub a Claude step fails at once with "not found" instead."""
+    import run_pipeline
+    monkeypatch.setattr(run_pipeline, "CLAUDE", "claude-must-not-run-in-tests")

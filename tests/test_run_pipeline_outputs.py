@@ -15,7 +15,8 @@ import pytest
 
 import run_pipeline
 from conftest import ROOT
-from test_run_pipeline import PNG_MAGIC, calls, run_main, store, stub_build, stub_claude  # noqa: F401
+from test_run_pipeline import PNG_MAGIC, calls, store, stub_build, stub_claude  # noqa: F401
+from test_run_pipeline import run_main as run_everything
 
 PLAIN = ["chart.png", "input.json", "projection.json"]
 
@@ -35,6 +36,12 @@ def viewer(monkeypatch):
     opened = []
     monkeypatch.setattr(run_pipeline, "start_viewer", opened.append)
     return opened
+
+
+def run_main(*argv):
+    """These tests are about where the input, the projection and the chart go, so they
+    stop at the chart. The trade-setups step is placed by the two tests at the end."""
+    return run_everything(*argv, "--no-entries")
 
 
 def names(folder):
@@ -262,3 +269,20 @@ def test_zones_is_installed_from_this_checkout():
     assert [(script.name, script.value) for script in scripts] == [("zones", "run_pipeline:main")]
     assert Path(run_pipeline.__file__).resolve() == ROOT / "run_pipeline.py"
     assert run_pipeline.RZ.is_file() and run_pipeline.BUILD.is_file() and run_pipeline.PLOT.is_file()
+
+
+# ---- the trade-setups file -------------------------------------------------------
+
+def test_entries_go_into_the_run_folder_with_a_plain_name(cwd, stub_build, stub_claude):
+    stub_claude()
+    assert run_everything("PETR4.SA", "--dpi", "50") == 0
+    assert names(Path("runs/PETR4.SA/2026-11-17T1736_1-3m")) == sorted(PLAIN + ["entries.json"])
+
+
+def test_plot_again_with_entries_needs_a_folder_even_with_a_named_chart(cwd, input_path, projection_path,
+                                                                        stub_claude):
+    stub_claude()
+    assert run_everything("--input", input_path, "--projection", projection_path,
+                          "--chart", "mine.png", "--dpi", "50") == 0
+    folder = Path("runs/PETR4.SA/2026-11-17T1736_1-3m")
+    assert names(folder) == ["entries.json", "input.json", "projection.json"] and Path("mine.png").is_file()
