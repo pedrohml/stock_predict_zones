@@ -1,13 +1,25 @@
 #!/usr/bin/env python3
 """Ticker to chart in one command: build_prompt.py, the skill (headless Claude Code), rz.py check, plot_projection.py.
 
-    python run_pipeline.py PETR4.SA --horizon 1-3m
-    python run_pipeline.py NVDA --horizon 1-2w --research none --out-dir runs --lang en
-    python run_pipeline.py --input petr4_input.json                                    # project and plot again
-    python run_pipeline.py --input petr4_input.json --projection petr4_projection.json # plot again
+    zones PETR4.SA
+    zones NVDA --horizon 1-2w --research none --lang en --open
+    zones --input FOLDER/input.json                                      # project and plot again
+    zones --input FOLDER/input.json --projection FOLDER/projection.json  # plot again
+
+`zones` is this script (`uv run zones` in the repository, or plain `zones` after
+`uv tool install --editable .`); `python run_pipeline.py` does the same.
+
+Each run gets a new folder of its own, runs/TICKER/TIME_HORIZON/ under the
+current directory (TIME is the input's `now.time`; a second run of the same
+input gets _2, and so on), holding input.json, projection.json and chart.png.
+Nothing is overwritten. With --out-dir the files go exactly there instead, named
+after the ticker (petr4_input.json, petr4_projection.json, petr4.png), and are
+replaced by the next run.
 
 A projection made by this run is also kept, with its input, under projections/
 (`rz.py save`; folder set by $RZ_PROJECTIONS_DIR) unless --no-save is given.
+That is the append-only record for scoring projections later; runs/ is only
+this command's output and can be deleted at any time.
 
 Options this script does not know (the ticker, --horizon, --research, --event,
 --language ...) are passed to build_prompt.py untouched; see
@@ -23,6 +35,7 @@ The result is analysis for study, not investment advice.
 """
 import argparse
 import json
+import os
 import queue
 import re
 import shutil
@@ -32,6 +45,7 @@ import tempfile
 import threading
 import time
 import urllib.parse
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -44,6 +58,7 @@ DEFAULT_TIMEOUT = 1800   # seconds; a run with research usually takes a few minu
 HEARTBEAT = 30           # seconds without a progress line before "still running"
 TAIL_LINES = 15
 WORK_INPUT, WORK_PROJECTION = "input.json", "projection.json"   # names inside the work folder
+RUNS = "runs"            # default output: RUNS/TICKER/TIME_HORIZON/ under the current directory
 
 
 class PipelineError(Exception):
@@ -86,28 +101,78 @@ def run(command, timeout=None):
                           text=True, timeout=timeout)
 
 
+# ---- where the files go --------------------------------------------------------
+
+def file_names(stem=None):
+    """(input, projection, chart) file names: plain in a run folder, which
+    already says which run it is, and prefixed with a stem anywhere else."""
+    if stem:
+        return f"{stem}_input.json", f"{stem}_projection.json", f"{stem}.png"
+    return "input.json", "projection.json", "chart.png"
+
+
+def run_folder(data, base=RUNS):
+    """Make and return a new folder base/TICKER/TIME_HORIZON for this run, named
+    the way `rz.py save` names its own: TIME is the input's `now.time` in the
+    exchange's local time, and a name already taken gets _2, _3 ... so an
+    earlier run is never touched."""
+    safe = lambda text: re.sub(r"[^A-Za-z0-9._-]", "_", str(text)).strip(".")
+    try:
+        ticker, horizon = safe(data["asset"]["ticker"].upper()), safe(data["horizon"])
+        stamp = datetime.fromisoformat(data["now"]["time"]).strftime("%Y-%m-%dT%H%M")
+    except (KeyError, TypeError, ValueError, AttributeError):
+        ticker = horizon = stamp = ""
+    if not (ticker and horizon and stamp):
+        raise PipelineError("The run folder is named after asset.ticker, now.time and horizon, "
+                            "which this input JSON lacks. Pass --out-dir DIR to choose the folder.")
+    first = Path(base) / ticker / f"{stamp}_{horizon}"
+    target, n = first, 1
+    while True:
+        try:
+            target.mkdir(parents=True)
+            return target
+        except FileExistsError:
+            n += 1
+            target = first.with_name(f"{first.name}_{n}")
+        except OSError as error:
+            raise PipelineError(f"Cannot create the run folder {target}: {error}")
+
+
+def start_viewer(path):
+    """Hand a file to the platform's default application, without waiting for it."""
+    if sys.platform == "win32":
+        os.startfile(path)
+    else:
+        subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", str(path)],
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL)
+
+
+def open_chart(path):
+    """--open is a convenience: the run has already succeeded, so a viewer that
+    cannot be started is one warning line, never an error."""
+    try:
+        start_viewer(path)
+    except Exception as error:
+        say(f"Warning: could not open {path}: {error}")
+
+
 # ---- step 1 -------------------------------------------------------------------
 
-def build_input(passthrough, out_dir, name=None):
-    """Run build_prompt.py with the user's own arguments. The file name comes
-    from the ticker inside the JSON it writes, so the arguments are never
-    parsed here."""
+def build_input(passthrough):
+    """Run build_prompt.py with the user's own arguments and return what it
+    wrote as (bytes, data). It writes into a throwaway folder: where the input
+    is kept depends on the ticker and time inside it, and the arguments are
+    never parsed here."""
     if any(arg in ("-o", "--output") or arg.startswith("--output=") for arg in passthrough):
         raise PipelineError("Do not pass -o/--output: use --out-dir and --name to place the files.")
-    draft = out_dir / ".input.json.part"
-    done = run([sys.executable, BUILD, *passthrough, "-o", draft])
-    if done.returncode != 0:
-        draft.unlink(missing_ok=True)
-        raise PipelineError("build_prompt.py failed:\n" + tail(done.stderr or done.stdout))
-    try:
+    with tempfile.TemporaryDirectory(prefix="rz_input_") as folder:
+        draft = Path(folder) / WORK_INPUT
+        done = run([sys.executable, BUILD, *passthrough, "-o", draft])
+        if done.returncode != 0:
+            raise PipelineError("build_prompt.py failed:\n" + tail(done.stderr or done.stdout))
         data = load_json(draft, "Input JSON from build_prompt.py")
-        stem = name or stem_for(data.get("asset", {}).get("ticker", ""))
-    except PipelineError:
-        draft.unlink(missing_ok=True)
-        raise
-    path = out_dir / f"{stem}_input.json"
-    draft.replace(path)
-    return path, data
+        return draft.read_bytes(), data
 
 
 # ---- step 2 -------------------------------------------------------------------
@@ -523,18 +588,23 @@ def parse(argv=None):
               "       %(prog)s --input FILE [--projection FILE] [options]",
         allow_abbrev=False)
     files = parser.add_argument_group("files")
-    files.add_argument("--out-dir", default=".", metavar="DIR",
-                       help="where the three files go (default: current directory)")
+    files.add_argument("--out-dir", metavar="DIR",
+                       help="put the files exactly here, named STEM_input.json, "
+                            "STEM_projection.json and STEM.png (default: a new folder "
+                            f"{RUNS}/TICKER/TIME_HORIZON/ with input.json, projection.json "
+                            "and chart.png)")
     files.add_argument("--name", metavar="STEM",
-                       help="file name stem (default: the ticker, lowercased, "
-                            "without the exchange suffix)")
+                       help="file name stem (default with --out-dir: the ticker, lowercased, "
+                            "without the exchange suffix; in a run folder: none)")
     files.add_argument("--input", metavar="FILE",
                        help="use this input JSON and skip step 1 (no download)")
     files.add_argument("--projection", metavar="FILE",
                        help="use this projection JSON and skip step 2 (needs --input)")
     files.add_argument("--chart", metavar="FILE",
-                       help="chart file (default: STEM.png in --out-dir; "
-                            "the extension picks the format)")
+                       help="chart file (default: chart.png in the run folder, or STEM.png "
+                            "in --out-dir; the extension picks the format)")
+    files.add_argument("--open", action="store_true",
+                       help="open the chart in the default viewer when the run succeeds")
     claude = parser.add_argument_group("step 2, Claude Code")
     claude.add_argument("--model", help="model for `claude -p` (default: Claude Code's own)")
     claude.add_argument("--no-save", action="store_true",
@@ -555,7 +625,6 @@ def parse(argv=None):
 
 
 def pipeline(args, passthrough):
-    out_dir = Path(args.out_dir)
     if args.projection and not args.input:
         raise PipelineError("--projection needs --input: the chart is drawn from both files.")
     if args.input and passthrough:
@@ -563,23 +632,45 @@ def pipeline(args, passthrough):
                             + " ".join(passthrough))
     if not args.input and not passthrough:
         raise PipelineError("Give a ticker (e.g. PETR4.SA) or --input FILE. See --help.")
-    out_dir.mkdir(parents=True, exist_ok=True)
+    for script in (BUILD, PLOT, RZ):
+        if not script.is_file():    # installed as a copy, away from the repository
+            raise PipelineError(f"{script} not found. This command works only from the repository "
+                                "checkout: install it with `uv tool install --editable PATH`.")
 
+    fresh = None
     if args.input:
         input_path = Path(args.input)
         data = load_json(input_path, "Input JSON")
         say(f"[1/4] Input: using {input_path} (no download)")
     else:
         say("[1/4] Input: build_prompt.py " + " ".join(passthrough))
-        input_path, data = build_input(passthrough, out_dir, args.name)
-    stem = args.name or stem_for(data.get("asset", {}).get("ticker", ""))
-
+        fresh, data = build_input(passthrough)
     if args.projection:
         projection_path = Path(args.projection)
         load_json(projection_path, "Projection JSON")
+
+    # Nothing is created before this point, so a mistyped ticker or file leaves no folder behind.
+    if args.out_dir is not None:        # the exact folder; files given with --input/--projection stay put
+        out_dir, own = Path(args.out_dir), False
+        out_dir.mkdir(parents=True, exist_ok=True)
+        stem = args.name or stem_for(data.get("asset", {}).get("ticker", ""))
+    elif args.projection and args.chart:   # plot again into a named file: nothing else to place
+        out_dir, own, stem = None, False, args.name
+    else:                               # a new folder for this run, complete with all three files
+        out_dir, own, stem = run_folder(data), True, args.name
+    input_name, projection_name, chart_name = file_names(stem)
+    if fresh is not None:
+        input_path = out_dir / input_name
+        input_path.write_bytes(fresh)
+    elif own:
+        input_path = Path(shutil.copyfile(input_path, out_dir / input_name))
+
+    if args.projection:
         say(f"[2/4] Projection: using {projection_path} (Claude Code not run)")
+        if own:
+            projection_path = Path(shutil.copyfile(projection_path, out_dir / projection_name))
     else:
-        projection_path = out_dir / f"{stem}_projection.json"
+        projection_path = out_dir / projection_name
         research = data.get("research", "none")
         say(f"[2/4] Projection: Claude Code runs the skill (research: {research}). "
             f"This can take several minutes; timeout {args.timeout:g} s")
@@ -592,7 +683,7 @@ def pipeline(args, passthrough):
     if not args.projection and not args.no_save:   # only a projection made in this run is new
         saved = save(input_path, projection_path)
 
-    chart_path = Path(args.chart) if args.chart else out_dir / f"{stem}.png"
+    chart_path = Path(args.chart) if args.chart else out_dir / chart_name
     say("[4/4] Chart: plot_projection.py")
     plot(input_path, projection_path, chart_path, args)
     return input_path, projection_path, chart_path, saved
@@ -613,6 +704,8 @@ def main(argv=None):
     print(f"chart:      {chart_path}")
     if saved:
         print(f"saved:      {saved}")
+    if args.open:
+        open_chart(chart_path)
     return 0
 
 
