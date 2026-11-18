@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 import run_pipeline
+from conftest import entries_reply
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
@@ -29,7 +30,7 @@ def store(tmp_path_factory, monkeypatch):
 
 @pytest.fixture
 def calls():
-    return {"build": [], "claude": [], "plot": []}
+    return {"build": [], "claude": [], "entries": [], "plot": []}
 
 
 @pytest.fixture
@@ -49,11 +50,25 @@ def stub_build(monkeypatch, calls, input_path):
     monkeypatch.setattr(run_pipeline, "run", fake_run)
 
 
+def between(text, tag):
+    return json.loads(text.split(f"<{tag}>", 1)[1].split(f"</{tag}>", 1)[0])
+
+
 @pytest.fixture
 def stub_claude(monkeypatch, calls, projection_path):
-    """stub_claude(...) replaces call_claude; by default it writes the fixture projection."""
-    def install(text=None, code=0, envelope=None, write=True):
-        def fake_call(command, timeout, cwd=run_pipeline.ROOT):
+    """stub_claude(...) replaces call_claude. Step 2 (the call with a work folder) writes the
+    fixture projection by default. Step 5 (the call without one) answers with setups computed
+    from the two files in its prompt, or with `entries` when given: a str is sent as it is,
+    anything else as JSON."""
+    def install(text=None, code=0, envelope=None, write=True, entries=None, entries_code=0):
+        def fake_call(command, timeout, progress=None, cwd=run_pipeline.ROOT):
+            if "--add-dir" not in command:
+                calls["entries"].append({"command": command, "cwd": cwd})
+                reply = entries if entries is not None else entries_reply(
+                    between(command[2], "input"), between(command[2], "projection"))
+                reply = reply if isinstance(reply, str) else json.dumps(reply)
+                return entries_code, json.dumps({"type": "result", "result": reply, "is_error": False,
+                                                 "num_turns": 1, "total_cost_usd": 0.7}), ""
             calls["claude"].append(command)
             if write:
                 target = Path(option(command, "--add-dir")) / "projection.json"
@@ -190,13 +205,14 @@ def test_full_run_with_stubs(tmp_path, stub_build, stub_claude, calls, capsys):
     stub_claude()
     out_dir = tmp_path / "runs"
     assert run_main("PETR4.SA", "--research", "none", "--out-dir", out_dir, "--dpi", "50") == 0
-    files = [out_dir / name for name in ("petr4_input.json", "petr4_projection.json", "petr4.png")]
+    files = [out_dir / name for name in ("petr4_input.json", "petr4_projection.json", "petr4.png",
+                                         "petr4_entries.json")]
     assert sorted(path.name for path in out_dir.iterdir()) == sorted(path.name for path in files)
     assert files[2].read_bytes().startswith(PNG_MAGIC)
     captured = capsys.readouterr()
     for path in files:
         assert str(path) in captured.out
-    for step in ("[1/4]", "[2/4]", "[3/4]", "[4/4]"):
+    for step in ("[1/5]", "[2/5]", "[3/5]", "[4/5]", "[5/5]"):
         assert step in captured.err
 
     command = calls["claude"][0]
@@ -231,6 +247,9 @@ def test_a_projection_that_cannot_be_kept_is_still_plotted(tmp_path, input_data,
     captured = capsys.readouterr()
     assert "not kept" in captured.err and "as_of.time" in captured.err
     assert not store.exists() and (tmp_path / "runs" / "petr4.png").is_file()
+    # the same mismatch leaves nothing to build setups from: said in one line, and no file
+    assert "No setups: projection.as_of.time differs from input.now.time" in captured.err
+    assert not (tmp_path / "runs" / "petr4_entries.json").exists()
 
 
 def test_name_and_chart_options(tmp_path, stub_build, stub_claude):
@@ -246,12 +265,13 @@ def test_input_skips_the_download(tmp_path, input_path, stub_build, stub_claude,
     stub_claude()
     assert run_main("--input", input_path, "--out-dir", tmp_path, "--dpi", "50") == 0
     assert calls["build"] == [] and len(calls["claude"]) == 1
-    assert sorted(path.name for path in tmp_path.iterdir()) == ["petr4.png", "petr4_projection.json"]
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["petr4.png", "petr4_entries.json",
+                                                                "petr4_projection.json"]
 
 
 def test_projection_skips_claude(tmp_path, input_path, projection_path, stub_build, monkeypatch, calls):
     monkeypatch.setattr(run_pipeline, "call_claude", lambda *a, **k: pytest.fail("Claude must not run"))
-    assert run_main("--input", input_path, "--projection", projection_path,
+    assert run_main("--input", input_path, "--projection", projection_path, "--no-entries",
                     "--out-dir", tmp_path, "--dpi", "50") == 0
     assert calls["build"] == []
     assert [path.name for path in tmp_path.iterdir()] == ["petr4.png"]   # nothing kept: not a new projection
@@ -265,6 +285,84 @@ def test_web_tools_follow_the_input(tmp_path, input_data, write_json, stub_build
     assert run_main("--input", write_json("asked.json", input_data),
                     "--out-dir", tmp_path / "out", "--dpi", "50") == 0
     assert ("WebSearch" in calls["claude"][0]) is web
+
+
+# ---- step 5: ranked trade setups ----------------------------------------------
+
+def test_entries_are_written_checked_and_kept(tmp_path, input_data, projection_data, store,
+                                              stub_build, stub_claude, calls, capsys):
+    stub_claude()
+    out_dir = tmp_path / "runs"
+    assert run_main("PETR4.SA", "--out-dir", out_dir, "--dpi", "50") == 0
+    written = json.loads((out_dir / "petr4_entries.json").read_text(encoding="utf-8"))
+    assert written == entries_reply(input_data, projection_data) and len(written["entries"]) == 3
+    captured = capsys.readouterr()
+    assert f"entries:    {out_dir / 'petr4_entries.json'}" in captured.out
+    assert "1 turn · $0.70" in captured.err                 # the cost of the second call is shown too
+    [kept] = list(store.rglob("entries.json"))              # next to the pair it was derived from
+    assert json.loads(kept.read_text(encoding="utf-8")) == written
+    assert (kept.parent / "projection.json").is_file()
+
+    [call] = calls["entries"]
+    command = call["command"]
+    assert option(command, "--tools") == "" and "--allowedTools" not in command   # no tools at all
+    assert option(command, "--permission-mode") == "dontAsk"
+    assert not any("dangerously" in part or "bypass" in part.lower() for part in command[3:])
+    assert run_pipeline.ROOT not in Path(call["cwd"]).resolve().parents            # no project context
+    assert "{{" not in command[2] and between(command[2], "projection") == projection_data
+
+
+def test_no_entries_stops_at_the_chart(tmp_path, stub_build, stub_claude, calls, capsys):
+    stub_claude()
+    assert run_main("PETR4.SA", "--no-entries", "--out-dir", tmp_path / "runs", "--dpi", "50") == 0
+    captured = capsys.readouterr()
+    assert calls["entries"] == [] and "entries:" not in captured.out
+    assert "[4/4]" in captured.err and "/5]" not in captured.err
+    assert not (tmp_path / "runs" / "petr4_entries.json").exists()
+
+
+def test_entries_from_existing_files(tmp_path, input_path, projection_path, store, stub_build, stub_claude, calls):
+    stub_claude()
+    assert run_main("--input", input_path, "--projection", projection_path, "--out-dir", tmp_path, "--dpi", "50") == 0
+    assert calls["claude"] == [] and len(calls["entries"]) == 1       # only the setups needed Claude
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["petr4.png", "petr4_entries.json"]
+    assert not store.exists()                                          # nothing new to keep
+
+
+def test_a_fenced_reply_is_accepted(tmp_path, input_path, projection_path, entries_data, stub_build, stub_claude):
+    stub_claude(entries="```json\n" + json.dumps(entries_data) + "\n```")
+    assert run_main("--input", input_path, "--projection", projection_path, "--out-dir", tmp_path, "--dpi", "50") == 0
+    assert json.loads((tmp_path / "petr4_entries.json").read_text(encoding="utf-8")) == entries_data
+
+
+def test_wrong_numbers_fail_but_keep_the_other_files(tmp_path, input_path, projection_path, entries_data,
+                                                     stub_build, stub_claude, capsys):
+    entries_data["entries"][0]["stop"]["price"] += 1.0
+    stub_claude(entries=entries_data)
+    assert run_main("--input", input_path, "--projection", projection_path, "--out-dir", tmp_path, "--dpi", "50") == 1
+    captured = capsys.readouterr()
+    assert "failed trade_entries.py check" in captured.err and "stop.price" in captured.err
+    assert "Traceback" not in captured.err
+    assert f"chart:      {tmp_path / 'petr4.png'}" in captured.out and "entries:" not in captured.out
+    assert (tmp_path / "petr4_entries.json").is_file()                 # kept for inspection
+
+
+@pytest.mark.parametrize("stub, message", [
+    ({"entries": "Here are three ideas."}, "did not reply with JSON"),
+    ({"entries_code": 1}, "Claude Code failed (exit 1)"),
+])
+def test_entries_step_failures(tmp_path, input_path, projection_path, stub_build, stub_claude, capsys, stub, message):
+    stub_claude(**stub)
+    assert run_main("--input", input_path, "--projection", projection_path, "--out-dir", tmp_path, "--dpi", "50") == 1
+    captured = capsys.readouterr()
+    assert message in captured.err and "Traceback" not in captured.err
+    assert (tmp_path / "petr4.png").is_file() and "chart:" in captured.out
+
+
+def test_entries_without_claude_installed(tmp_path, input_path, projection_path, monkeypatch, capsys):
+    monkeypatch.setattr(run_pipeline, "CLAUDE", "surely-not-a-real-claude-binary")
+    assert run_main("--input", input_path, "--projection", projection_path, "--out-dir", tmp_path, "--dpi", "50") == 1
+    assert "pass --no-entries" in capsys.readouterr().err
 
 
 # ---- error paths: one short message, exit 1, no traceback ---------------------

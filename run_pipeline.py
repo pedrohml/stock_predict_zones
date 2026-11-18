@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Ticker to chart in one command: build_prompt.py, the skill (headless Claude Code), rz.py check, plot_projection.py.
+"""Ticker to chart and ranked trade setups in one command: build_prompt.py, the skill
+(headless Claude Code), rz.py check, plot_projection.py, then prompts/trade_entries.md.
 
     python run_pipeline.py PETR4.SA --horizon 1-3m
     python run_pipeline.py NVDA --horizon 1-2w --research none --out-dir runs --lang en
     python run_pipeline.py --input petr4_input.json                                    # project and plot again
     python run_pipeline.py --input petr4_input.json --projection petr4_projection.json # plot again
+    python run_pipeline.py PETR4.SA --no-entries                                       # stop at the chart
 
 A projection made by this run is also kept, with its input, under projections/
 (`rz.py save`; folder set by $RZ_PROJECTIONS_DIR) unless --no-save is given.
@@ -18,6 +20,11 @@ skill, the helper script, and reads and writes inside a throwaway work folder
 (plus web search when the input's `research` is not `none`). While it runs,
 one line per stage of the skill goes to standard error, then the duration,
 turns and cost that Claude Code reports; --quiet leaves only that last line.
+
+Step 5 sends prompts/trade_entries.md, filled with the two files, to `claude -p`
+with no tools at all, and checks every number of the reply with
+trade_entries.py. It writes three hypothetical setups (entry, stop, target),
+ranked best first. Pass --no-entries to skip it.
 
 The result is analysis for study, not investment advice.
 """
@@ -37,6 +44,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 BUILD = ROOT / "build_prompt.py"
 PLOT = ROOT / "plot_projection.py"
+ENTRIES = ROOT / "trade_entries.py"
 SKILL = "reversal-zones-projection"
 RZ = ROOT / ".claude" / "skills" / SKILL / "scripts" / "rz.py"
 CLAUDE = "claude"
@@ -514,6 +522,63 @@ def plot(input_path, projection_path, chart_path, args):
         raise PipelineError("plot_projection.py failed:\n" + tail(done.stderr or done.stdout))
 
 
+# ---- step 5 -------------------------------------------------------------------
+
+def entries_command(prompt, model=None):
+    """Headless Claude Code with no tools: the prompt holds both files, the reply is the result."""
+    command = [CLAUDE, "-p", prompt, "--output-format", "json", "--permission-mode", "dontAsk",
+               "--strict-mcp-config", "--tools", ""]
+    if model:
+        command += ["--model", model]
+    return command
+
+
+def unfenced(text):
+    """The reply without a Markdown code fence, should Claude have added one."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else ""
+        text = text.rsplit("```", 1)[0]
+    return text.strip()
+
+
+def trade_entries(input_path, projection_path, entries_path, timeout, model=None, quiet=False):
+    """Ask for the ranked setups and keep them only if trade_entries.py agrees with every
+    number. Returns the path, or None when the two files allow no setup."""
+    filled = run([sys.executable, ENTRIES, "prompt", input_path, projection_path])
+    if filled.returncode != 0:
+        raise PipelineError("trade_entries.py prompt failed:\n" + tail(filled.stderr or filled.stdout))
+    progress = Progress(quiet)   # no stages to show in a single reply: only the sign of life
+    try:
+        with tempfile.TemporaryDirectory(prefix="rz_entries_") as folder:   # away from the repo: no project context
+            code, out, err = call_claude(entries_command(filled.stdout, model), timeout, progress, cwd=folder)
+    except PipelineError as error:
+        if "was not found" in str(error):
+            raise PipelineError(f"'{CLAUDE}' was not found. Step 5 needs Claude Code on PATH "
+                                "(https://claude.com/claude-code). To skip it, pass --no-entries.")
+        raise
+    result = claude_result(out)
+    reply, failed = claude_reply(out)
+    failed = failed or code != 0
+    say("      " + summary(result, progress.elapsed(), failed))
+    if failed:
+        raise PipelineError(f"Claude Code failed (exit {code}). Last output:\n" + tail(reply or err))
+    try:
+        data = json.loads(unfenced(reply))
+    except ValueError:
+        raise PipelineError("Claude Code did not reply with JSON. Last output:\n" + tail(reply))
+    entries_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    done = run([sys.executable, ENTRIES, "check", input_path, projection_path, entries_path])
+    if done.returncode != 0 or done.stdout.strip() != "OK":
+        raise PipelineError(f"{entries_path} failed trade_entries.py check:\n"
+                            + (tail(done.stdout, 40) or tail(done.stderr, 1)))
+    if isinstance(data, dict) and "error" in data:   # the files allow no setup, and the reply says so
+        entries_path.unlink()
+        say(f"      No setups: {printable(data['error'])}")
+        return None
+    return entries_path
+
+
 # ---- command line -------------------------------------------------------------
 
 def parse(argv=None):
@@ -524,7 +589,7 @@ def parse(argv=None):
         allow_abbrev=False)
     files = parser.add_argument_group("files")
     files.add_argument("--out-dir", default=".", metavar="DIR",
-                       help="where the three files go (default: current directory)")
+                       help="where the files go (default: current directory)")
     files.add_argument("--name", metavar="STEM",
                        help="file name stem (default: the ticker, lowercased, "
                             "without the exchange suffix)")
@@ -535,7 +600,9 @@ def parse(argv=None):
     files.add_argument("--chart", metavar="FILE",
                        help="chart file (default: STEM.png in --out-dir; "
                             "the extension picks the format)")
-    claude = parser.add_argument_group("step 2, Claude Code")
+    claude = parser.add_argument_group("steps 2 and 5, Claude Code")
+    claude.add_argument("--no-entries", action="store_true",
+                        help="stop at the chart: do not ask for the ranked trade setups (step 5)")
     claude.add_argument("--model", help="model for `claude -p` (default: Claude Code's own)")
     claude.add_argument("--no-save", action="store_true",
                         help="do not keep the new projection under projections/ "
@@ -544,7 +611,7 @@ def parse(argv=None):
                         help="no line per stage while Claude Code works; step headers, "
                              "errors and the duration and cost line stay")
     claude.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT, metavar="SECONDS",
-                        help=f"give up on Claude Code after this long (default: {DEFAULT_TIMEOUT})")
+                        help=f"give up on each Claude Code call after this long (default: {DEFAULT_TIMEOUT})")
     chart = parser.add_argument_group(
         "step 4, passed to plot_projection.py only when given")
     chart.add_argument("--theme")
@@ -564,28 +631,29 @@ def pipeline(args, passthrough):
     if not args.input and not passthrough:
         raise PipelineError("Give a ticker (e.g. PETR4.SA) or --input FILE. See --help.")
     out_dir.mkdir(parents=True, exist_ok=True)
+    steps = 4 if args.no_entries else 5
 
     if args.input:
         input_path = Path(args.input)
         data = load_json(input_path, "Input JSON")
-        say(f"[1/4] Input: using {input_path} (no download)")
+        say(f"[1/{steps}] Input: using {input_path} (no download)")
     else:
-        say("[1/4] Input: build_prompt.py " + " ".join(passthrough))
+        say(f"[1/{steps}] Input: build_prompt.py " + " ".join(passthrough))
         input_path, data = build_input(passthrough, out_dir, args.name)
     stem = args.name or stem_for(data.get("asset", {}).get("ticker", ""))
 
     if args.projection:
         projection_path = Path(args.projection)
         load_json(projection_path, "Projection JSON")
-        say(f"[2/4] Projection: using {projection_path} (Claude Code not run)")
+        say(f"[2/{steps}] Projection: using {projection_path} (Claude Code not run)")
     else:
         projection_path = out_dir / f"{stem}_projection.json"
         research = data.get("research", "none")
-        say(f"[2/4] Projection: Claude Code runs the skill (research: {research}). "
+        say(f"[2/{steps}] Projection: Claude Code runs the skill (research: {research}). "
             f"This can take several minutes; timeout {args.timeout:g} s")
         project(input_path, data, projection_path, args.timeout, args.model, args.quiet)
 
-    say("[3/4] Check: rz.py check")
+    say(f"[3/{steps}] Check: rz.py check")
     check(projection_path)
     say("      OK")
     saved = None
@@ -593,26 +661,46 @@ def pipeline(args, passthrough):
         saved = save(input_path, projection_path)
 
     chart_path = Path(args.chart) if args.chart else out_dir / f"{stem}.png"
-    say("[4/4] Chart: plot_projection.py")
+    say(f"[4/{steps}] Chart: plot_projection.py")
     plot(input_path, projection_path, chart_path, args)
-    return input_path, projection_path, chart_path, saved
+    result = {"input": input_path, "projection": projection_path, "chart": chart_path,
+              "saved": saved, "entries": None, "failed": None}
+    if args.no_entries:
+        return result
+
+    say("[5/5] Trade setups: Claude Code ranks three (entry, stop, target). "
+        f"This takes a few minutes; timeout {args.timeout:g} s")
+    entries_path = out_dir / f"{stem}_entries.json"
+    try:   # a failure here must not hide the three files already made
+        result["entries"] = trade_entries(input_path, projection_path, entries_path,
+                                          args.timeout, args.model, args.quiet)
+    except PipelineError as error:
+        result["failed"] = str(error)
+    if result["entries"] and saved:   # keep the setups with the pair they were derived from
+        shutil.copyfile(entries_path, Path(saved) / "entries.json")
+    return result
 
 
 def main(argv=None):
     args, passthrough = parse(argv)
     try:
-        input_path, projection_path, chart_path, saved = pipeline(args, passthrough)
+        result = pipeline(args, passthrough)
     except PipelineError as error:
         say(f"Error: {error}")
         return 1
     except KeyboardInterrupt:
         say("Interrupted.")
         return 130
-    print(f"input:      {input_path}")
-    print(f"projection: {projection_path}")
-    print(f"chart:      {chart_path}")
-    if saved:
-        print(f"saved:      {saved}")
+    print(f"input:      {result['input']}")
+    print(f"projection: {result['projection']}")
+    print(f"chart:      {result['chart']}")
+    if result["entries"]:
+        print(f"entries:    {result['entries']}")
+    if result["saved"]:
+        print(f"saved:      {result['saved']}")
+    if result["failed"]:
+        say(f"Error: {result['failed']}")
+        return 1
     return 0
 
 
