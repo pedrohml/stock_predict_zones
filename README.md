@@ -61,7 +61,7 @@ One command, from ticker to chart (needs [Claude Code](https://claude.com/claude
 uv run python run_pipeline.py PETR4.SA --horizon 1-3m
 ```
 
-It runs the three steps below in order, validates the projection with `rz.py check` before plotting, and prints where the files are: `petr4_input.json`, `petr4_projection.json` and `petr4.png`. Names come from the ticker, lowercased and without the exchange suffix. Step 2 can take several minutes; progress goes to standard error.
+It runs the three steps below in order, validates the projection with `rz.py check` before plotting, and prints where the files are: `petr4_input.json`, `petr4_projection.json` and `petr4.png`. Names come from the ticker, lowercased and without the exchange suffix. Step 2 takes about 2 to 6 minutes (longest with `--research deep`); progress goes to standard error.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -81,7 +81,9 @@ uv run python run_pipeline.py --input petr4_input.json                          
 uv run python run_pipeline.py --input petr4_input.json --projection petr4_projection.json  # plot again only
 ```
 
-Step 2 runs `claude -p` in this repository without bypassing permissions. Claude gets only the skill, the helper script and a throwaway work folder to read and write in, plus web search when `--research` is not `none`; anything else is denied.
+Step 2 runs `claude -p` in this repository without bypassing permissions. Claude gets only the skill, the helper script and a throwaway work folder to write in (it can also read files of this repository), plus web search and page fetching when `--research` is not `none`; anything else is denied.
+
+With research on (the default, `one_search`), the wrapper also tells Claude to open each page before citing it: a driver states only what its `source` page says, and a dividend amount or implied move read from an opened page goes into the simulation as a shock. Pages that refuse to load (some sites answer 403) are skipped, so the drivers come from the pages that did open.
 
 The same thing by hand, one step at a time:
 
