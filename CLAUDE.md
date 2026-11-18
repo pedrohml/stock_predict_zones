@@ -73,4 +73,6 @@ The three pieces share no code, only JSON conventions. Changing one side silentl
 
 ## Domain constraint
 
+One deliberate exception, kept separate: `prompts/trade_entries.md` (reply schema in `prompts/trade_entries.schema.json`) is an opt-in prompt template that turns one input + projection into three ranked hypothetical setups with entry, stop and target. It is not wired into the skill, the chart or `run_pipeline.py`, and it must stay that way unless the user asks. Its rules are mechanical (prices from zone edges, odds from `reach`/`turn`); it reads the projection's `supports`/`resistances` (`zone`, `reach`, `turn`), `structure.volatility.assumed`, `horizon.closes`/`last`, `events` and `confidence`, so a change to those fields in `SKILL.md` needs a matching change there. It still carries no position size and never raises the confidence level.
+
 The output is analysis, not advice: the skill never emits buy/sell/hold calls, stops, targets or position sizes, and `confidence.level` is only ever `low` or `medium`. The probabilities are not backtested. Preserve these constraints and the disclaimers when editing the skill, the chart footer or the README.

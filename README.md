@@ -31,6 +31,7 @@ build_prompt.py  ──►  reversal-zones-projection  ──►  plot_projectio
 - [Step 1: build_prompt.py](#step-1-build_promptpy)
 - [Step 2: the reversal-zones-projection skill](#step-2-the-reversal-zones-projection-skill)
 - [Step 3: plot_projection.py](#step-3-plot_projectionpy)
+- [Optional: ranked trade setups](#optional-ranked-trade-setups)
 - [How the probabilities are produced](#how-the-probabilities-are-produced)
 - [Glossary](#glossary)
 - [Known limits](#known-limits)
@@ -355,6 +356,24 @@ The language is chosen once, with `--language` in step 1. It is stored in the in
 
 `--lang` overrides the labels only: text that comes from the projection stays in the language it was written in.
 
+## Optional: ranked trade setups
+
+`prompts/trade_entries.md` is a separate prompt template, not part of the pipeline or the skill. Given the input and the projection of one run, it asks Claude for three hypothetical trade setups, each with an entry, a stop and a target, ranked best first. The reply is one JSON object described by `prompts/trade_entries.schema.json`.
+
+To use it, replace `{{INPUT_JSON}}` and `{{PROJECTION_JSON}}` with the two files, unchanged, and send everything below the opening comment as one message.
+
+How the setups are built:
+
+- **Prices come from zone edges only.** A *reversal* enters at a zone's near edge and targets the first zone on the opposite side. A *continuation* enters where a zone breaks and targets the far edge of the next one. Stops sit a quarter of one candle's typical move beyond the zone.
+- **Odds come from the projection.** `fill` and `win_if_filled` are computed from `reach` and `turn` by fixed formulas, and each entry's `basis` shows the numbers used.
+- **Ranking** is by `edge.per_order`: the expected result in units of risk, counting orders that never fill as zero.
+
+Read the limits before using the output:
+
+- `win_if_filled` is a ceiling. The projection knows whether a zone held or broke by the end of the horizon, not whether the stop was touched before the target.
+- The formulas are a heuristic layered on probabilities that are themselves not backtested. Continuation setups get no distance discount, so they tend to rank above reversals.
+- There is no position size or leverage, and a setup marked `favourable` is not a recommendation.
+
 ## How the probabilities are produced
 
 The helper simulates the future closes of the main series and counts how often each zone is reached or broken.
@@ -416,6 +435,9 @@ stock_predict_zones/
 │   ├── SKILL.md                    step 2: the skill
 │   └── scripts/rz.py               its helper: levels, simulation, validation, saving
 ├── examples/                       one complete run: input, projection and charts
+├── prompts/
+│   ├── trade_entries.md            optional prompt: three ranked trade setups from one run
+│   └── trade_entries.schema.json   JSON Schema of its reply
 ├── projections/                    every projection made, with its input (local, not committed)
 ├── pyproject.toml                  dependencies and Python version
 ├── uv.lock
