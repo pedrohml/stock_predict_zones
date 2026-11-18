@@ -15,7 +15,7 @@ build_prompt.py  ──input.json──►  reversal-zones-projection skill (Cla
 ## Commands
 
 ```bash
-uv sync                                                                      # Python 3.15+ (.python-version)
+uv sync                                                                      # Python 3.12+ (.python-version)
 uv run python build_prompt.py PETR4.SA --horizon 1-3m -o petr4_input.json    # step 1, hits Yahoo Finance
 uv run python plot_projection.py petr4_input.json petr4_projection.json -o petr4.png   # step 3
 ```
