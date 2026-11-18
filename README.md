@@ -294,6 +294,7 @@ uv run python $RZ sim input.json zones.json      # baseline probabilities
 uv run python $RZ check projection.json          # validate a projection
 uv run python $RZ save input.json projection.json   # keep the pair under projections/
 uv run python $RZ list                           # the saved projections, oldest first
+uv run python $RZ score input.json projection.json candles.json   # what the price did, from a file of later candles
 ```
 
 `zones.json` lists the zones nearest first, plus optional scheduled shocks:
@@ -327,7 +328,41 @@ projections/
 - The folder is `projections/` in the directory the command runs from. Set `RZ_PROJECTIONS_DIR`, or pass a folder as the last argument, to keep them elsewhere.
 - `projections/` is in `.gitignore`: the history is local to your machine. Remove that line if you want to commit it.
 
-Scoring the saved projections is not built yet; see the [Roadmap](#roadmap).
+### Scoring the saved projections
+
+`score_projections.py` compares every saved projection with what the price did afterwards, then summarises how the forecast probabilities compared with the events.
+
+```bash
+uv run python score_projections.py                      # everything under projections/
+uv run python score_projections.py --ticker PETR4.SA    # one ticker
+uv run python score_projections.py projections/PETR4.SA/2026-11-18T1515_1-3m   # one saved folder
+uv run python score_projections.py --json               # one JSON object instead of the tables
+```
+
+It downloads the later candles from Yahoo Finance once per ticker (split-adjusted, not dividend-adjusted, like step 1) and judges each projection with the simulation's own definitions (`outcome()` in `rz.py`, which shares its code with `sim`):
+
+- **Measure.** Closes for `close_in_zone`, intra-candle lows and highs for `touched_once`.
+- **Reached, broken, turned.** The nearest zone is reached when the lowest close (highest, for resistances) gets to its near edge, and always if the price started inside it. Every later entry, the tail included, is reached when the zone before it broke: strictly beyond its far edge. `turned` is true for the one entry per side where the horizon's extreme was made (reached and not broken), and for none if the nearest zone was never reached.
+- **Scenario.** Exactly one of breakdown, breakout, range and whipsaw, from the far edges of the middle zones.
+- **Which candles.** The input's last row if it was still forming (its close is the first close of the horizon), otherwise the candle after it, up to `horizon.last`. Weekly and monthly candles are built from daily ones. Intraday, the horizon is one session: the one in progress, or the next one if the market was shut.
+- **Holidays.** Fewer candles than `horizon.closes` are scored as they are, with a note. An ended projection with less than half of its candles is not scored.
+- **Open horizons.** The result is provisional and labelled `so far`. Only closed candles count for the close measure. A zone already reached or broken stays so; `turned` and the scenario can still change.
+- **Not scored.** A stock split after the projection (its zone prices are on the old scale), realised prices that do not match the input's last closed candle, a failed download, or damaged saved files. Each is listed with its reason and the rest are still scored.
+
+Only projections whose horizon has **ended** enter the calibration summary. Every `reach`, `turn` and scenario `p` is put in a 10-point bucket; per bucket the table shows the number of forecasts, their mean and how often the event happened. A `reach` of 1 for a zone the price started inside is left out, since it is true by definition. Each kind also gets a Brier score (mean squared difference between forecast and outcome, 0 is perfect) next to two reference forecasts: always 50% (25% for scenarios), and always the sample's own rate.
+
+```
+  reach: 8 forecasts, 38% happened
+    Brier score 0.120 (0 is perfect); always saying 50% would score 0.250, always saying this sample's own rate 0.234
+    forecast     n  mean forecast  observed
+    10-20%       2           0.16      0.00
+    30-40%       1           0.39      0.00
+    ...
+```
+
+Read it with care. One projection contributes about twenty probabilities that are all judged on the same price path, and overlapping horizons of one ticker share most of that path, so the forecasts are far from independent. With a handful of projections the table is anecdote, not evidence. It describes calibration only: it is not a measure of returns and does not show that the method works or fails.
+
+`rz.py score input.json projection.json candles.json` is the same judgement without the network: `candles.json` is a list of `[start, open, high, low, close]` rows of the close basis.
 
 ## Step 3: plot_projection.py
 
@@ -428,7 +463,9 @@ The simulation knows nothing about chart levels. The skill may therefore move a 
 
 ## Known limits
 
-- **Uncalibrated.** No backtest has been run. This is the most important gap.
+- **Uncalibrated.** The probabilities have not been checked against a meaningful number of outcomes. `score_projections.py` can now compare saved projections with later prices, but the history is days old and no horizon has ended yet; no backtest on past dates has been run. This is the most important gap.
+- **Scoring a touch on a forming candle.** For `touched_once`, a finished candle does not say whether its high or low came before or after the projection. For the candle that was forming, the scorer counts an extreme only if it is new, otherwise it uses the close, so a touch inside that candle's earlier range can be missed. Everything else is judged exactly as the simulation counts it.
+- **Pre-market and first-of-month projections.** When the newest candle is closed but a new one has not started (a daily projection made before the open, a monthly one before the month's first session), `horizon.first` skips the candle about to begin. The scorer counts it anyway, since it comes after the projection, and notes that there are more closes than scheduled.
 - **Yahoo Finance is unofficial.** Quotes can be delayed about 15 minutes on some exchanges and requests are sometimes rate-limited. One failed request currently ends the run.
 - **Not dividend-adjusted.** For heavy dividend payers, old levels sit higher than a total-return chart would show.
 - **Holidays.** A week ending on a holiday Friday is labelled `forming` until the weekend.
@@ -438,7 +475,7 @@ The simulation knows nothing about chart levels. The skill may therefore move a 
 
 ## Roadmap
 
-1. Score the saved projections in `projections/` against later prices, and backtest the baseline probabilities on past dates, to measure calibration.
+1. Backtest the baseline probabilities on past dates, to measure calibration on a sample large enough to mean something. Scoring of saved projections exists (`score_projections.py`); what is missing is the history. A useful addition is to score the unadjusted simulation next to the skill's adjusted numbers.
 2. Add `json` to `--shape`.
 3. Carry event sizes as numbers (dividend amount, implied move) so the skill does not have to search for them.
 4. State `dividend_adjusted` explicitly in the input.
@@ -451,9 +488,10 @@ stock_predict_zones/
 ├── build_prompt.py                 step 1: Yahoo Finance to input JSON
 ├── plot_projection.py              step 3: input + projection to image
 ├── run_pipeline.py                 all steps in one command (step 2 through headless Claude Code)
+├── score_projections.py            saved projections against later prices, and the calibration summary
 ├── .claude/skills/reversal-zones-projection/
 │   ├── SKILL.md                    step 2: the skill
-│   └── scripts/rz.py               its helper: levels, simulation, validation, saving
+│   └── scripts/rz.py               its helper: levels, simulation, validation, saving, outcomes
 ├── examples/                       one complete run: input, projection and charts
 ├── prompts/
 │   ├── trade_entries.md            optional prompt: three ranked trade setups from one run
