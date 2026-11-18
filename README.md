@@ -164,6 +164,8 @@ For other Claude apps, add the `.claude/skills/reversal-zones-projection` folder
 
 Paste or attach an input JSON. The skill triggers on `"task": "reversal_zones"` and replies with the projection in one `json` code block. Save that block as a file.
 
+The skill also keeps every projection it makes, together with its input, under `projections/` (see [Saved projections](#saved-projections)).
+
 ### What the skill does
 
 1. Runs its helper on the input to extract facts: trend, dominant swing, retracement levels, volatility, pivot highs and lows, gaps.
@@ -172,6 +174,7 @@ Paste or attach an input JSON. The skill triggers on `"task": "reversal_zones"` 
 4. Simulates future closes to get baseline probabilities (details [below](#how-the-probabilities-are-produced)).
 5. Adjusts the baseline by a small, capped amount and records what it moved in `method`.
 6. Validates the result (probabilities add up, zones do not overlap, scenarios sum to 1, every driver has a source) before replying.
+7. Saves the input and the projection under `projections/`.
 
 It does not give buy, sell or hold calls, stops, targets or position sizes.
 
@@ -238,6 +241,8 @@ RZ=.claude/skills/reversal-zones-projection/scripts/rz.py
 uv run python $RZ levels input.json              # facts for choosing zones
 uv run python $RZ sim input.json zones.json      # baseline probabilities
 uv run python $RZ check projection.json          # validate a projection
+uv run python $RZ save input.json projection.json   # keep the pair under projections/
+uv run python $RZ list                           # the saved projections, oldest first
 ```
 
 `zones.json` lists the zones nearest first, plus optional scheduled shocks:
@@ -249,6 +254,28 @@ uv run python $RZ check projection.json          # validate a projection
   "shocks": [{ "date": "2026-12-21", "drop": 1.19 }, { "date": "2026-11-17", "jump": 0.08 }]
 }
 ```
+
+### Saved projections
+
+Every projection is kept by default, so that a batch of past projections can later be compared with what the price did. The skill runs `rz.py save` as its last step; you can run it yourself for a projection made elsewhere.
+
+```
+projections/
+└── PETR4.SA/
+    ├── 2026-11-18T1515_1-3m/
+    │   ├── input.json          the candles and request the projection was made from
+    │   └── projection.json     the projection, exactly as produced
+    └── 2026-11-18T1515_1-3m_2/ the same input projected a second time
+```
+
+- The timestamp is the projection's `as_of.time`, in the exchange's local time, followed by the horizon.
+- Nothing is overwritten. Projecting the same input again adds a `_2`, `_3`, ... folder.
+- `save` refuses a projection that fails `check`, or whose ticker or time does not match the input.
+- `rz.py list` prints one line per saved projection with its horizon's last date and whether that date has passed (`ended`) or not (`open`). Only `ended` projections can be scored in full.
+- The folder is `projections/` in the directory the command runs from. Set `RZ_PROJECTIONS_DIR`, or pass a folder as the last argument, to keep them elsewhere.
+- `projections/` is in `.gitignore`: the history is local to your machine. Remove that line if you want to commit it.
+
+Scoring the saved projections is not built yet; see the [Roadmap](#roadmap).
 
 ## Step 3: plot_projection.py
 
@@ -321,7 +348,7 @@ The simulation knows nothing about chart levels. The skill may therefore move a 
 
 ## Roadmap
 
-1. Backtest the baseline probabilities on past dates to measure calibration.
+1. Score the saved projections in `projections/` against later prices, and backtest the baseline probabilities on past dates, to measure calibration.
 2. Add `json` to `--shape`.
 3. Carry event sizes as numbers (dividend amount, implied move) so the skill does not have to search for them.
 4. State `dividend_adjusted` explicitly in the input.
@@ -335,8 +362,9 @@ stock_predict_zones/
 ├── plot_projection.py              step 3: input + projection to image
 ├── .claude/skills/reversal-zones-projection/
 │   ├── SKILL.md                    step 2: the skill
-│   └── scripts/rz.py               its helper: levels, simulation, validation
+│   └── scripts/rz.py               its helper: levels, simulation, validation, saving
 ├── examples/                       one complete run: input, projection and charts
+├── projections/                    every projection made, with its input (local, not committed)
 ├── pyproject.toml                  dependencies and Python version
 ├── uv.lock
 └── README.md

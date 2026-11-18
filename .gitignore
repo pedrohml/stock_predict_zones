@@ -12,3 +12,6 @@ wheels/
 
 # macOS
 .DS_Store
+
+# Saved projections (local history, see README)
+projections/

@@ -31,9 +31,13 @@ RZ=.claude/skills/reversal-zones-projection/scripts/rz.py
 uv run python $RZ levels input.json              # facts for choosing zones
 uv run python $RZ sim    input.json zones.json   # baseline probabilities
 uv run python $RZ check  output.json             # validate a projection; prints OK or the violations
+uv run python $RZ save   input.json output.json  # keep the pair under projections/TICKER/TIME_HORIZON/
+uv run python $RZ list                           # saved projections, oldest first, open or ended
 ```
 
 Use `rz.py check` on any projection JSON you write or edit by hand.
+
+The skill saves every projection by default (`rz.py save`, its last workflow step) so past projections can be scored later. `projections/` is gitignored, relative to the working directory (override with `RZ_PROJECTIONS_DIR` or a trailing folder argument), and append-only: `save` never overwrites and nothing should edit or delete an earlier entry.
 
 `examples/` holds a ready-made input/projection pair (`petr4_input.json`, `petr4_projection.json`) for trying `plot_projection.py` and `rz.py check` without Yahoo or step 2.
 

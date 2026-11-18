@@ -3,8 +3,11 @@
   rz.py levels INPUT.json              -> facts for choosing zones
   rz.py sim    INPUT.json ZONES.json   -> baseline probabilities
   rz.py check  OUTPUT.json             -> validate the finished projection
+  rz.py save   INPUT.json OUTPUT.json [DIR]  -> keep both under DIR/TICKER/TIME_HORIZON/
+  rz.py list   [DIR]                   -> the saved projections, oldest first
+DIR defaults to $RZ_PROJECTIONS_DIR, else ./projections.
 """
-import calendar, json, sys
+import calendar, json, os, re, shutil, sys
 from datetime import date, datetime, timedelta
 import numpy as np
 
@@ -155,8 +158,8 @@ def sim(path, zones_path, paths=200_000):
     for key, value in out.items(): print(key, json.dumps(value))
 
 
-def check(path):
-    o, bad = json.load(open(path, encoding="utf-8")), []
+def problems(o):
+    bad = []
     price = o["as_of"]["price"]
     for name in ("supports", "resistances"):
         zs = o[name]
@@ -182,9 +185,56 @@ def check(path):
     if o["confidence"]["level"] not in ("low", "medium"): bad.append("confidence is low or medium, never high")
     for dr in o.get("drivers", []):
         if not str(dr.get("source", "")).startswith("http"): bad.append("driver without a source URL")
+    return bad
+
+
+def check(path):
+    bad = problems(json.load(open(path, encoding="utf-8")))
     print("OK" if not bad else "\n".join(bad))
     sys.exit(1 if bad else 0)
 
 
+def store(folder=None):
+    return folder or os.environ.get("RZ_PROJECTIONS_DIR") or "projections"
+
+
+def save(input_path, output_path, folder=None):
+    """Keep a finished projection next to the input it was made from, so it can be scored
+    against what the price did later. Files are copied as they are; nothing is overwritten."""
+    d, o = (json.load(open(p, encoding="utf-8")) for p in (input_path, output_path))
+    bad = problems(o)
+    if d["asset"]["ticker"].upper() != o["asset"]["ticker"].upper(): bad.append("input and projection are for different tickers")
+    if d["now"]["time"] != o["as_of"]["time"]: bad.append("as_of.time must equal the input's now.time")
+    if bad:
+        print("not saved:\n" + "\n".join(bad)); sys.exit(1)
+    safe = lambda text: re.sub(r"[^A-Za-z0-9._-]", "_", text)
+    stamp = datetime.fromisoformat(o["as_of"]["time"]).strftime("%Y-%m-%dT%H%M")   # the exchange's local time
+    base = os.path.join(store(folder), safe(o["asset"]["ticker"].upper()), f"{stamp}_{safe(o['horizon']['label'])}")
+    target, n = base, 1
+    while os.path.exists(target):   # the same input projected again: keep every attempt
+        n += 1; target = f"{base}_{n}"
+    os.makedirs(target)
+    shutil.copyfile(input_path, os.path.join(target, "input.json"))
+    shutil.copyfile(output_path, os.path.join(target, "projection.json"))
+    print("saved", target)
+
+
+def saved(folder=None):
+    """[(folder, projection)] for every saved projection, oldest first."""
+    root, found = store(folder), []
+    for here, _, files in os.walk(root):
+        if "projection.json" in files:
+            found.append((here, json.load(open(os.path.join(here, "projection.json"), encoding="utf-8"))))
+    return sorted(found, key=lambda item: (datetime.fromisoformat(item[1]["as_of"]["time"]).timestamp(), item[0]))
+
+
+def list_saved(folder=None):
+    """One line per saved projection. `ended` means the last close of the horizon is in the past."""
+    for here, o in saved(folder):
+        last = o["horizon"]["last"]
+        state = "ended" if date.fromisoformat(last) < date.today() else "open"
+        print(o["as_of"]["time"], o["asset"]["ticker"], o["horizon"]["label"], o["as_of"]["price"], "to", last, state, here)
+
+
 if __name__ == "__main__":
-    {"levels": levels, "sim": sim, "check": check}[sys.argv[1]](*sys.argv[2:])
+    {"levels": levels, "sim": sim, "check": check, "save": save, "list": list_saved}[sys.argv[1]](*sys.argv[2:])
