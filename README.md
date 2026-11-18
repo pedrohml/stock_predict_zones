@@ -74,6 +74,7 @@ It runs the three steps below in order, validates the projection with `rz.py che
 | `--model NAME` | Claude Code's own | Model for the headless run. |
 | `--timeout SECONDS` | `1800` | Give up on Claude Code after this long. |
 | `--theme`, `--lang`, `--candles`, `--dpi` | step 3's own | Passed to `plot_projection.py` only when given. |
+| `--no-save` | off | Do not keep the new projection under `projections/` (see [Saved projections](#saved-projections)). |
 
 ```bash
 uv run python run_pipeline.py --input petr4_input.json                                     # project and plot again, no download
@@ -301,6 +302,7 @@ projections/
 - Nothing is overwritten. Projecting the same input again adds a `_2`, `_3`, ... folder.
 - `save` refuses a projection that fails `check`, or whose ticker or time does not match the input.
 - `rz.py list` prints one line per saved projection with its horizon's last date and whether that date has passed (`ended`) or not (`open`). Only `ended` projections can be scored in full.
+- `run_pipeline.py` saves each projection it makes the same way, once it has passed `check`, and prints the folder. It does not save when `--projection` reuses an existing file or `--no-save` is given.
 - The folder is `projections/` in the directory the command runs from. Set `RZ_PROJECTIONS_DIR`, or pass a folder as the last argument, to keep them elsewhere.
 - `projections/` is in `.gitignore`: the history is local to your machine. Remove that line if you want to commit it.
 

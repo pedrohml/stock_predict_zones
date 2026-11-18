@@ -6,6 +6,9 @@
     python run_pipeline.py --input petr4_input.json                                    # project and plot again
     python run_pipeline.py --input petr4_input.json --projection petr4_projection.json # plot again
 
+A projection made by this run is also kept, with its input, under projections/
+(`rz.py save`; folder set by $RZ_PROJECTIONS_DIR) unless --no-save is given.
+
 Options this script does not know (the ticker, --horizon, --research, --event,
 --language ...) are passed to build_prompt.py untouched; see
 `python build_prompt.py --help`.
@@ -114,6 +117,8 @@ def claude_prompt(input_path, projection_path, work, python=sys.executable):
         f"- Keep working files such as zones.json in {work} and create them with the Write tool.\n"
         f"- Save the final projection to {projection_path} and make sure the check command "
         "prints OK for that file.\n"
+        "- Skip the skill's save step: do not run the helper's save command. The pipeline "
+        "keeps the projection itself.\n"
         "- The file is the result. Reply with one short line instead of repeating the JSON."
     )
 
@@ -225,6 +230,18 @@ def check(projection_path):
                             + (tail(printed, 40) or tail(done.stderr, 1)))
 
 
+def save(input_path, projection_path):
+    """Keep the pair for later scoring (rz.py save). Returns the folder, or None
+    with a warning: a projection that cannot be kept is still worth plotting."""
+    done = run([sys.executable, RZ, "save", input_path, projection_path])
+    printed = done.stdout.strip()
+    if done.returncode != 0 or not printed.startswith("saved "):
+        say("      Warning: the projection was not kept for later scoring:\n"
+            + (tail(printed) or tail(done.stderr, 1)))
+        return None
+    return printed[len("saved "):]
+
+
 def plot(input_path, projection_path, chart_path, args):
     command = [sys.executable, PLOT, input_path, projection_path, "-o", chart_path]
     for flag in ("theme", "lang", "candles", "dpi"):
@@ -259,6 +276,9 @@ def parse(argv=None):
                             "the extension picks the format)")
     claude = parser.add_argument_group("step 2, Claude Code")
     claude.add_argument("--model", help="model for `claude -p` (default: Claude Code's own)")
+    claude.add_argument("--no-save", action="store_true",
+                        help="do not keep the new projection under projections/ "
+                             "(see `rz.py save`)")
     claude.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT, metavar="SECONDS",
                         help=f"give up on Claude Code after this long (default: {DEFAULT_TIMEOUT})")
     chart = parser.add_argument_group(
@@ -306,17 +326,20 @@ def pipeline(args, passthrough):
     say("[3/4] Check: rz.py check")
     check(projection_path)
     say("      OK")
+    saved = None
+    if not args.projection and not args.no_save:   # only a projection made in this run is new
+        saved = save(input_path, projection_path)
 
     chart_path = Path(args.chart) if args.chart else out_dir / f"{stem}.png"
     say("[4/4] Chart: plot_projection.py")
     plot(input_path, projection_path, chart_path, args)
-    return input_path, projection_path, chart_path
+    return input_path, projection_path, chart_path, saved
 
 
 def main(argv=None):
     args, passthrough = parse(argv)
     try:
-        input_path, projection_path, chart_path = pipeline(args, passthrough)
+        input_path, projection_path, chart_path, saved = pipeline(args, passthrough)
     except PipelineError as error:
         say(f"Error: {error}")
         return 1
@@ -326,6 +349,8 @@ def main(argv=None):
     print(f"input:      {input_path}")
     print(f"projection: {projection_path}")
     print(f"chart:      {chart_path}")
+    if saved:
+        print(f"saved:      {saved}")
     return 0
 
 

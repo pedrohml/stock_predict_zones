@@ -19,6 +19,14 @@ def option(command, flag):
     return command[command.index(flag) + 1]
 
 
+@pytest.fixture(autouse=True)
+def store(tmp_path_factory, monkeypatch):
+    """rz.py save writes here, never into the repository's own projections/."""
+    folder = tmp_path_factory.mktemp("store") / "kept"
+    monkeypatch.setenv("RZ_PROJECTIONS_DIR", str(folder))
+    return folder
+
+
 @pytest.fixture
 def calls():
     return {"build": [], "claude": [], "plot": []}
@@ -184,6 +192,34 @@ def test_full_run_with_stubs(tmp_path, stub_build, stub_claude, calls, capsys):
     assert str(work / "input.json") in command[2]
 
 
+def test_a_new_projection_is_kept_with_its_input(tmp_path, input_path, projection_path, store,
+                                                 stub_build, stub_claude, capsys):
+    stub_claude()
+    assert run_main("PETR4.SA", "--out-dir", tmp_path / "runs", "--dpi", "50") == 0
+    [folder] = [path for path in store.rglob("*") if path.is_dir() and (path / "projection.json").is_file()]
+    assert (folder / "input.json").read_bytes() == input_path.read_bytes()
+    assert (folder / "projection.json").read_bytes() == projection_path.read_bytes()
+    assert f"saved:      {folder}" in capsys.readouterr().out
+    assert "do not run the helper's save command" in run_pipeline.claude_prompt("i", "p", "w")
+
+
+def test_no_save_keeps_nothing(tmp_path, store, stub_build, stub_claude, capsys):
+    stub_claude()
+    assert run_main("PETR4.SA", "--no-save", "--out-dir", tmp_path / "runs", "--dpi", "50") == 0
+    assert not store.exists() and "saved:" not in capsys.readouterr().out
+
+
+def test_a_projection_that_cannot_be_kept_is_still_plotted(tmp_path, input_data, write_json, store,
+                                                           stub_build, stub_claude, capsys):
+    input_data["now"]["time"] = "2026-11-18T10:00-03:00"   # no longer the projection's as_of.time
+    stub_claude()
+    assert run_main("--input", write_json("other_input.json", input_data),
+                    "--out-dir", tmp_path / "runs", "--dpi", "50") == 0
+    captured = capsys.readouterr()
+    assert "not kept" in captured.err and "as_of.time" in captured.err
+    assert not store.exists() and (tmp_path / "runs" / "petr4.png").is_file()
+
+
 def test_name_and_chart_options(tmp_path, stub_build, stub_claude):
     stub_claude()
     chart = tmp_path / "pics" / "x.svg"
@@ -205,7 +241,7 @@ def test_projection_skips_claude(tmp_path, input_path, projection_path, stub_bui
     assert run_main("--input", input_path, "--projection", projection_path,
                     "--out-dir", tmp_path, "--dpi", "50") == 0
     assert calls["build"] == []
-    assert [path.name for path in tmp_path.iterdir()] == ["petr4.png"]
+    assert [path.name for path in tmp_path.iterdir()] == ["petr4.png"]   # nothing kept: not a new projection
 
 
 @pytest.mark.parametrize("research, web", [("none", False), ("one_search", True)])
