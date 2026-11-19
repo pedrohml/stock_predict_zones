@@ -32,6 +32,7 @@ build_prompt.py  ──►  reversal-zones-projection  ──►  plot_projectio
 - [Commands](#commands)
 - [Batch runs](#batch-runs)
 - [Step 1: build_prompt.py](#step-1-build_promptpy)
+- [Data sources: Yahoo, the cache, CSV files](#data-sources-yahoo-the-cache-csv-files)
 - [Step 2: the reversal-zones-projection skill](#step-2-the-reversal-zones-projection-skill)
 - [Step 3: plot_projection.py](#step-3-plot_projectionpy)
 - [Ranked trade setups](#ranked-trade-setups)
@@ -62,7 +63,7 @@ uv tool install --editable .    # undo with: uv tool uninstall stock-predict-zon
 
 The install must be editable. `zones` keeps running the scripts and the skill of this checkout, so edits and `git pull` take effect at once, and the folder must stay where it is. If the shell does not find `zones` afterwards, run `uv tool update-shell` and open a new terminal. Output folders and relative paths such as `--input` and `--out-dir` are taken from the directory you are in, not from the repository.
 
-Tests: `uv run pytest` runs the offline suite in `tests/` (no network, a few seconds). It does not exercise the Yahoo Finance download.
+Tests: `uv run pytest` runs the offline suite in `tests/` (no network, about two minutes). Yahoo is replaced by fakes, including simulated rate limits, server errors and hung requests; the real download is not exercised.
 
 Step 2 needs Claude with the skill in `.claude/skills/reversal-zones-projection/`. Claude Code picks it up automatically when run in this repository; other Claude apps need it installed. See [Installing the skill](#installing-the-skill).
 
@@ -250,7 +251,7 @@ zones PETR4.SA --no-config          # ignore the files for this run
 Config: ~/.config/zones/config.toml (language, research, model, open, runs_dir, history_dir)
 ```
 
-**Precedence.** Command line > environment variable > project file (`./zones.toml`) > user file > built-in default. The only setting with an environment variable is `history_dir` (`RZ_PROJECTIONS_DIR`).
+**Precedence.** Command line > environment variable > project file (`./zones.toml`) > user file > built-in default. Two settings have an environment variable: `history_dir` (`RZ_PROJECTIONS_DIR`) and `cache_dir` (`ZONES_CACHE_DIR`).
 
 **Settings.** A key is the option's name with underscores (`--max-rows` is `max_rows`); every key is top-level, without `[tables]`.
 
@@ -264,8 +265,9 @@ Config: ~/.config/zones/config.toml (language, research, model, open, runs_dir, 
 | `summary` | `true` | `--summary` (`--no-summary` for one run) |
 | `runs_dir` | `runs/` in the current directory | `--runs-dir DIR` |
 | `history_dir` | `$RZ_PROJECTIONS_DIR`, else `projections/` in the current directory | `--history-dir DIR` |
+| `cache_dir` | `$ZONES_CACHE_DIR`, else `$XDG_CACHE_HOME/zones`, else `~/.cache/zones` | `--cache-dir DIR`; the [candle cache](#the-candle-cache) and the shared rate-limit file |
 
-What belongs to one run stays on the command line: the ticker, `--event`, `--input`, `--projection`, `--name`, `--chart`, `--out-dir`. There are no per-ticker settings.
+What belongs to one run stays on the command line: the ticker, `--event`, `--prices`, `--no-cache`, `--input`, `--projection`, `--name`, `--chart`, `--out-dir`. There are no per-ticker settings.
 
 **One run differently.** Whatever is typed wins, e.g. `zones NVDA --language en --research deep`. A switch that a file turns on has an off form for one run: `--no-open`, `--no-quiet`, `--no-entries-by-claude`, `--no-volume`; one that a file turns off has an on form: `--entries`, `--save`, `--summary`.
 
@@ -292,6 +294,7 @@ Error: /home/you/.config/zones/config.toml: unknown setting 'langauge' (did you 
 | `zones entries WHAT` | Computes the [trade setups](#ranked-trade-setups) of a run again and checks them. | `trade_entries.py build`, then `check` |
 | `zones backtest TICKER... [options]` | [Backtests the baseline probabilities](#backtest-of-the-baseline) on past dates. Downloads from Yahoo Finance; no Claude call. | `backtest.py` |
 | `zones batch FILE\|TICKER... [options]` | One pipeline run per ticker of a watchlist, a few at a time, with a cost cap and a `summary.csv`. See [Batch runs](#batch-runs). | the pipeline, once per ticker |
+| `zones cache [info\|clear\|path] [TICKER...]` | The [candle cache](#the-candle-cache): what it holds, delete it (all or some tickers), or print its folder. | `data_source.py` |
 
 ```bash
 zones list                                   # every saved projection
@@ -334,11 +337,11 @@ VALE3.SA 1-2w      # this one weekly
 NVDA
 ```
 
-**What runs.** Each ticker is an ordinary `zones run TICKER [options]` in a process of its own, so a ticker that fails (no data from Yahoo, a Claude Code timeout, a failed `rz.py check`) never stops the others, and its run folder lands exactly where a single run puts it, under `runs_dir`. Files and tickers come first; a word that names an existing file is a watchlist, any other word is a ticker, and a ticker listed twice with the same horizon runs once. Every option `zones batch` does not declare goes to each run as if typed there (`--horizon`, `--research`, `--model`, `--timeout`, `--no-entries` ...), and the [config files](#your-defaults) apply as they do to one run. A horizon on a watchlist line wins over `--horizon` for that ticker. The options that name one run's files (`--input`, `--projection`, `--out-dir`, `--name`, `--chart`) are refused, and each run gets `--no-open` unless you type `--open`.
+**What runs.** Each ticker is an ordinary `zones run TICKER [options]` in a process of its own, so a ticker that fails (no data from Yahoo, a Claude Code timeout, a failed `rz.py check`) never stops the others, and its run folder lands exactly where a single run puts it, under `runs_dir`. Files and tickers come first; a word that names an existing file is a watchlist, any other word is a ticker, and a ticker listed twice with the same horizon runs once. Every option `zones batch` does not declare goes to each run as if typed there (`--horizon`, `--research`, `--model`, `--timeout`, `--no-entries` ...), and the [config files](#your-defaults) apply as they do to one run. A horizon on a watchlist line wins over `--horizon` for that ticker. The options that name one run's files (`--input`, `--projection`, `--out-dir`, `--name`, `--chart`) are refused, and each run gets `--no-open` unless you type `--open`. `--prices DIR` works when the folder holds one `TICKER.csv` or `TICKER/` per ticker ([CSV files](#csv-files-your-own-data)); one CSV file for several tickers is refused.
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--jobs N`, `-j N` | `2` | Runs at the same time. Each run mostly waits on Claude Code, so two roughly halve the wall time; more runs at once mean more Claude Code sessions sharing your usage limits and more Yahoo requests in a burst. |
+| `--jobs N`, `-j N` | `2` | Runs at the same time. Each run mostly waits on Claude Code, so two roughly halve the wall time; more runs at once mean more Claude Code sessions sharing your usage limits. Yahoo requests are spaced across all the runs by the [shared rate limit](#yahoo-finance-retries-timeout-rate-limit), so more jobs do not burst Yahoo. |
 | `--max-cost USD` | none | Once the costs Claude Code reported add up to this, start no new run: the ones running finish, the rest are listed as `skipped`. With `--jobs N` the total can pass the cap by what the last N-1 runs cost. |
 | `--retry-failed BATCH_FOLDER` | none | Run again the tickers whose row in that batch's `summary.csv` is not `ok`, each with the horizon its row shows. Options are not remembered: type them again. A new batch folder is made. |
 | `--runs-dir DIR` | `runs_dir` | Where the batch folder goes, and passed on to each run. |
@@ -375,7 +378,7 @@ Analysis for study, not investment advice.
 
 ## Step 1: build_prompt.py
 
-Downloads candles from Yahoo Finance and writes one JSON holding the data and the request.
+Downloads candles from Yahoo Finance (or reads them from [CSV files](#csv-files-your-own-data)) and writes one JSON holding the data and the request.
 
 ```bash
 uv run python build_prompt.py TICKER [options]
@@ -401,6 +404,8 @@ When the step runs through `zones`, a [config file](#your-defaults) can set any 
 | `--language` | `en` | Language of the whole result: the free-text values in the projection and, in step 3, the chart's labels. The chart has labels for `pt` and `en`. |
 | `--links` | `decisive_only` | Links in the prose: `none`, `decisive_only`, `all`. |
 | `--decimals N` | `2` | Price rounding. |
+| `--prices FILE.csv\|DIR` | none | Read the candles from [CSV files](#csv-files-your-own-data) instead of Yahoo: no network at all. |
+| `--no-cache` | off | Download every candle again instead of reusing finished ones from the [candle cache](#the-candle-cache). |
 | `-o FILE` | stdout | Write to a file. |
 
 ### Horizon presets
@@ -465,7 +470,74 @@ Abridged example (real files have many more rows):
 | `data.split_adjusted` | Prices are adjusted for splits but **not for dividends**, which matches what most charting platforms show. |
 | `events` | Earnings and ex-dividend dates inside the horizon, from Yahoo's calendar, plus anything passed with `--event`. An empty list means none are known. |
 | `want.probability` | `close_in_zone`: judged on candle closes. `touched_once`: judged on intra-candle extremes. |
-| `provenance` | Where the candles came from, for the record: the source and library version, when they were downloaded (UTC), `auto_adjust: false` (split-adjusted, not dividend-adjusted), and per series (in the order of `data.series`) the rows kept, the first and last row's `start`, and what was requested from Yahoo. `data_sha256` is the sha256 of `data` in canonical JSON (sorted keys, no spaces), so an edited candle shows: `build_prompt.data_hash(json.load(f)["data"])` must equal it. The skill ignores this block. |
+| `provenance` | Where the candles came from, for the record: the source and library version, when they were downloaded (UTC), `auto_adjust: false` (split-adjusted, not dividend-adjusted), and per series (in the order of `data.series`) the rows kept, the first and last row's `start`, and what was requested from Yahoo. A series entry also has `checks` when the [row checks](#row-checks) dropped, fixed or flagged rows, `cache` when finished candles came from the [cache](#the-candle-cache) (how many of the downloaded rows, when they were first downloaded, when they were checked against Yahoo again), and `note` when a stale cache was replaced; none of these keys means the candles were downloaded in this run and needed nothing. From [CSV files](#csv-files-your-own-data), `source` names them, `files` lists each with its sha256, `read_at` replaces `downloaded_at`, `adjustment` replaces `auto_adjust`, and a series built from daily rows says `built_from: "1d"`. `data_sha256` is the sha256 of `data` in canonical JSON (sorted keys, no spaces), so an edited candle shows: `build_prompt.data_hash(json.load(f)["data"])` must equal it. The skill ignores this block. |
+
+## Data sources: Yahoo, the cache, CSV files
+
+Every price request of `build_prompt.py`, `backtest.py` and `score_projections.py` goes through `data_source.py`. It retries what can be retried, keeps finished candles in a local cache, checks every row, and can read your own CSV files instead.
+
+### Yahoo Finance: retries, timeout, rate limit
+
+| | What happens |
+|---|---|
+| **Transient failure** (HTTP 429, 5xx, a timeout, a dropped connection, Yahoo's "will be right back") | Retried up to 4 times, after 2, 4, 8, 16 s (5, 10, 20, 30 s after a 429), each wait cut to a random 50-100% so parallel runs do not retry in step, and never past 120 s in all. A warning line names each retry; after the last one the run stops with one line: `Yahoo kept failing for NVDA 1wk (YFRateLimitError: ...); gave up after 5 attempt(s) in 63 s`. |
+| **Permanent failure** (unknown symbol, delisted, 404, no candles in the range) | Not retried. The script prints its usual message at once, e.g. `No data for 'ZZZZ'. Check the Yahoo symbol.` yfinance is told to raise its errors instead of returning an empty table, so a timeout is never mistaken for an unknown symbol. |
+| **Timeout** | Each attempt is abandoned after `ZONES_YAHOO_TIMEOUT` seconds (default 30), even when Yahoo keeps the connection open, and counts as a transient failure. |
+| **Rate limit** | Requests from all processes on the machine start at least `ZONES_YAHOO_SPACING` seconds apart (default 0.5). The next free slot is kept in `yahoo.next` in the cache folder, read and moved on under an operating-system file lock (`fcntl` on macOS and Linux, `msvcrt` on Windows), which the system releases if a process dies, so nothing goes stale. A process reserves its slot, lets go of the lock and then waits, so `zones batch --jobs N` spreads its requests out. If the file cannot be used, requests are not delayed. |
+
+The spacing counts the scripts' own calls; one yfinance call can make a few HTTP requests (cookie, timezone, data). All Yahoo calls of a process run on one reused worker thread, because yfinance's HTTP session redoes its handshake (about 5 s, measured) on every new thread. The first request of every process still pays that handshake once, which is most of step 1's time.
+
+### The candle cache
+
+**Where.** `$ZONES_CACHE_DIR`, else `$XDG_CACHE_HOME/zones`, else `~/.cache/zones` on every platform; `cache_dir` in a [config file](#your-defaults) or `zones --cache-dir DIR` sets it for `zones` and everything it starts. One JSON file per key under `candles/TICKER/`: `INTERVAL-split.json` (split-adjusted, not dividend-adjusted), with `-actions` for score_projections.py's requests, which also keep the split dates.
+
+**What is cached.** Only finished daily, weekly and monthly candles: a candle is stored once it ended at least a day before the download. Intraday (15-minute, hourly) candles are never cached, and the first request of step 1, which reads the session and the latest price, is never cached.
+
+**How it is used.** When the cache covers the requested range, Yahoo is still asked, but only for the candles since the fifth-newest cached one. Those five must match the cache to within a millionth (prices, not volume, which Yahoo revises): a split rescales the whole history, so a mismatch discards the cache and downloads the full range again, with a warning and a `note` in the provenance. Everything from that fresh answer is used as it came, the forming candle and today's session included, so a live run never shows a stale price. Checked against Yahoo, the result equals a full download for all live horizons, a backtest and a score run. With a `period` request, rows older than the period are cut by date from now, so the oldest row of a series shorter than its row cap could differ from Yahoo's own cut by one candle.
+
+**Speed.** The cache saves payload, not requests: each series still costs one request. A 13-year daily download took about 1.0 s, its cached form 0.5 s. Step 1 is dominated by yfinance's first handshake either way.
+
+```bash
+zones cache                  # where it is and what it holds (rows, dates, last checked)
+zones cache clear            # delete it; `zones cache clear PETR4.SA` deletes one ticker
+zones PETR4.SA --no-cache    # one run without it (also backtest.py and score_projections.py --no-cache)
+```
+
+### Row checks
+
+Every frame, from Yahoo, the cache or a CSV file, is checked before it is used. Each action becomes one warning line and, in step 1, an entry in the series' `provenance.checks` (`issue`, `action`, `rows`, the first affected `start`). The checks cover all the rows received, including rows later cut by the period or the row cap.
+
+| Issue | Action |
+|---|---|
+| rows out of time order | sorted |
+| a missing open, high, low or close | row dropped (Yahoo gives such rows now and then) |
+| the same time twice | the earlier rows dropped, the last kept |
+| a price of zero or less | row dropped |
+| high below low | high and low swapped |
+| open or close outside high-low | high and low widened to include them |
+| a gap longer than expected (10 days for daily candles, 22 for weekly, 65 for monthly, 5 for intraday) | kept, reported |
+| a close-to-close move of 1.8x or more within 4% of a whole ratio (2:1, 3:1, 1:2 ...) | kept, reported: it may be an unadjusted split, or a real move; check the data |
+| more than 20% of the rows dropped (and more than 3) | the data is not used: the run stops |
+
+A missing volume is left as it is (written as 0 with `--volume`).
+
+### CSV files: your own data
+
+`--prices` reads licensed or your own candles instead of Yahoo, with no network at all: `build_prompt.py PETR4.SA --prices data/petr4.csv`, `zones PETR4.SA --prices data/`, `zones batch watchlist.txt --prices data/`.
+
+**Format.** A header row, then one candle per row, in any order of time. Columns in any order and letter case: a time column named `date`, `datetime`, `time`, `timestamp` or `start`, then `open`, `high`, `low`, `close`, and optionally `volume`; other columns (an adjusted close, say) are ignored. Comma, semicolon or tab separated, a decimal point, no thousands separators; lines starting with `#` are skipped. Times are ISO dates (`2026-11-17`) or date-times (`2026-11-17 10:15`, `2026-11-17T10:15-03:00`); a time without an offset is exchange time. A weekly row is labelled by its week's Monday, a monthly row by its 1st. Prices should be split-adjusted and not dividend-adjusted, like Yahoo's in this project; nothing can check that.
+
+```text
+date,open,high,low,close,volume
+2026-11-13,44.60,45.69,43.23,45.30,31250000
+2026-11-16,45.10,45.80,44.90,45.52,28400000
+```
+
+**Files.** `--prices` takes a file or a folder. In a folder, for ticker `T`, the first of these that exists is used: a subfolder `T/` with one file per interval, a file `T.csv`, or files named by interval in the folder itself. A file's interval comes from the last word of its name (`1d`, `daily`, `1wk`, `weekly`, `1mo`, `monthly`, `15m`, `1h`: `1d.csv`, `petr4_1wk.csv`), else from the spacing of its rows. Weekly and monthly candles missing from the files are built from daily ones; `today` needs a 15-minute file.
+
+**Metadata.** `FILE.json` beside a single `FILE.csv`, or `meta.json` in the folder: `{"timezone": "America/Sao_Paulo", "currency": "BRL", "venue": "B3"}`. Without it the timezone is UTC and currency and venue are `unsure`, with a warning.
+
+**What changes in the input.** The session is `unsure` (files carry no trading hours), the price is the main series' last close, periods are counted back from the newest row, and events are only those given with `--event`. A warning says when the newest candle is more than a week old. The provenance names the files and their sha256 ([Output](#output-the-input-json)). Checked against Yahoo: daily candles exported to CSV give the same `1-2w` input as the live download, except one weekly open where Yahoo's weekly candle does not start at the first daily open.
 
 ## Step 2: the reversal-zones-projection skill
 
@@ -795,6 +867,7 @@ uv run zones backtest PETR4.SA NVDA --horizon 1-2w                  # the same, 
 | `--json` | off | One JSON object (settings, skipped cases, the summaries) instead of the tables. |
 | `--csv FILE` | none | Also write every forecast: ticker, as-of date, price, entry, zone, forecast, happened. |
 | `--quiet` | off | No progress lines on standard error. |
+| `--no-cache` | off | Download every candle again instead of reusing finished ones from the [candle cache](#the-candle-cache). |
 
 For each ticker it downloads daily candles once (split-adjusted, not dividend-adjusted, like step 1) and builds weekly and monthly candles from them. Then for every as-of date, after that day's close:
 
@@ -859,7 +932,9 @@ The simulation knows nothing about chart levels. The skill may therefore move a 
 - **Mostly uncalibrated.** `backtest.py` checks the unadjusted baseline on past dates, with mechanically chosen zones, no events and a handful of tickers ([Backtest of the baseline](#backtest-of-the-baseline)). The probabilities of a real projection, with Claude's zones and adjustments, have not been checked against a meaningful number of outcomes: `score_projections.py` can compare saved projections with later prices, but the history is days old. This is the most important gap.
 - **Scoring a touch on a forming candle.** For `touched_once`, a finished candle does not say whether its high or low came before or after the projection. For the candle that was forming, the scorer counts an extreme only if it is new, otherwise it uses the close, so a touch inside that candle's earlier range can be missed. Everything else is judged exactly as the simulation counts it.
 - **Pre-market and first-of-month projections.** When the newest candle is closed but a new one has not started (a daily projection made before the open, a monthly one before the month's first session), `horizon.first` skips the candle about to begin. The scorer counts it anyway, since it comes after the projection, and notes that there are more closes than scheduled.
-- **Yahoo Finance is unofficial.** Quotes can be delayed about 15 minutes on some exchanges and requests are sometimes rate-limited. One failed request currently ends the run.
+- **Yahoo Finance is unofficial.** Quotes can be delayed about 15 minutes on some exchanges. Rate limits and server errors are [retried](#yahoo-finance-retries-timeout-rate-limit) for up to two minutes; past that the run stops. Each process's first request pays yfinance's handshake, about 10 s here.
+- **The cache trusts old candles once checked.** Each use compares the five newest cached candles with Yahoo, which catches a split; a revision of older candles only is not noticed until `zones cache clear` or `--no-cache`. The rate limit spaces this project's calls on one machine, not other programs' requests or several machines.
+- **CSV data is taken as given.** The row checks catch malformed rows, not wrong or dividend-adjusted prices, and a file has no trading hours, so `now.session` is `unsure`.
 - **Not dividend-adjusted.** For heavy dividend payers, old levels sit higher than a total-return chart would show.
 - **Holidays.** A week ending on a holiday Friday is labelled `forming` until the weekend.
 - **24-hour markets.** The session and week-end logic assumes a Monday-to-Friday exchange, so crypto tickers get wrong `forming` labels.
@@ -872,7 +947,7 @@ The simulation knows nothing about chart levels. The skill may therefore move a 
 2. Add `json` to `--shape`.
 3. Carry event sizes as numbers (dividend amount, implied move) so the skill does not have to search for them.
 4. State `dividend_adjusted` explicitly in the input.
-5. Retry on Yahoo failures and guard against duplicated or malformed rows.
+5. Data: done are retries, a timeout, a shared rate limit, a cache of finished candles, row checks and CSV import (`data_source.py`). Left: another data vendor behind the same interface, corporate actions in the CSV format (split dates, so unadjusted files can be adjusted here), and an occasional full check of older cached candles.
 
 ## Project layout
 
@@ -880,12 +955,13 @@ The simulation knows nothing about chart levels. The skill may therefore move a 
 stock_predict_zones/
 ├── build_prompt.py                 step 1: Yahoo Finance to input JSON
 ├── plot_projection.py              step 3: input + projection to image
-├── run_pipeline.py                 the `zones` command: all steps in one (step 2 through headless Claude Code), and list, runs, score, plot, show, entries, backtest, batch
+├── run_pipeline.py                 the `zones` command: all steps in one (step 2 through headless Claude Code), and list, runs, score, plot, show, entries, backtest, batch, cache
 ├── score_projections.py            saved projections against later prices, and the calibration summary
 ├── backtest.py                     the baseline probabilities on past dates: mechanical zones, rz.py sim, rz.outcome
 ├── trade_entries.py                trade setups: computes them, or fills the prompt and checks the reply
 ├── show_run.py                     one run as a text summary in the terminal
 ├── batch_runs.py                   `zones batch`: the pipeline over a watchlist, with summary.csv
+├── data_source.py                  every price request: retries, timeout, shared rate limit, candle cache, row checks, CSV import
 ├── .claude/skills/reversal-zones-projection/
 │   ├── SKILL.md                    step 2: the skill
 │   └── scripts/rz.py               its helper: levels, simulation, validation, saving, outcomes

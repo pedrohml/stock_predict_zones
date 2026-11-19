@@ -173,7 +173,15 @@
         "last": "2026-11-01",
         "interval": "1mo",
         "period": "10y",
-        "max_rows": 120
+        "max_rows": 120,
+        "checks": [
+          {
+            "issue": "missing_price",
+            "action": "dropped",
+            "rows": 1,
+            "first": "2026-07-01"
+          }
+        ]
       }
     ],
     "data_sha256": "47bc21e303774242a8f04632698141f1e7e1bf19e83ea1d500f8356b8bc23027"

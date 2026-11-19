@@ -19,6 +19,7 @@ for each):
     zones entries WHAT              compute the trade setups of a run again
     zones backtest TICKER...        the baseline probabilities on past dates (hits Yahoo)
     zones batch FILE|TICKER...      one run per ticker of a watchlist, with a summary.csv
+    zones cache [info|clear|path]   the local cache of downloaded candles
 
 WHAT is a folder holding input.json and projection.json, or a ticker, meaning
 its latest run under runs/ here, else its latest saved projection. A first
@@ -868,6 +869,7 @@ def write_provenance(record, *paths):
 CONFIG_ENV = "ZONES_CONFIG"          # names the user file, instead of the default location
 PROJECT_CONFIG = "zones.toml"        # looked up in the current directory only; None: no lookup
 HISTORY_ENV = "RZ_PROJECTIONS_DIR"   # what rz.py and score_projections.py read
+CACHE_ENV = "ZONES_CACHE_DIR"        # what data_source.py reads (the candle cache and the rate-limit file)
 PRECEDENCE = ("command line > environment variable > project file (./zones.toml) > "
               "user file > built-in default")
 
@@ -950,6 +952,10 @@ SETTINGS = {s.key: s for s in (
             "the saved projections, append-only (default: $RZ_PROJECTIONS_DIR, "
             "else projections/ in the current directory)",
             example="~/zones/projections", env=HISTORY_ENV),
+    Setting("cache_dir", "files", "path", None,
+            "the cache of downloaded candles and the shared Yahoo rate limit (default: "
+            "$ZONES_CACHE_DIR, else $XDG_CACHE_HOME/zones, else ~/.cache/zones)",
+            example="~/.cache/zones", unset="$XDG_CACHE_HOME/zones, else ~/.cache/zones", env=CACHE_ENV),
 )}
 
 
@@ -1109,6 +1115,15 @@ def settle(given, layers, environ=None):
     return settled
 
 
+def export_cache_dir(settled):
+    """build_prompt.py, backtest.py and score_projections.py run as child processes and read
+    the cache folder from ZONES_CACHE_DIR: a folder from the command line or a config file is
+    exported once for the whole process, never over a variable the user set."""
+    folder, source = settled["cache_dir"]
+    if folder is not None and source != "default" and not source.startswith("environment"):
+        os.environ[CACHE_ENV] = str(Path(folder).expanduser().absolute())
+
+
 def from_file(source):
     return source not in ("default", "command line") and not source.startswith("environment")
 
@@ -1220,6 +1235,7 @@ def configured(args, passthrough):
         # rz.py save and anything else started from here read the variable: set it once,
         # for the whole process, so every part of the command uses the same folder
         os.environ[HISTORY_ENV] = args.history_dir = str(Path(history).absolute())
+    export_cache_dir(settled)
     if passthrough and not args.input:   # with --input there is no step 1 to configure
         passthrough = step1_arguments(settled) + passthrough   # first: anything typed comes later and wins
     return args, passthrough
@@ -1265,6 +1281,7 @@ def command_config():
     history, source = settled["history_dir"]
     if from_file(source):
         os.environ[HISTORY_ENV] = str(Path(history).absolute())
+    export_cache_dir(settled)
     runs_home = Path(settled["runs_dir"][0])
     chart_config = {key: value for key, (value, source) in settled.items()
                     if SETTINGS[key].group == "chart" and from_file(source)}
@@ -1565,6 +1582,21 @@ def backtest(argv):
     return relay([sys.executable, ROOT / "backtest.py", *argv])
 
 
+def cache(argv):
+    """zones cache [info|clear|path] [TICKER...]: data_source.py's own commands."""
+    parser = command_parser("cache", "[info|clear|path] [TICKER ...]", "The local cache of downloaded "
+                            "candles (data_source.py): info lists what it holds, clear deletes it (or "
+                            "only the tickers named), path prints its folder. Finished daily, weekly "
+                            "and monthly candles are kept there; the newest are always downloaded.",
+                            what=False)
+    parser.add_argument("command", nargs="?", choices=("info", "clear", "path"), default="info")
+    parser.add_argument("tickers", nargs="*", metavar="TICKER")
+    args = parser.parse_args(argv)
+    script = ROOT / "data_source.py"
+    need(script)
+    return relay([sys.executable, script, args.command, *args.tickers])
+
+
 def batch(argv):
     """zones batch FILE|TICKER... [options]: one pipeline run per ticker (batch_runs.py).
     In this process, not relayed: Ctrl-C must reach its loop, which then writes the summary."""
@@ -1577,7 +1609,7 @@ def batch(argv):
 
 COMMANDS = {"list": list_saved, "runs": run_folders, "score": score_saved,
             "plot": plot_again, "show": show_again, "entries": entries_again,
-            "backtest": backtest, "batch": batch}
+            "backtest": backtest, "batch": batch, "cache": cache}
 FORCE_PIPELINE = ("run", "--")
 
 
@@ -1639,6 +1671,9 @@ def parse(argv=None):
                             "paths; --no-summary prints the paths only")
     files.add_argument("--runs-dir", metavar="DIR",
                        help=f"where the run folders are made (default: {RUNS}/ in the current directory)")
+    files.add_argument("--cache-dir", metavar="DIR",
+                       help=f"the cache of downloaded candles (default: ${CACHE_ENV}, else "
+                            "~/.cache/zones); build_prompt.py --no-cache skips it for one run")
     files.add_argument("--history-dir", metavar="DIR",
                        help=f"where new projections are kept (default: ${HISTORY_ENV}, else "
                             "projections/ in the current directory)")

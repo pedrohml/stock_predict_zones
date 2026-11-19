@@ -200,7 +200,15 @@
         "last": "2024-11-01",
         "interval": "1mo",
         "period": "5y",
-        "max_rows": 36
+        "max_rows": 36,
+        "checks": [
+          {
+            "issue": "missing_price",
+            "action": "dropped",
+            "rows": 1,
+            "first": "2026-07-01"
+          }
+        ]
       },
       {
         "candles": "1W",
@@ -209,7 +217,15 @@
         "last": "2026-11-16",
         "interval": "1wk",
         "period": "2y",
-        "max_rows": 104
+        "max_rows": 104,
+        "checks": [
+          {
+            "issue": "missing_price",
+            "action": "dropped",
+            "rows": 1,
+            "first": "2026-10-19"
+          }
+        ]
       }
     ],
     "data_sha256": "a4782e757a1ae59a4dd55222505241d8ffabbcb71362a6e4f4c98e22e80bd92b"

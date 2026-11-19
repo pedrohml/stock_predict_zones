@@ -36,6 +36,7 @@ from datetime import date, timedelta
 import pandas as pd
 
 import build_prompt
+import data_source
 import score_projections as sp
 
 HORIZONS = ("1-2w", "1-3m", "6-12m")   # daily or coarser: Yahoo keeps 15m candles for about 60 days
@@ -65,6 +66,9 @@ CAVEATS = [
 ]
 
 
+CACHE = True   # download() reuses finished candles from data_source's cache; --no-cache turns it off
+
+
 class BacktestError(Exception):
     """A ticker that cannot be backtested; the message is the reason."""
 
@@ -75,15 +79,21 @@ DEFAULT_PATHS = inspect.signature(rz.baseline).parameters["paths"].default
 
 # ---- network -----------------------------------------------------------------
 
-def download(ticker, start):
-    """Daily candles since `start` -> {"rows", "tz", "currency", "venue"}. rows are [date, open,
-    high, low, close], unrounded, in exchange time. The only function that touches the network."""
+def download(ticker, start, cache=None):
+    """Daily candles since `start` -> {"rows", "tz", "currency", "venue", "data"}. rows are
+    [date, open, high, low, close], unrounded, in exchange time; "data" is what data_source did
+    (row checks, rows served from the candle cache). The only function that touches the
+    network, through data_source (retries, timeout, shared rate limit). `cache` None follows
+    CACHE (--no-cache sets it false)."""
     import yfinance as yf
     logging.getLogger("yfinance").setLevel(logging.CRITICAL)
     try:
         handle = yf.Ticker(ticker)
-        frame = handle.history(start=start.isoformat(), interval="1d", auto_adjust=False, actions=False)
+        frame, report = data_source.candles(handle, ticker, "1d", start=start.isoformat(),
+                                            cache=CACHE if cache is None else cache, what=f"{ticker} 1d")
         meta = handle.get_history_metadata() or {}
+    except data_source.DataError as error:
+        raise BacktestError(str(error)[:300])
     except Exception as error:
         raise BacktestError(f"could not fetch {ticker} from Yahoo ({type(error).__name__}: {error})"[:200])
     if frame is None or frame.empty:
@@ -95,7 +105,8 @@ def download(ticker, start):
     rows = [[when.strftime("%Y-%m-%d")] + [float(candle[c]) for c in ("Open", "High", "Low", "Close")]
             for when, candle in frame.iterrows()]
     return {"rows": rows, "tz": tz, "currency": meta.get("currency") or "unsure",
-            "venue": meta.get("fullExchangeName") or meta.get("exchangeName") or "unsure"}
+            "venue": meta.get("fullExchangeName") or meta.get("exchangeName") or "unsure",
+            "data": {key: report[key] for key in ("checks", "cache", "note") if report.get(key)}}
 
 
 # ---- the input as of a past day ------------------------------------------------
@@ -417,9 +428,14 @@ def main(argv=None):
     parser.add_argument("--json", action="store_true", help="print one JSON object instead of the tables")
     parser.add_argument("--csv", metavar="FILE", help="also write every forecast of every case to FILE")
     parser.add_argument("--quiet", action="store_true", help="no progress lines on stderr")
+    parser.add_argument("--no-cache", action="store_true",
+                        help="download every candle again instead of reusing finished ones from the "
+                             "local candle cache (README: Data sources)")
     args = parser.parse_args(argv)
     if args.step is not None and args.step < 1 or args.paths < 1000:
         parser.error("--step must be at least 1 and --paths at least 1000")
+    global CACHE
+    CACHE = not args.no_cache
 
     try:
         report = run(args.tickers, args.horizon, args.start, args.end, args.step, args.paths,

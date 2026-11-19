@@ -147,7 +147,15 @@
         "last": "2026-11-13",
         "interval": "1d",
         "period": "3mo",
-        "max_rows": 40
+        "max_rows": 40,
+        "checks": [
+          {
+            "issue": "missing_price",
+            "action": "dropped",
+            "rows": 1,
+            "first": "2026-11-11"
+          }
+        ]
       },
       {
         "candles": "15m",
@@ -156,7 +164,15 @@
         "last": "2026-11-17T16:45",
         "interval": "15m",
         "period": "5d",
-        "max_rows": 50
+        "max_rows": 50,
+        "checks": [
+          {
+            "issue": "missing_price",
+            "action": "dropped",
+            "rows": 1,
+            "first": "2026-11-17T15:45"
+          }
+        ]
       }
     ],
     "data_sha256": "5770f7f57a586a77ffdd97c1a42096817e992203b53d99acc4bd568d5a18e09b"

@@ -365,11 +365,25 @@ def test_show_config_names_every_setting_and_its_source(user, project, cwd, tmp_
     assert rows["language"] == ("en", "default") and "[ignored (--no-config)]" in text
 
 
-def test_show_config_without_files(cwd, capsys):
+def test_show_config_without_files(cwd, capsys, monkeypatch):
+    monkeypatch.delenv(run_pipeline.CACHE_ENV)       # conftest points it at a temp folder
     rows, text = shown(capsys)
     assert {source for _, source in rows.values()} == {"default"}
     assert rows["runs_dir"][0] == str(cwd / "runs") and rows["history_dir"][0] == str(cwd / "projections")
     assert "[not found]" in text and "  project file:" not in text   # its lookup is off in tests
+    assert rows["cache_dir"][0] == "($XDG_CACHE_HOME/zones, else ~/.cache/zones)"
+
+
+def test_cache_dir_from_a_file_is_exported_for_the_child_processes(user, monkeypatch):
+    monkeypatch.delenv(run_pipeline.CACHE_ENV)
+    file = user('cache_dir = "candles"\n')
+    run_pipeline.parse(["NVDA"])
+    assert os.environ[run_pipeline.CACHE_ENV] == str(file.parent / "candles")
+    monkeypatch.setenv(run_pipeline.CACHE_ENV, "/elsewhere")     # a variable the user set wins
+    run_pipeline.parse(["NVDA"])
+    assert os.environ[run_pipeline.CACHE_ENV] == "/elsewhere"
+    run_pipeline.parse(["NVDA", "--cache-dir", "/typed"])         # and the command line wins over it
+    assert os.environ[run_pipeline.CACHE_ENV] == "/typed"
 
 
 def test_init_config_writes_once_and_never_overwrites(user, tmp_path, capsys):
