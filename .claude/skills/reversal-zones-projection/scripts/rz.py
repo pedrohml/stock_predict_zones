@@ -13,6 +13,7 @@ from datetime import date, datetime, timedelta
 import numpy as np
 
 HORIZON_DAYS = {"today": 1, "1-2w": 14, "1-3m": 91, "6-12m": 365}
+SCHEMA_VERSIONS = (1,)   # projection formats check accepts; a projection without the key predates them
 CANDLE_DAYS = {"1D": 1.4, "1W": 7, "1M": 30.44}
 
 
@@ -194,6 +195,8 @@ def problems(o, complete=True):
 
 
 def rules(o, bad, complete):
+    if "schema_version" in o and o["schema_version"] not in SCHEMA_VERSIONS:
+        bad.append(f"schema_version must be {' or '.join(map(str, SCHEMA_VERSIONS))}, got {o['schema_version']!r}")
     price = o["as_of"]["price"]
     for name in ("supports", "resistances"):
         zs = o[name]

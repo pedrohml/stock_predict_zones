@@ -32,7 +32,7 @@ Compute three working numbers and report them in `units`. `price` is `as_of.pric
 - `buffer = move / 4`: how far a stop sits beyond a zone edge, so that a touch of the edge does not trigger it.
 - `range = price × mean(vol) × sqrt(horizon.closes)`: the typical distance travelled by the end of the horizon.
 
-Round each to the precision of the candle rows, halves up, and use the rounded value from then on.
+Round each to the precision of the candle rows (the most decimals any open, high, low or close shows, but at least two), halves up, and use the rounded value from then on. Every price you compute below (the stop, `risk`, `reward`) is rounded the same way.
 
 ## Building a setup
 
@@ -58,17 +58,17 @@ There are two kinds of setup. Consider both kinds on both sides, for every zone,
 
 For every setup:
 
-- `risk = |entry − stop|`, `reward = |target − entry|`, `ratio = reward / risk`.
+- `risk = |entry − stop|`, `reward = |target − entry|`, both rounded to the precision of the candle rows; `ratio = reward / risk`.
 - `edge.if_filled = win_if_filled × ratio − (1 − win_if_filled)`: the expected result in units of risk once the order fills.
 - `edge.per_order = fill × edge.if_filled`: the same, counting the orders that never fill as zero.
 - `quality`: `favourable` when `edge.if_filled` is 0.20 or more, `marginal` when it is above 0, `unfavourable` otherwise.
-- A long must have `stop < entry < target`, a short `target < entry < stop`. Discard a setup whose entry is on the wrong side of the current price for its order type, or whose `ratio` is below 0.5.
+- A long must have `stop < entry < target`, a short `target < entry < stop`. Discard a setup whose entry is on the wrong side of the current price for its order type, whose `risk` rounds to zero, or whose `ratio` is below 0.5.
 
 ## Choosing and ranking
 
 Rank all valid setups by `edge.per_order`, highest first; break ties with the higher `fill`. Keep the top three, with two conditions: no two share the same entry price, and if all three would be on the same side, replace the third with the best setup on the other side. Number them 1 to 3 in the final order.
 
-Always return three. If fewer than three are valid, say so in `confidence.limits` and return what there is. Do not improve a weak setup by moving a price off its zone edge: an `unfavourable` third entry is a finding, and it is more useful than an invented level.
+Always return three. If fewer than three are valid, say so in `confidence.limits` and return what there is. If none is valid, return `{"task": "trade_entries", "error": "no setup passes the rules for this projection"}`. Do not improve a weak setup by moving a price off its zone edge: an `unfavourable` third entry is a finding, and it is more useful than an invented level.
 
 ## What the numbers are, and are not
 

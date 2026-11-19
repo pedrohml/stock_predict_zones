@@ -206,7 +206,8 @@ def test_full_run_with_stubs(tmp_path, stub_build, stub_claude, calls, capsys):
     assert run_main("PETR4.SA", "--research", "none", "--out-dir", out_dir, "--dpi", "50") == 0
     files = [out_dir / name for name in ("petr4_input.json", "petr4_projection.json", "petr4.png",
                                          "petr4_entries.json")]
-    assert sorted(path.name for path in out_dir.iterdir()) == sorted(path.name for path in files)
+    assert sorted(path.name for path in out_dir.iterdir()) == sorted([path.name for path in files]
+                                                                     + ["petr4_provenance.json"])
     assert files[2].read_bytes().startswith(PNG_MAGIC)
     captured = capsys.readouterr()
     for path in files:
@@ -265,7 +266,7 @@ def test_input_skips_the_download(tmp_path, input_path, stub_build, stub_claude,
     assert run_main("--input", input_path, "--out-dir", tmp_path, "--dpi", "50") == 0
     assert calls["build"] == [] and len(calls["claude"]) == 1
     assert sorted(path.name for path in tmp_path.iterdir()) == ["petr4.png", "petr4_entries.json",
-                                                                "petr4_projection.json"]
+                                                                "petr4_projection.json", "petr4_provenance.json"]
 
 
 def test_projection_skips_claude(tmp_path, input_path, projection_path, stub_build, monkeypatch, calls):

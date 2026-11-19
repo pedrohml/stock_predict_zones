@@ -189,3 +189,80 @@ def test_build_command_writes_the_file(tmp_path, input_path, projection_path, ca
     assert capsys.readouterr().out.strip() == "OK"
     assert trade_entries.main(["build", str(input_path), str(projection_path)]) == 0
     assert json.loads(capsys.readouterr().out) == json.loads(target.read_text(encoding="utf-8"))
+
+
+# ---- prices of any size: rounding to the candle rows' precision ----------------------
+
+def scaled(example, factor, places):
+    """The example pair with every price multiplied by `factor`, rounded to `places` decimals,
+    like build_prompt.py --decimals PLACES on an asset priced that way."""
+    source, proj = copy.deepcopy(example)
+    for series in source["data"]["series"]:
+        for row in series["rows"]:
+            row[1:5] = [round(x * factor, places) for x in row[1:5]]
+    source["now"]["price"] = proj["as_of"]["price"] = round(source["now"]["price"] * factor, places)
+    for side in ("supports", "resistances"):
+        for zone in proj[side]:
+            zone["zone"] = [None if x is None else round(x * factor, places) for x in zone["zone"]]
+    return source, proj
+
+
+def test_places_reads_the_precision_of_the_rows(example, input_data):
+    assert trade_entries.places(example[0]) == trade_entries.places(input_data) == 2      # never fewer than 2
+    assert trade_entries.places(scaled(example, 0.001, 5)[0]) == 5
+    assert trade_entries.places(scaled(example, 1e-7, 12)[0]) == trade_entries.MAX_PLACES
+    assert trade_entries.places({}) == 2
+
+
+def test_a_price_around_four_cents_builds_and_checks(example):
+    """Was a ZeroDivisionError: risk was rounded to two decimals, and 0.002 became 0.00."""
+    source, proj = scaled(example, 0.001, 5)
+    reply = trade_entries.build(source, proj)
+    assert trade_entries.problems(source, proj, reply) == []
+    assert reply["units"] == {"move": 0.00278, "buffer": 0.0007, "range": 0.00894}
+    # the same setups as at 42.77, every price a thousandth: the rules do not depend on the scale
+    big = trade_entries.build(*example)
+    assert [e["id"] for e in reply["entries"]] == [e["id"] for e in big["entries"]]
+    for small, large in zip(reply["entries"], big["entries"]):
+        assert small["payoff"]["ratio"] == large["payoff"]["ratio"]
+        assert small["stop"]["price"] == pytest.approx(large["stop"]["price"] / 1000, abs=1e-9)
+    assert reply["entries"][0]["stop"]["anchor"] == "S1 near edge 0.04252 + buffer 0.00070"
+
+
+def test_the_checker_is_as_strict_on_small_prices(example):
+    source, proj = scaled(example, 0.001, 5)
+    reply = trade_entries.build(source, proj)
+    reply["entries"][0]["stop"]["price"] += 0.001                    # 0.011 would have hidden this
+    assert any("stop.price" in line for line in trade_entries.problems(source, proj, reply))
+
+
+def test_a_risk_that_rounds_to_zero_is_no_setup(example):
+    """Rows at two decimals cannot describe a 0.04 asset: zones and buffer collapse, every
+    setup is discarded, and the error reply says so instead of dividing by zero."""
+    source, proj = scaled(example, 0.001, 2)
+    assert trade_entries.setups(proj, trade_entries.places(source)) == []
+    reply = trade_entries.build(source, proj)
+    assert reply == {"task": "trade_entries", "error": "no setup passes the rules for this projection"}
+    assert trade_entries.problems(source, proj, reply) == []
+
+
+def test_zone_edges_finer_than_the_rows_never_divide_by_zero(example):
+    source, proj = copy.deepcopy(example)
+    support = proj["supports"][1]
+    support["zone"] = [round(support["zone"][1] - 0.004, 3), support["zone"][1]]   # finer than the rows
+    proj["structure"]["volatility"]["assumed"] = [0.0001, 0.0001]                  # buffer 0.00
+    found = trade_entries.setups(proj, trade_entries.places(source))
+    assert all(item["risk"] > 0 for item in found)
+    assert "long-S2-reversal" not in {item["id"] for item in found}
+
+
+def test_expected_command_takes_the_input_for_the_precision(tmp_path, example, capsys):
+    source, proj = scaled(example, 0.001, 5)
+    paths = []
+    for name, doc in (("i.json", source), ("p.json", proj)):
+        paths.append(tmp_path / name)
+        paths[-1].write_text(json.dumps(doc), encoding="utf-8")
+    assert trade_entries.main(["expected", str(paths[0]), str(paths[1])]) == 0
+    assert json.loads(capsys.readouterr().out.splitlines()[0]) == {"move": 0.00278, "buffer": 0.0007, "range": 0.00894}
+    assert trade_entries.main(["expected", str(paths[1])]) == 0          # without the input: two decimals
+    assert json.loads(capsys.readouterr().out.splitlines()[0])["move"] == 0.0

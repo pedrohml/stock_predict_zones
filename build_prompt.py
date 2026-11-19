@@ -9,6 +9,7 @@
 Prints the JSON to stdout (or writes it with -o). Paste it into the chat as is.
 """
 import argparse
+import hashlib
 import json
 import sys
 from datetime import timedelta
@@ -52,6 +53,8 @@ PRESETS = {
 }
 LABEL = {"15m": "15m", "1h": "1h", "1d": "1D", "1wk": "1W", "1mo": "1M"}
 INTRADAY = {"15m", "1h"}
+SCHEMA_VERSION = 1   # of this input format; raise it when a field changes meaning or goes away
+SOURCE = "Yahoo Finance (yfinance)"
 
 
 def to_ts(value, tz):
@@ -195,8 +198,9 @@ def build(args):
             series.insert(0, context)  # older, coarser history first
     columns = ["start", "open", "high", "low", "close"] + (["volume"] if args.volume else [])
 
-    return {
+    prompt = {
         "task": "reversal_zones",
+        "schema_version": SCHEMA_VERSION,
         "asset": {
             "ticker": args.ticker.upper(),
             "venue": meta.get("fullExchangeName") or meta.get("exchangeName") or "unsure",
@@ -229,6 +233,44 @@ def build(args):
             "links": args.links,
         },
     }
+    interval, period, max_rows = preset["main"]
+    main_request = (interval, period, min(max_rows, args.max_rows or max_rows))
+    requested = [preset["context"], main_request] if len(series) == 2 else [main_request]
+    version = getattr(yf, "__version__", None)
+    prompt["provenance"] = provenance(prompt, SOURCE, requested, f"yfinance {version}" if version else None)
+    return prompt
+
+
+def data_hash(data):
+    """sha256 of the `data` object in canonical JSON (sorted keys, no spaces): it changes
+    with any candle, column or series label, and not with the file's layout."""
+    canonical = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def provenance(prompt, source, requested=None, library=None, downloaded=None):
+    """Where the candles came from, for the record: the source, when they were downloaded
+    (UTC), how prices are adjusted, and per series the rows kept and the dates they span.
+    `requested` is the (interval, period, max rows) asked for, per series in the same order.
+    Read from the finished prompt, so it describes what the file holds."""
+    downloaded = downloaded or pd.Timestamp.now(tz="UTC")
+    out = {"source": source}
+    if library:
+        out["library"] = library
+    out.update({
+        "downloaded_at": downloaded.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "auto_adjust": False,          # split-adjusted, not dividend-adjusted (see fetch_series)
+        "series": [],
+        "data_sha256": data_hash(prompt["data"]),
+    })
+    for index, one in enumerate(prompt["data"]["series"]):
+        entry = {"candles": one["candles"], "rows": len(one["rows"]),
+                 "first": one["rows"][0][0] if one["rows"] else None,
+                 "last": one["rows"][-1][0] if one["rows"] else None}
+        if requested and index < len(requested) and requested[index]:
+            entry.update(zip(("interval", "period", "max_rows"), requested[index]))
+        out["series"].append(entry)
+    return out
 
 
 def render(prompt):

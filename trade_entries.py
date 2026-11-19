@@ -4,7 +4,7 @@
     python trade_entries.py build  INPUT.json PROJECTION.json [-o FILE]  -> the setups as JSON, no Claude needed
     python trade_entries.py prompt INPUT.json PROJECTION.json            -> the filled prompt, on stdout
     python trade_entries.py check  INPUT.json PROJECTION.json REPLY.json -> OK, or what is wrong (exit 1)
-    python trade_entries.py expected PROJECTION.json                     -> every valid setup, best first
+    python trade_entries.py expected [INPUT.json] PROJECTION.json        -> every valid setup, best first
 
 The prompt is prompts/trade_entries.md and the reply's shape is
 prompts/trade_entries.schema.json. Every number in a reply follows from the
@@ -17,6 +17,7 @@ hypothetical, for study: not a recommendation.
 import json
 import math
 import sys
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -24,10 +25,34 @@ TEMPLATE = ROOT / "prompts" / "trade_entries.md"
 SCHEMA = ROOT / "prompts" / "trade_entries.schema.json"
 TOLERANCE = 0.011        # one hundredth, for a rounding that fell the other way
 RANK_TOLERANCE = 0.021   # two setups this close in edge.per_order may swap places
+MIN_PLACES, MAX_PLACES = 2, 8   # prices are rounded to the candle rows' precision, within these
 
 
 def half_up(value, digits=2):
     return round(value + 1e-9, digits)
+
+
+def places(source):
+    """The precision of the input's candle rows: the most decimals any open, high, low or close
+    shows (build_prompt.py --decimals), at least 2 and at most 8. Prices, risk, reward and the
+    units are rounded to it, so an asset priced around 0.04 keeps its digits."""
+    found = MIN_PLACES
+    try:
+        columns = source["data"]["columns"]
+        wanted = [columns.index(name) for name in ("open", "high", "low", "close")]
+        for series in source["data"]["series"]:
+            for row in series["rows"]:
+                for i in wanted:
+                    exponent = Decimal(repr(float(row[i]))).as_tuple().exponent
+                    found = max(found, -exponent if isinstance(exponent, int) else 0)
+    except (KeyError, TypeError, ValueError, IndexError, InvalidOperation):
+        pass
+    return min(found, MAX_PLACES)
+
+
+def price_tolerance(digits):
+    """One unit of the last price digit, plus a margin: 0.011 at two decimals."""
+    return TOLERANCE * 10 ** (MIN_PLACES - digits)
 
 
 def fill(input_text, projection_text):
@@ -53,11 +78,12 @@ def precondition(source, proj):
     return None
 
 
-def units(proj):
+def units(proj, digits=MIN_PLACES):
+    """move, buffer and range, rounded to `digits`, the precision of the candle rows (places())."""
     price, vol = proj["as_of"]["price"], proj["structure"]["volatility"]["assumed"]
-    move = half_up(price * vol[0])
-    return {"move": move, "buffer": half_up(move / 4),
-            "range": half_up(price * sum(vol) / 2 * math.sqrt(proj["horizon"]["closes"]))}
+    move = half_up(price * vol[0], digits)
+    return {"move": move, "buffer": half_up(move / 4, digits),
+            "range": half_up(price * sum(vol) / 2 * math.sqrt(proj["horizon"]["closes"]), digits)}
 
 
 def travel(distance, reach_of_horizon):
@@ -65,16 +91,19 @@ def travel(distance, reach_of_horizon):
     return 0.9 if share <= 0.5 else 0.7 if share <= 1.0 else 0.5 if share <= 1.5 else 0.3
 
 
-def setups(proj):
-    """Every valid setup the template's rules allow, ranked by edge per order, then fill."""
-    price, unit = proj["as_of"]["price"], units(proj)
+def setups(proj, digits=MIN_PLACES):
+    """Every valid setup the template's rules allow, ranked by edge per order, then fill.
+    `digits` is the precision of the candle rows (places() of the input)."""
+    price, unit = proj["as_of"]["price"], units(proj, digits)
     buffer, found = unit["buffer"], []
 
     def add(side, kind, zone_id, order, entry, stop, target, fill_p, win, detail):
         ordered = stop < entry < target if side == "long" else target < entry < stop
         if not ordered:
             return
-        risk, reward = half_up(abs(entry - stop)), half_up(abs(target - entry))
+        risk, reward = half_up(abs(entry - stop), digits), half_up(abs(target - entry), digits)
+        if risk <= 0:   # entry and stop round to the same price: no ratio, so no setup
+            return
         ratio = half_up(reward / risk)
         if ratio < 0.5:
             return
@@ -82,7 +111,7 @@ def setups(proj):
         if_filled = half_up(win * ratio - (1 - win))
         found.append({
             "id": f"{side}-{zone_id}-{kind}", "side": side, "setup": kind, "order": order,
-            "entry": entry, "stop": half_up(stop), "target": target,
+            "entry": entry, "stop": half_up(stop, digits), "target": target,
             "risk": risk, "reward": reward, "ratio": ratio, "fill": fill_p, "win_if_filled": win,
             "if_filled": if_filled, "per_order": half_up(fill_p * if_filled),
             "quality": "favourable" if if_filled >= 0.20 else "marginal" if if_filled > 0 else "unfavourable",
@@ -199,31 +228,35 @@ def language(source):
     return TEXT.get(code, TEXT[FALLBACK_LANG])
 
 
-def money(value):
-    return f"{value:.2f}"
+def money(value, digits=MIN_PLACES):
+    return f"{value:.{digits}f}"
 
 
 def share(value):
     return f"{round(value * 100):d}%"
 
 
-def entry_of(rank, item, proj, t):
-    """One setup in the reply's shape, with its sentences."""
+def entry_of(rank, item, proj, t, digits=MIN_PLACES):
+    """One setup in the reply's shape, with its sentences. Prices are written with `digits`
+    decimals, probabilities and ratios with two."""
     d, long, zone = item["detail"], item["side"] == "long", item["detail"]["zone"]
     away = t["minus"] if long else t["plus"]          # the stop sits beyond an edge, away from the entry
     if item["setup"] == "reversal":
         market = item["order"] == "market"
         entry_anchor = t["price" if market else "near"].format(zone=zone)
-        stop_anchor = away.format(zone=zone, which=t["which"]["far"], edge=money(d["edge"]), buffer=money(d["buffer"]))
+        stop_anchor = away.format(zone=zone, which=t["which"]["far"], edge=money(d["edge"], digits),
+                                  buffer=money(d["buffer"], digits))
         target_anchor = t["near"].format(zone=d["target_zone"])
         basis = t["basis_market" if market else "basis_reversal"].format(
             zone=zone, reach=money(d["reach"]), turn=money(d["turn"]), travel=d["travel"], share=money(d["share"]))
         why = t["why_reversal"].format(zone=zone, hold=share(d["hold"]), target_zone=d["target_zone"],
                                        ratio=money(item["ratio"]))
-        watch = [t["between"].format(zone=name, low=money(low), high=money(high)) for name, low, high in d["between"]]
+        watch = [t["between"].format(zone=name, low=money(low, digits), high=money(high, digits))
+                 for name, low, high in d["between"]]
     else:
         entry_anchor = t["far"].format(zone=zone)
-        stop_anchor = away.format(zone=zone, which=t["which"]["near"], edge=money(d["edge"]), buffer=money(d["buffer"]))
+        stop_anchor = away.format(zone=zone, which=t["which"]["near"], edge=money(d["edge"], digits),
+                                  buffer=money(d["buffer"], digits))
         target_anchor = t["far"].format(zone=d["next"])
         basis = t["basis_continuation"].format(next=d["next"], after=d["after"],
                                                reach_next=money(d["reach_next"]), reach_after=money(d["reach_after"]))
@@ -252,7 +285,8 @@ def build(source, proj):
     reason = precondition(source, proj)
     if reason:
         return {"task": "trade_entries", "error": reason}
-    t, found = language(source), setups(proj)
+    t, digits = language(source), places(source)
+    found = setups(proj, digits)
     kept, measure = pick(found), source["want"]["probability"]
     if not kept:
         return {"task": "trade_entries", "error": "no setup passes the rules for this projection"}
@@ -266,8 +300,8 @@ def build(source, proj):
         "task": "trade_entries",
         "asset": {"ticker": proj["asset"]["ticker"], "currency": proj["asset"]["currency"]},
         "as_of": proj["as_of"], "valid_until": proj["horizon"]["last"], "probability": measure,
-        "units": units(proj),
-        "entries": [entry_of(rank, item, proj, t) for rank, item in enumerate(kept, 1)],
+        "units": units(proj, digits),
+        "entries": [entry_of(rank, item, proj, t, digits) for rank, item in enumerate(kept, 1)],
         "confidence": {"level": level, "limits": limits},
         "method": t["method"].format(valid=len(found), kept=len(kept)),
         "note": t["note"]}
@@ -283,11 +317,16 @@ def schema_problems(reply):
             for error in sorted(Draft202012Validator(schema).iter_errors(reply), key=lambda e: list(map(str, e.path)))]
 
 
+PRICES = {"entry", "stop", "target", "risk", "reward"}   # checked to the rows' precision, the rest to 0.011
+
+
 def problems(source, proj, reply):
     """Everything wrong with a reply, as lines. Empty means it is consistent with the projection."""
     reason = precondition(source, proj)
     if isinstance(reply, dict) and set(reply) == {"task", "error"}:
-        return [] if reason else [f"the reply reports an error but the files are usable: {reply['error']}"]
+        if reason or not setups(proj, places(source)):   # unusable files, or no setup passes the rules
+            return []
+        return [f"the reply reports an error but the files are usable: {reply['error']}"]
     if reason:
         return [f"no setup can be built ({reason}), but the reply holds entries"]
     bad = schema_problems(reply)
@@ -302,11 +341,13 @@ def problems(source, proj, reply):
         bad.append(f"probability must be {source['want']['probability']}, the input's want.probability")
     if reply["confidence"]["level"] == "medium" and proj["confidence"]["level"] != "medium":
         bad.append("confidence.level may not be higher than the projection's")
-    for name, value in units(proj).items():
-        if abs(reply["units"][name] - value) > TOLERANCE:
+    digits = places(source)
+    near = price_tolerance(digits)
+    for name, value in units(proj, digits).items():
+        if abs(reply["units"][name] - value) > near:
             bad.append(f"units.{name}: {reply['units'][name]}, expected {value}")
 
-    found = setups(proj)
+    found = setups(proj, digits)
     by_id, wanted, got = {item["id"]: item for item in found}, pick(found), reply["entries"]
     numbers = (("entry.price", lambda e: e["entry"]["price"], "entry"), ("stop.price", lambda e: e["stop"]["price"], "stop"),
                ("target.price", lambda e: e["target"]["price"], "target"), ("payoff.risk", lambda e: e["payoff"]["risk"], "risk"),
@@ -322,7 +363,7 @@ def problems(source, proj, reply):
             bad.append(f"{name}: not a setup the rules allow for this projection")
             continue
         for label, read, key in numbers:
-            if abs(read(entry) - expected[key]) > TOLERANCE:
+            if abs(read(entry) - expected[key]) > (near if key in PRICES else TOLERANCE):
                 bad.append(f"{name}.{label}: {read(entry)}, expected {expected[key]}")
         for label, value, key in (("side", entry["side"], "side"), ("setup", entry["setup"], "setup"),
                                   ("entry.order", entry["entry"]["order"], "order"), ("quality", entry["quality"], "quality")):
@@ -361,11 +402,12 @@ def main(argv=None):
             bad = problems(load(argv[1]), load(argv[2]), load(argv[3]))
             print("OK" if not bad else "\n".join(bad))
             return 1 if bad else 0
-        if len(argv) == 2 and argv[0] == "expected":
-            proj = load(argv[1])
-            found = setups(proj)
+        if len(argv) in (2, 3) and argv[0] == "expected":
+            proj = load(argv[-1])
+            digits = places(load(argv[1])) if len(argv) == 3 else MIN_PLACES
+            found = setups(proj, digits)
             keep = {item["id"] for item in pick(found)}
-            print(json.dumps(units(proj)))
+            print(json.dumps(units(proj, digits)))
             for item in found:
                 print("*" if item["id"] in keep else " ", json.dumps({k: v for k, v in item.items() if k != "detail"}))
             return 0

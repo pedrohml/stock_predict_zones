@@ -30,10 +30,11 @@ ticker spelled like a command write it in capitals (`zones LIST`), or after
 
 Each run gets a new folder of its own, runs/TICKER/TIME_HORIZON/ under the
 current directory (TIME is the input's `now.time`; a second run of the same
-input gets _2, and so on), holding input.json, projection.json, chart.png and entries.json.
+input gets _2, and so on), holding input.json, projection.json, chart.png and entries.json,
+plus provenance.json: which model, rules and data made the result, and at what cost.
 Nothing is overwritten. With --out-dir the files go exactly there instead, named
-after the ticker (petr4_input.json, petr4_projection.json, petr4.png, petr4_entries.json), and are
-replaced by the next run.
+after the ticker (petr4_input.json, petr4_projection.json, petr4.png, petr4_entries.json,
+petr4_provenance.json), and are replaced by the next run.
 
 A projection made by this run is also kept, with its input, under projections/
 (`rz.py save`; folder set by $RZ_PROJECTIONS_DIR) unless --no-save is given.
@@ -68,6 +69,7 @@ The result is analysis for study, not investment advice.
 """
 import argparse
 import difflib
+import hashlib
 import json
 import os
 import queue
@@ -80,7 +82,7 @@ import threading
 import time
 import tomllib
 import urllib.parse
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
 
@@ -571,7 +573,8 @@ def stream_hint(result, err):
 
 
 def project(input_path, data, projection_path, timeout, model=None, quiet=False):
-    """Run the skill headless in a throwaway folder, then keep only the projection."""
+    """Run the skill headless in a throwaway folder, then keep only the projection.
+    Returns what Claude Code reported about the run (claude_facts())."""
     with tempfile.TemporaryDirectory(prefix="rz_pipeline_") as folder:
         work = Path(folder).resolve()
         work_input, work_projection = work / WORK_INPUT, work / WORK_PROJECTION
@@ -595,6 +598,7 @@ def project(input_path, data, projection_path, timeout, model=None, quiet=False)
         except PipelineError as error:
             raise PipelineError(f"{error}\nLast output:\n{tail(reply)}")
         shutil.copyfile(work_projection, projection_path)
+        return claude_facts(out, progress.elapsed(), model)
 
 
 # ---- steps 3 and 4 ------------------------------------------------------------
@@ -676,10 +680,11 @@ def built_entries(input_path, projection_path, entries_path):
     return checked_entries(input_path, projection_path, entries_path)
 
 
-def trade_entries(input_path, projection_path, entries_path, timeout, model=None, quiet=False):
+def trade_entries(input_path, projection_path, entries_path, timeout, model=None, quiet=False,
+                  facts=None):
     """Ask Claude for the ranked setups (--entries-by-claude): the same numbers, with
     sentences written for this projection. Returns the path, or None when the two
-    files allow no setup."""
+    files allow no setup. `facts`, a dict, receives what Claude Code reported."""
     filled = run([sys.executable, ENTRIES, "prompt", input_path, projection_path])
     if filled.returncode != 0:
         raise PipelineError("trade_entries.py prompt failed:\n" + tail(filled.stderr or filled.stdout))
@@ -697,6 +702,8 @@ def trade_entries(input_path, projection_path, entries_path, timeout, model=None
     reply, failed = claude_reply(out)
     failed = failed or code != 0
     say("      " + summary(result, progress.elapsed(), failed))
+    if facts is not None:
+        facts.update(claude_facts(out, progress.elapsed(), model))
     if failed:
         raise PipelineError(f"Claude Code failed (exit {code}). Last output:\n" + tail(reply or err))
     try:
@@ -707,6 +714,147 @@ def trade_entries(input_path, projection_path, entries_path, timeout, model=None
         raise PipelineError("Claude Code did not reply with a JSON object. Last output:\n" + tail(reply))
     entries_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return checked_entries(input_path, projection_path, entries_path)
+
+
+# ---- provenance --------------------------------------------------------------
+#
+# provenance.json answers, for one run: which model and which rules made this, from which
+# data, when, and at what cost. The data half comes from the input (build_prompt.py writes
+# its `provenance`); the run half cannot come from Claude, which does not reliably know its
+# own model id or cost, so it is read here from Claude Code's own events. A field Claude
+# Code does not report is left out, never guessed.
+
+PROVENANCE_VERSION = 1   # of provenance.json; raise it when a field changes meaning or goes away
+RULE_FILES = {           # what decides the result besides the model, by the name provenance.json gives it
+    "SKILL.md": RZ.parent.parent / "SKILL.md",
+    "rz.py": RZ,
+    "build_prompt.py": BUILD,
+    "trade_entries.py": ENTRIES,
+    "trade_entries.md": ROOT / "prompts" / "trade_entries.md",
+    "trade_entries.schema.json": ROOT / "prompts" / "trade_entries.schema.json",
+}
+
+
+def sha256_of(path):
+    """The file's sha256 in hex, or None when it cannot be read."""
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def git_state(root=ROOT):
+    """{"commit": HEAD, "dirty": tracked files changed} of the checkout, or None without git.
+    Untracked files are not counted: runs/ and projections/ live there, and the rule files'
+    own hashes say exactly what ran."""
+    try:
+        head = run(["git", "-C", root, "rev-parse", "HEAD"], timeout=10)
+        status = run(["git", "-C", root, "status", "--porcelain", "--untracked-files=no"], timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if head.returncode != 0 or status.returncode != 0 or not head.stdout.strip():
+        return None
+    return {"commit": head.stdout.strip(), "dirty": bool(status.stdout.strip())}
+
+
+def rules_provenance():
+    """The rules this checkout applies: a short `version` that changes whenever one of
+    RULE_FILES does (to group results by), the git commit, and each file's sha256."""
+    files = {name: sha256_of(path) for name, path in RULE_FILES.items()}
+    joined = "\n".join(f"{name} {digest}" for name, digest in sorted(files.items()))
+    out = {"version": hashlib.sha256(joined.encode("utf-8")).hexdigest()[:12]}
+    state = git_state()
+    if state:
+        out["git"] = state
+    out["files"] = files
+    return out
+
+
+def claude_facts(stdout, seconds=None, requested=None):
+    """What Claude Code itself reported about one call, from its events: the model and the
+    Claude Code version (the `system` init event), the models that answered (the result's
+    `modelUsage`, else the assistant messages), duration, turns, cost and tokens (the
+    `result` event). Only fields that are present; `requested_model` is what --model asked
+    for and `wall_seconds` what this side measured."""
+    init, answered = {}, []
+    for event in events(stdout):
+        if not isinstance(event, dict):
+            continue
+        if event.get("type") == "system" and event.get("subtype") == "init" and not init:
+            init = event
+        elif event.get("type") == "assistant":
+            name = (event.get("message") or {}).get("model") if isinstance(event.get("message"), dict) else None
+            if isinstance(name, str) and name and name not in answered:
+                answered.append(name)
+    result = claude_result(stdout) or {}
+    out = {}
+    if requested:
+        out["requested_model"] = requested
+    for key in ("model", "claude_code_version", "session_id"):
+        if isinstance(init.get(key), str) and init[key]:
+            out[key] = init[key]
+    usage = result.get("modelUsage")
+    if isinstance(usage, dict) and usage:
+        out["models_used"] = sorted(usage)
+        out["model_usage"] = usage
+    elif answered:
+        out["models_used"] = sorted(answered)
+    if "session_id" not in out and isinstance(result.get("session_id"), str):
+        out["session_id"] = result["session_id"]
+    for key in ("duration_ms", "duration_api_ms", "num_turns", "total_cost_usd"):
+        if is_number(result.get(key)):
+            out[key] = result[key]
+    if isinstance(result.get("usage"), dict):
+        out["usage"] = result["usage"]
+    if is_number(seconds):
+        out["wall_seconds"] = round(seconds, 1)
+    return out
+
+
+def utc_now():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def run_provenance(input_path, data, projection_path, claude):
+    """provenance.json of a run that made its projection: `claude` is claude_facts() of
+    step 2. `rules` describes this checkout, the one that ran the skill and its helper."""
+    proj = load_json(projection_path, "Projection JSON")
+    asset, as_of = proj.get("asset") or {}, proj.get("as_of") or {}
+    out = {
+        "schema_version": PROVENANCE_VERSION,
+        "kind": "reversal_zones_provenance",
+        "written_at": utc_now(),
+        "subject": {"ticker": asset.get("ticker"), "as_of": as_of.get("time"),
+                    "horizon": (proj.get("horizon") or {}).get("label")},
+        "input": {"sha256": sha256_of(input_path)},
+        "projection": {"sha256": sha256_of(projection_path), "made_by": "claude-code"},
+        "rules": rules_provenance(),
+    }
+    if "schema_version" in data:
+        out["input"]["schema_version"] = data["schema_version"]
+    if isinstance(data.get("provenance"), dict):
+        out["input"]["data"] = data["provenance"]
+    if "schema_version" in proj:
+        out["projection"]["schema_version"] = proj["schema_version"]
+    out["projection"]["claude"] = claude
+    return out
+
+
+def provenance_beside(projection_path):
+    """The provenance file of a given projection, or None: provenance.json next to
+    projection.json, STEM_provenance.json next to STEM_projection.json."""
+    path = Path(projection_path)
+    name = "provenance.json" if path.name == "projection.json" else \
+        path.name[:-len("projection.json")] + "provenance.json" if path.name.endswith("_projection.json") else None
+    return path.with_name(name) if name and path.with_name(name).is_file() else None
+
+
+def write_provenance(record, *paths):
+    """Write the record to every path given (the run's file and the saved copy)."""
+    text = json.dumps(record, indent=2, ensure_ascii=False) + "\n"
+    for path in paths:
+        if path:
+            Path(path).write_text(text, encoding="utf-8")
 
 
 # ---- your defaults (config files) ----------------------------------------------
@@ -1559,6 +1707,7 @@ def pipeline(args, passthrough):
     elif own:
         input_path = Path(shutil.copyfile(input_path, out_dir / input_name))
 
+    claude = None
     if args.projection:
         say(f"[2/{steps}] Projection: using {projection_path} (Claude Code not run)")
         if own:
@@ -1568,7 +1717,7 @@ def pipeline(args, passthrough):
         research = data.get("research", "none")
         say(f"[2/{steps}] Projection: Claude Code runs the skill (research: {research}). "
             f"This can take several minutes; timeout {args.timeout:g} s")
-        project(input_path, data, projection_path, args.timeout, args.model, args.quiet)
+        claude = project(input_path, data, projection_path, args.timeout, args.model, args.quiet) or {}
 
     say(f"[3/{steps}] Check: rz.py check")
     check(projection_path)
@@ -1576,6 +1725,17 @@ def pipeline(args, passthrough):
     saved = None
     if not args.projection and not args.no_save:   # only a projection made in this run is new
         saved = save(input_path, projection_path)
+    # which model, rules and data made the projection: beside the run's files and in the saved
+    # entry. Only a run that made it can say; a given projection brings its own file, if any.
+    record = provenance_path = saved_provenance = None
+    provenance_name = f"{stem}_provenance.json" if stem else "provenance.json"
+    if claude is not None:
+        record = run_provenance(input_path, data, projection_path, claude)
+        provenance_path = out_dir / provenance_name if out_dir else None
+        saved_provenance = Path(saved) / "provenance.json" if saved else None
+        write_provenance(record, provenance_path, saved_provenance)
+    elif own and provenance_beside(args.projection):   # a complete copy, like the other files
+        shutil.copyfile(provenance_beside(args.projection), out_dir / provenance_name)
 
     chart_path = Path(args.chart) if args.chart else out_dir / chart_name
     say(f"[4/{steps}] Chart: plot_projection.py")
@@ -1591,16 +1751,23 @@ def pipeline(args, passthrough):
     else:
         say("[5/5] Trade setups: trade_entries.py ranks three (entry, stop, target)")
     entries_path = out_dir / (f"{stem}_entries.json" if stem else "entries.json")
+    facts = {}
     try:   # a failure here must not hide the three files already made
         if args.entries_by_claude:
             result["entries"] = trade_entries(input_path, projection_path, entries_path,
-                                              args.timeout, args.model, args.quiet)
+                                              args.timeout, args.model, args.quiet, facts)
         else:
             result["entries"] = built_entries(input_path, projection_path, entries_path)
     except PipelineError as error:
         result["failed"] = str(error)
     if result["entries"] and saved:   # keep the setups with the pair they were derived from
         shutil.copyfile(entries_path, Path(saved) / "entries.json")
+    if result["entries"] and record:   # the same run completes its own record, as it adds entries.json
+        record["entries"] = {"sha256": sha256_of(entries_path),
+                             "made_by": "claude-code" if args.entries_by_claude else "trade_entries.py"}
+        if args.entries_by_claude:
+            record["entries"]["claude"] = facts
+        write_provenance(record, provenance_path, saved_provenance)
     return result
 
 

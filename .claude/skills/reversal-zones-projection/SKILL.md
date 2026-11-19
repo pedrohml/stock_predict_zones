@@ -18,6 +18,7 @@ The input is produced by the user's `build_prompt.py`. The parts that matter:
 - `want`: `supports`, `resistances` (how many zones each), `probability` (`close_in_zone` or `touched_once`), `close_basis`.
 - `research`: `none`, `one_search` or `deep`.
 - `reply`: `shape`, `max_words`, `language`, `links`.
+- `schema_version` and `provenance` (where and when the candles were downloaded, row counts, a hash of `data`) are a record for the user's audit. They do not change the analysis; do not copy them into the output. Older inputs have neither.
 
 If the user has no such JSON, ask for it (they generate it with `build_prompt.py TICKER --horizon ...`). Do not rebuild prices from memory or read them off a screenshot for this skill: the point of the format is exact rows.
 
@@ -110,6 +111,7 @@ Keep the keys, their order and the id names exactly as below. Take `structure` f
 ```json
 {
   "task": "reversal_zones",
+  "schema_version": 1,
   "asset": { "ticker": "PETR4.SA", "currency": "BRL" },
   "as_of": { "time": "2026-11-17T17:36-03:00", "price": 44.06 },
   "horizon": { "label": "1-3m", "close_basis": "1W", "closes": 13, "first": "2026-11-20", "last": "2027-02-12" },
@@ -177,6 +179,7 @@ Keep the keys, their order and the id names exactly as below. Take `structure` f
 
 Notes on the schema:
 
+- `schema_version` is the version of this output format, always `1` here; it is not the input's `schema_version`. Which model and which rules made the projection is recorded by the pipeline outside this file, so add no fields for it.
 - With `touched_once`, write the legend with "trades" in place of "closes".
 - `reply.language` governs the free-text values (`evidence`, `what`, `effect`, `limits`, `method`, legend text). Keys, ids and scenario names stay in English so code can rely on them.
 - Every driver keeps its `source` URL whatever `reply.links` says. That setting only governs links in the prose around the JSON.

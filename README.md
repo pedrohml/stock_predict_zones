@@ -361,6 +361,7 @@ Abridged example (real files have many more rows):
 ```json
 {
   "task": "reversal_zones",
+  "schema_version": 1,
   "asset": { "ticker": "PETR4.SA", "venue": "São Paulo", "currency": "BRL" },
   "now": { "time": "2026-11-17T17:36-03:00", "price": 44.06, "session": "after_hours" },
   "horizon": "1-3m",
@@ -380,18 +381,31 @@ Abridged example (real files have many more rows):
   "events": [{ "date": "2026-12-21", "what": "ex-dividend" }],
   "want": { "supports": 3, "resistances": 3, "probability": "close_in_zone", "close_basis": "1W" },
   "research": "one_search",
-  "reply": { "shape": "table", "max_words": 200, "language": "en", "links": "decisive_only" }
+  "reply": { "shape": "table", "max_words": 200, "language": "en", "links": "decisive_only" },
+  "provenance": {
+    "source": "Yahoo Finance (yfinance)",
+    "library": "yfinance 1.8.0",
+    "downloaded_at": "2026-11-17T20:36:02Z",
+    "auto_adjust": false,
+    "series": [
+      { "candles": "1M", "rows": 36, "first": "2021-12-01", "last": "2024-11-01", "interval": "1mo", "period": "5y", "max_rows": 36 },
+      { "candles": "1W", "rows": 104, "first": "2024-11-25", "last": "2026-11-16", "interval": "1wk", "period": "2y", "max_rows": 104 }
+    ],
+    "data_sha256": "cd64501d971e80bccb606a6df414c5ceeb77852f48c1428e92e1839c43e5ceb3"
+  }
 }
 ```
 
 | Field | Notes |
 |---|---|
+| `schema_version` | Version of this input format, `1`. Inputs written before it existed have no such key (and no `provenance`); every script still reads them. |
 | `now.session` | `open`, `closed`, `pre_market` or `after_hours`, from Yahoo's trading-period data. |
 | `data.columns` | Shared by every series. Rows are compact arrays, oldest first, to keep the file small. |
 | `series[].last_row` | `forming` when the newest candle is still being built, otherwise `closed`. A forming candle is not a signal yet. |
 | `data.split_adjusted` | Prices are adjusted for splits but **not for dividends**, which matches what most charting platforms show. |
 | `events` | Earnings and ex-dividend dates inside the horizon, from Yahoo's calendar, plus anything passed with `--event`. An empty list means none are known. |
 | `want.probability` | `close_in_zone`: judged on candle closes. `touched_once`: judged on intra-candle extremes. |
+| `provenance` | Where the candles came from, for the record: the source and library version, when they were downloaded (UTC), `auto_adjust: false` (split-adjusted, not dividend-adjusted), and per series (in the order of `data.series`) the rows kept, the first and last row's `start`, and what was requested from Yahoo. `data_sha256` is the sha256 of `data` in canonical JSON (sorted keys, no spaces), so an edited candle shows: `build_prompt.data_hash(json.load(f)["data"])` must equal it. The skill ignores this block. |
 
 ## Step 2: the reversal-zones-projection skill
 
@@ -428,6 +442,7 @@ Abridged example:
 ```json
 {
   "task": "reversal_zones",
+  "schema_version": 1,
   "asset": { "ticker": "PETR4.SA", "currency": "BRL" },
   "as_of": { "time": "2026-11-17T17:36-03:00", "price": 44.06 },
   "horizon": { "label": "1-3m", "close_basis": "1W", "closes": 13, "first": "2026-11-20", "last": "2027-02-12" },
@@ -465,6 +480,7 @@ Abridged example:
 
 | Field | Meaning |
 |---|---|
+| `schema_version` | Version of this projection format, `1` (separate from the input's). `rz.py check` accepts a projection without it, as every projection made before it has, and rejects any other value. Which model made the projection is not in this file: see [Provenance](#provenance). |
 | `zone` | `[from, to]`. `null` marks the open end of a tail entry (`below` or `above`). |
 | `reach` | Chance the zone comes into play within the horizon. |
 | `turn` | Chance the horizon's most extreme close is made in this zone: it is reached and does not break. This is the reversal probability. |
@@ -508,7 +524,9 @@ projections/
 └── PETR4.SA/
     ├── 2026-11-18T1515_1-3m/
     │   ├── input.json          the candles and request the projection was made from
-    │   └── projection.json     the projection, exactly as produced
+    │   ├── projection.json     the projection, exactly as produced
+    │   ├── entries.json        the trade setups, when `zones` made them
+    │   └── provenance.json     which model, rules and data made it, when `zones` made it
     └── 2026-11-18T1515_1-3m_2/ the same input projected a second time
 ```
 
@@ -519,6 +537,55 @@ projections/
 - `run_pipeline.py` (`zones`) saves each projection it makes the same way, once it has passed `check`, and prints the folder. It does not save when `--projection` reuses an existing file or `--no-save` is given. Its own `runs/` folders use the same names but are a different thing: working output that can be deleted, while `projections/` is the record.
 - The folder is `projections/` in the directory the command runs from. Set `RZ_PROJECTIONS_DIR`, or pass a folder as the last argument, to keep them elsewhere. For `zones`, `history_dir` in a [config file](#your-defaults) gives the history one home whatever directory you run it from.
 - `projections/` is in `.gitignore`: the history is local to your machine. Remove that line if you want to commit it.
+- `rz.py save` itself keeps only the pair; `zones` adds `entries.json` and `provenance.json` to the folder it just saved, in the same run. Entries saved before provenance existed, or by the skill outside `zones`, have no `provenance.json`; everything that reads the history (`list`, `score`, `show`) works without it.
+
+### Provenance
+
+Every `zones` run that makes a projection writes `provenance.json` beside its files (`STEM_provenance.json` with `--out-dir`) and into the saved folder. It answers which model and which rules produced the result, from which data, when, and at what cost:
+
+```json
+{
+  "schema_version": 1,
+  "kind": "reversal_zones_provenance",
+  "written_at": "2026-11-19T18:47:09Z",
+  "subject": { "ticker": "PETR4.SA", "as_of": "2026-11-18T15:15-03:00", "horizon": "1-3m" },
+  "input": {
+    "sha256": "c8472cd1...",
+    "schema_version": 1,
+    "data": { "source": "Yahoo Finance (yfinance)", "downloaded_at": "2026-11-18T18:15:40Z", "...": "the input's provenance" }
+  },
+  "projection": {
+    "sha256": "599209fe...",
+    "made_by": "claude-code",
+    "schema_version": 1,
+    "claude": {
+      "requested_model": "opus",
+      "model": "claude-opus-4-8",
+      "claude_code_version": "2.1.323",
+      "duration_ms": 137366, "duration_api_ms": 130722, "num_turns": 8, "total_cost_usd": 0.750123,
+      "usage": { "input_tokens": 14, "cache_creation_input_tokens": 37579, "cache_read_input_tokens": 210576, "output_tokens": 10759 },
+      "wall_seconds": 140.0
+    }
+  },
+  "rules": {
+    "version": "8ada605feb46",
+    "git": { "commit": "e6723b6f3f7d0f82fb30a10884cf17f3736b2d13", "dirty": false },
+    "files": { "SKILL.md": "3f451f13...", "rz.py": "ba4be519...", "build_prompt.py": "2548a8c1...",
+               "trade_entries.py": "17498a76...", "trade_entries.md": "6a625630...", "trade_entries.schema.json": "142cd64d..." }
+  },
+  "entries": { "sha256": "d17fb6f5...", "made_by": "trade_entries.py" }
+}
+```
+
+| Part | Where it comes from |
+|---|---|
+| `input.data` | The input's own `provenance`, written by `build_prompt.py` at download time (absent for older inputs). |
+| `input.sha256`, `projection.sha256`, `entries.sha256` | sha256 of the files exactly as written in the run folder. |
+| `projection.claude` | Claude Code's own event stream: `model`, `claude_code_version` and `session_id` from the `system` init event; `num_turns`, `total_cost_usd`, `duration_ms`, `duration_api_ms` and `usage` from the final `result` event; `models_used` and `model_usage` from the result's `modelUsage` (else the models named on the assistant messages). A field Claude Code does not report is left out, never guessed. `requested_model` is what `--model` asked for, and `wall_seconds` what `zones` measured. |
+| `rules` | The checkout that ran: the sha256 of each rule file, a short `version` (the first 12 hex digits of a hash over those) that changes whenever any of them does, and the git commit with `dirty` set when tracked files differ from it (untracked files such as `runs/` are not counted). Without git, `git` is left out. |
+| `entries` | Added when the setups are written: by `trade_entries.py`, or by Claude Code with its own `claude` block (`--entries-by-claude`). |
+
+Why it lives there: the data half is known at download time, so `build_prompt.py` writes it into the input. The run half cannot come from Claude, which does not reliably know its model id or cost, so `zones` reads it from Claude Code's events instead of asking Claude to fill fields in the projection. A run that reuses a projection (`--projection`) writes no provenance, since it did not make it; it copies the file beside the given projection into a new run folder when there is one, and never overwrites one.
 
 ### Scoring the saved projections
 
@@ -530,6 +597,8 @@ uv run zones score PETR4.SA             # one ticker
 uv run zones score projections/PETR4.SA/2026-11-18T1515_1-3m   # one saved folder
 uv run zones score --json               # one JSON object instead of the tables
 ```
+
+Each projection's line names the model and rules that made it (`made by claude-opus-4-8 · rules 8ada605feb46 · commit e6723b6`), read from its `provenance.json`, and the calibration summary ends with a Brier score per model and kind, so models can be compared once the samples allow. Projections saved without provenance count as `unrecorded`.
 
 `zones score` runs the script with the same arguments; called directly it is `uv run python score_projections.py [FOLDER] [--ticker T] [--json]`, from the repository folder.
 
@@ -629,12 +698,13 @@ When a new projection is saved under `projections/`, the setups are saved next t
 uv run python trade_entries.py build  examples/petr4_input.json examples/petr4_projection.json -o entries.json
 uv run python trade_entries.py prompt examples/petr4_input.json examples/petr4_projection.json > prompt.txt
 uv run python trade_entries.py check  examples/petr4_input.json examples/petr4_projection.json reply.json
-uv run python trade_entries.py expected examples/petr4_projection.json   # every valid setup, best first
+uv run python trade_entries.py expected examples/petr4_input.json examples/petr4_projection.json   # every valid setup, best first
 ```
 
 How the setups are built:
 
 - **Prices come from zone edges only.** A *reversal* enters at a zone's near edge and targets the first zone on the opposite side. A *continuation* enters where a zone breaks and targets the far edge of the next one. Stops sit a quarter of one candle's typical move beyond the zone.
+- **Prices keep the candles' precision.** Stops, risk, reward and the units are rounded to the most decimals the input's rows show (at least two), so an asset priced around 0.04 written with `--decimals 5` gets the same setups as one priced at 40. A setup whose risk still rounds to zero is discarded; when none is left the file holds `{"task": "trade_entries", "error": "no setup passes the rules for this projection"}`.
 - **Odds come from the projection.** `fill` and `win_if_filled` are computed from `reach` and `turn` by fixed formulas, and each entry's `basis` shows the numbers used.
 - **Ranking** is by `edge.per_order`: the expected result in units of risk, counting orders that never fill as zero.
 
@@ -713,8 +783,8 @@ stock_predict_zones/
 ├── prompts/
 │   ├── trade_entries.md            prompt: three ranked trade setups from one run
 │   └── trade_entries.schema.json   JSON Schema of its reply
-├── projections/                    every projection made, with its input (local, not committed)
-├── runs/                           one folder per `zones` run: input, projection, chart (local, not committed)
+├── projections/                    every projection made, with its input and provenance (local, not committed)
+├── runs/                           one folder per `zones` run: input, projection, chart, setups, provenance (local, not committed)
 ├── pyproject.toml                  dependencies, Python version and the `zones` command
 ├── uv.lock
 └── README.md

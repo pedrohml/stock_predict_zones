@@ -6,7 +6,9 @@
 
 FOLDER holds input.json and projection.json, and entries.json when the run made
 trade setups (files named STEM_input.json and so on, as --out-dir writes them,
-are found too when there is one of each).
+are found too when there is one of each). A provenance.json next to the
+projection (STEM_provenance.json next to STEM_projection.json) adds one line
+saying which model and rules made it, and at what cost.
 
 Top to bottom, like the chart: one header line, the zones with the current price
 between resistances and supports, the scenarios, the hypothetical trade setups
@@ -57,6 +59,7 @@ TEXT = {
         "events": "Events", "no_date": "no date", "more": "+{n} more",
         "confidence": "Confidence: {level}", "levels": {"low": "low", "medium": "medium"},
         "drivers": "Drivers",
+        "made_by": "Made by {what}", "turns": "{n} turns", "rules": "rules {version}",
         "footer": "Probabilistic estimates, not a recommendation to buy or sell. Prices are not dividend-adjusted.",
         "decimal": ".", "thousands": ",",
     },
@@ -81,6 +84,7 @@ TEXT = {
         "events": "Eventos", "no_date": "sem data", "more": "mais {n}",
         "confidence": "Confiança: {level}", "levels": {"low": "baixa", "medium": "média"},
         "drivers": "Fatores",
+        "made_by": "Feito por {what}", "turns": "{n} turnos", "rules": "regras {version}",
         "footer": "Estimativas probabilísticas, não recomendação de compra ou venda. Preços sem ajuste por dividendos.",
         "decimal": ",", "thousands": ".",
     },
@@ -134,6 +138,19 @@ def run_files(paths):
         if found[kind] is None:
             raise Problem(f"no {kind}.json in {folder}")
     return found["input"], found["projection"], found["entries"]
+
+
+def provenance_file(projection_path):
+    """provenance.json next to projection.json, STEM_provenance.json next to
+    STEM_projection.json; None when there is none (a projection saved without it)."""
+    path = Path(projection_path)
+    if path.name == "projection.json":
+        found = path.with_name("provenance.json")
+    elif path.name.endswith("_projection.json"):
+        found = path.with_name(path.name[:-len("projection.json")] + "provenance.json")
+    else:
+        return None
+    return found if found.is_file() else None
 
 
 def language(requested, source):
@@ -364,9 +381,37 @@ def bar(reach, turn=None, width=BAR):
     return "█" * solid + "░" * (full - solid)
 
 
-def summary(source, proj, entries=None, lang=None, width=DEFAULT_WIDTH):
+def made_by(provenance, t):
+    """'Made by MODEL · Claude Code X · N turns · $C · rules V' from provenance.json, with
+    only what it records; None when it names neither a model nor the rules."""
+    if not isinstance(provenance, dict):
+        return None
+    claude = (provenance.get("projection") or {}).get("claude")
+    claude = claude if isinstance(claude, dict) else {}
+    rules = provenance.get("rules") if isinstance(provenance.get("rules"), dict) else {}
+    used = claude.get("models_used") if isinstance(claude.get("models_used"), list) else []
+    model = claude.get("model") or (used[0] if used else None)
+    parts = []
+    if isinstance(model, str):
+        parts.append(model)
+    if isinstance(claude.get("claude_code_version"), str):
+        parts.append(f"Claude Code {claude['claude_code_version']}")
+    if is_number(claude.get("num_turns")):
+        parts.append(t["turns"].format(n=claude["num_turns"]))
+    if is_number(claude.get("total_cost_usd")):
+        parts.append(f"${claude['total_cost_usd']:.2f}")
+    if isinstance(rules.get("version"), str):
+        version = rules["version"]
+        if isinstance(rules.get("git"), dict) and rules["git"].get("dirty"):
+            version += "*"
+        parts.append(t["rules"].format(version=version))
+    return t["made_by"].format(what=" · ".join(parts)) if parts else None
+
+
+def summary(source, proj, entries=None, lang=None, width=DEFAULT_WIDTH, provenance=None):
     """The whole summary as lines of (text, style) segments. Raises Problem on a
-    projection without the fields `required()` names."""
+    projection without the fields `required()` names. `provenance` is the run's
+    provenance.json, if any: one line naming the model and the rules."""
     required(proj)
     t = language(lang, source)
     width = max(MIN_WIDTH, width)
@@ -505,6 +550,10 @@ def summary(source, proj, entries=None, lang=None, width=DEFAULT_WIDTH):
         if len(drivers) > DRIVERS_SHOWN:
             lines.append("  " + t["more"].format(n=len(drivers) - DRIVERS_SHOWN))
 
+    origin = made_by(provenance, t)
+    if origin:
+        blank()
+        lines += [[(text, "dim")] for text in textwrap.wrap(origin, width)]
     if not (isinstance(entries, dict) and isinstance(entries.get("note"), str) and entries["note"].strip()):
         blank()   # the setups' own note says it already; without one the chart's footer does
         lines += [[(text, "dim")] for text in textwrap.wrap(t["footer"], width)]
@@ -560,6 +609,11 @@ def main(argv=None):
         source = load_json(input_path, "Input JSON")
         proj = load_json(projection_path, "Projection JSON")
         entries = load_json(entries_path, "Entries JSON") if entries_path else None
+        beside = provenance_file(projection_path)
+        try:   # a record of the run, not part of it: unreadable means no line, never an error
+            provenance = json.loads(beside.read_text(encoding="utf-8")) if beside else None
+        except (OSError, ValueError, UnicodeDecodeError):
+            provenance = None
         if "supports" in source and "data" in proj:
             raise Problem("the two files are swapped: pass the input (the build_prompt.py output) first, "
                           "then the projection")
@@ -567,7 +621,7 @@ def main(argv=None):
         if width is None:
             width = min(shutil.get_terminal_size((DEFAULT_WIDTH, 24)).columns, MAX_AUTO_WIDTH) \
                 if out.isatty() else DEFAULT_WIDTH
-        text = render(summary(source, proj, entries, args.lang, width), max(MIN_WIDTH, width),
+        text = render(summary(source, proj, entries, args.lang, width, provenance), max(MIN_WIDTH, width),
                       use_color(args, out), not encodable(out))
     except Problem as error:
         print(f"Error: {error}", file=sys.stderr)

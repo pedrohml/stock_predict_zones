@@ -8,8 +8,10 @@
 
 Each saved projection is judged with the definitions of the simulation that produced its
 probabilities (`outcome()` in the skill's rz.py). Projections whose horizon has ended then go
-into a calibration summary: forecast probability against observed frequency. This describes how
-the probabilities compared with events. It says nothing about returns, and it is not advice.
+into a calibration summary: forecast probability against observed frequency, overall and per
+model (from the provenance.json that `zones` saves with each projection; older entries have
+none and count as "unrecorded"). This describes how the probabilities compared with events.
+It says nothing about returns, and it is not advice.
 """
 import argparse
 import importlib.util
@@ -30,6 +32,7 @@ LOOKBACK_DAYS = {"1d": 45, "15m": 4, "1h": 4}   # history before as_of: the form
 MISMATCH = 0.01    # realised and saved close of the same candle may differ by this share
 KINDS = ("reach", "turn", "scenario")
 UNINFORMED = {"reach": 0.5, "turn": 0.5, "scenario": 0.25}
+UNRECORDED = "unrecorded"   # the model of a projection saved without provenance.json
 
 CAVEATS = [
     "Small samples are anecdote, not evidence: one projection adds about twenty forecasts at once.",
@@ -149,9 +152,31 @@ def read_input(folder):
         return json.load(handle)
 
 
+def made_by(folder):
+    """{"model", "rules", "commit", "dirty"} from the saved provenance.json, as far as it says;
+    None when the folder has none (saved before provenance existed, or by the skill alone)."""
+    try:
+        with open(os.path.join(folder, "provenance.json"), encoding="utf-8") as handle:
+            record = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(record, dict):
+        return None
+    claude = (record.get("projection") or {}).get("claude") or {}
+    rules = record.get("rules") or {}
+    git = rules.get("git") or {}
+    used = claude.get("models_used") or []
+    out = {"model": claude.get("model") or (used[0] if used else None), "rules": rules.get("version"),
+           "commit": git.get("commit"), "dirty": git.get("dirty")}
+    return {key: value for key, value in out.items() if value is not None}
+
+
 def score_one(rz, folder, o, prices):
     """One record per saved projection: the outcome, or `not_scored` with the reason."""
     record = {"folder": folder}
+    origin = made_by(folder)
+    if origin:
+        record["made_by"] = origin
     try:
         record.update(ticker=o["asset"]["ticker"], horizon=o["horizon"]["label"], as_of=o["as_of"]["time"],
                       price=o["as_of"]["price"], last=o["horizon"]["last"])
@@ -244,11 +269,29 @@ def buckets(pairs, width=10):
             for index, group in sorted(groups.items())]
 
 
+def model_of(record):
+    return (record.get("made_by") or {}).get("model") or UNRECORDED
+
+
+def by_model(ended):
+    """Brier score per model and kind: enough to tell models apart, if the samples allow."""
+    out = {}
+    for model in sorted({model_of(r) for r in ended}):
+        mine = [r for r in ended if model_of(r) == model]
+        kinds = {}
+        for kind in KINDS:
+            pairs = [(p, y) for r in mine for k, p, y in forecasts(r) if k == kind]
+            if pairs:
+                kinds[kind] = {"n": len(pairs), "brier": round(brier(pairs), 4)}
+        out[model] = {"projections": len(mine), "kinds": kinds}
+    return out
+
+
 def calibration(records):
     """Summary over the scored projections whose horizon has ended."""
     ended = [r for r in records if r.get("final")]
     out = {"projections": len(ended), "tickers": len({r["ticker"].upper() for r in ended}),
-           "forecasts": 0, "caveats": CAVEATS, "kinds": {}}
+           "forecasts": 0, "caveats": CAVEATS, "kinds": {}, "by_model": by_model(ended)}
     for kind in KINDS:
         pairs = [(p, y) for r in ended for k, p, y in forecasts(r) if k == kind]
         if not pairs:
@@ -274,15 +317,30 @@ def yes(flag):
     return "-" if flag is None else "yes" if flag else "no"
 
 
+def origin_line(r):
+    """'  made by MODEL · rules VERSION · commit ABCDEF1 (dirty)', or None without provenance."""
+    origin = r.get("made_by")
+    if not origin:
+        return None
+    parts = [f"made by {origin.get('model', 'an unrecorded model')}"]
+    if origin.get("rules"):
+        parts.append(f"rules {origin['rules']}")
+    if origin.get("commit"):
+        parts.append(f"commit {origin['commit'][:7]}" + (" (dirty)" if origin.get("dirty") else ""))
+    return "  " + " · ".join(parts)
+
+
 def render_projection(r):
     head = f"{r.get('ticker', '?')} {r.get('horizon', '?')}  as of {r.get('as_of', '?')} at {r.get('price', '?')}"
+    origin = [origin_line(r)] if origin_line(r) else []
     if "not_scored" in r:
         label = "NOT SCORED YET" if r.get("waiting") else "NOT SCORED"
-        return [head, f"  {label}: {r['not_scored']}", f"  {r['folder']}"]
+        return [head, *origin, f"  {label}: {r['not_scored']}", f"  {r['folder']}"]
     final = r["final"]
     so_far = "" if final else " so far"
     what = "candles" if r["measure"] == "touch" else "closes"
     lines = [head + (f"  ENDED {r['last']}" if final else f"  OPEN until {r['last']}: PROVISIONAL, so far"),
+             *origin,
              f"  {r['closes']['counted']} of {r['closes']['scheduled']} {what} ({r['measure']} measure), "
              f"{r['window'][0]} to {r['window'][1]}; low{so_far} {r['low'][0]:g} ({r['low'][1]}), "
              f"high{so_far} {r['high'][0]:g} ({r['high'][1]})",
@@ -319,6 +377,12 @@ def render_calibration(c, open_count, failed):
         for b in k["buckets"]:
             lines.append(f"    {str(b['from']) + '-' + str(b['to']) + '%':<9} {b['n']:>4} "
                          f"{b['mean_forecast']:>14.2f} {b['observed']:>9.2f}")
+    models = c.get("by_model") or {}
+    if models:
+        lines += ["", "  by model (Brier score, n forecasts; tiny samples say nothing):"]
+        for model, m in models.items():
+            scores = ", ".join(f"{kind} {k['brier']:.3f} (n {k['n']})" for kind, k in m["kinds"].items())
+            lines.append(f"    {model}: {m['projections']} projection(s); {scores}")
     return lines
 
 

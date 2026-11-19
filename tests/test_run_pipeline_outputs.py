@@ -19,6 +19,7 @@ from test_run_pipeline import PNG_MAGIC, calls, store, stub_build, stub_claude  
 from test_run_pipeline import run_main as run_everything
 
 PLAIN = ["chart.png", "input.json", "projection.json"]
+MADE = sorted(PLAIN + ["provenance.json"])   # a run that made its projection also says how
 
 
 @pytest.fixture(autouse=True)
@@ -62,14 +63,15 @@ def test_default_is_a_run_folder_named_like_rz_save(cwd, input_data, store, stub
     assert run_main("PETR4.SA", "--dpi", "50") == 0
     assert (input_data["now"]["time"], input_data["horizon"]) == ("2026-11-17T17:36-03:00", "1-3m")
     folder = Path("runs") / "PETR4.SA" / "2026-11-17T1736_1-3m"       # relative to the current directory
-    assert names(cwd) == ["runs"] and names(folder) == PLAIN
+    assert names(cwd) == ["runs"] and names(folder) == MADE
     assert (folder / "chart.png").read_bytes().startswith(PNG_MAGIC)
     printed = output_paths(capsys)
     assert [printed[key] for key in ("input", "projection", "chart")] == [
         folder / "input.json", folder / "projection.json", folder / "chart.png"]
     # the same folder name as the append-only history, which stays a separate place
     assert printed["saved"] == store / "PETR4.SA" / "2026-11-17T1736_1-3m"
-    assert names(printed["saved"]) == ["input.json", "projection.json"]
+    assert names(printed["saved"]) == ["input.json", "projection.json", "provenance.json"]
+    assert (printed["saved"] / "provenance.json").read_bytes() == (folder / "provenance.json").read_bytes()
 
 
 def test_a_repeated_run_never_overwrites(stub_build, stub_claude):
@@ -82,7 +84,7 @@ def test_a_repeated_run_never_overwrites(stub_build, stub_claude):
     assert run_main("PETR4.SA", "--dpi", "50") == 0
     assert names(base) == ["2026-11-17T1736_1-3m", "2026-11-17T1736_1-3m_2", "2026-11-17T1736_1-3m_3"]
     assert (first / "chart.png").read_bytes() == b"the first run's chart"
-    assert all(names(folder) == PLAIN for folder in base.iterdir())
+    assert all(names(folder) == MADE for folder in base.iterdir())
 
 
 def test_another_time_or_horizon_is_another_folder(input_data, write_json, stub_claude):
@@ -98,7 +100,7 @@ def test_input_alone_gets_a_complete_folder(cwd, input_path, stub_build, stub_cl
     assert run_main("--input", "mine.json", "--dpi", "50") == 0      # a relative path, against the cwd
     assert calls["build"] == [] and len(calls["claude"]) == 1
     folder = Path("runs/PETR4.SA/2026-11-17T1736_1-3m")
-    assert names(folder) == PLAIN
+    assert names(folder) == MADE
     assert (folder / "input.json").read_bytes() == input_path.read_bytes() == (cwd / "mine.json").read_bytes()
 
 
@@ -125,13 +127,14 @@ def test_plot_again_into_a_named_chart_makes_no_folder(cwd, input_path, projecti
 def test_name_prefixes_the_files_in_a_run_folder(stub_build, stub_claude):
     stub_claude()
     assert run_main("PETR4.SA", "--name", "run7", "--dpi", "50") == 0
-    assert names("runs/PETR4.SA/2026-11-17T1736_1-3m") == ["run7.png", "run7_input.json", "run7_projection.json"]
+    assert names("runs/PETR4.SA/2026-11-17T1736_1-3m") == ["run7.png", "run7_input.json", "run7_projection.json",
+                                                                "run7_provenance.json"]
 
 
 def test_chart_option_moves_only_the_chart(cwd, stub_build, stub_claude):
     stub_claude()
     assert run_main("PETR4.SA", "--chart", "x.svg") == 0
-    assert names("runs/PETR4.SA/2026-11-17T1736_1-3m") == ["input.json", "projection.json"]
+    assert names("runs/PETR4.SA/2026-11-17T1736_1-3m") == ["input.json", "projection.json", "provenance.json"]
     assert "<svg" in (cwd / "x.svg").read_text(encoding="utf-8")
 
 
@@ -142,13 +145,13 @@ def test_out_dir_is_flat_named_by_ticker_and_relative_to_the_cwd(cwd, stub_build
     for _ in range(2):                                               # a second run replaces the first
         assert run_main("PETR4.SA", "--out-dir", "out", "--dpi", "50") == 0
     assert names(cwd) == ["out"]                                     # no runs/
-    assert names("out") == ["petr4.png", "petr4_input.json", "petr4_projection.json"]
+    assert names("out") == ["petr4.png", "petr4_input.json", "petr4_projection.json", "petr4_provenance.json"]
 
 
 def test_out_dir_dot_is_the_old_default(cwd, stub_build, stub_claude):
     stub_claude()
     assert run_main("PETR4.SA", "--out-dir", ".", "--name", "x", "--dpi", "50") == 0
-    assert names(cwd) == ["x.png", "x_input.json", "x_projection.json"]
+    assert names(cwd) == ["x.png", "x_input.json", "x_projection.json", "x_provenance.json"]
 
 
 def test_out_dir_leaves_given_files_where_they_are(cwd, input_path, projection_path, capsys):
@@ -277,7 +280,7 @@ def test_zones_is_installed_from_this_checkout():
 def test_entries_go_into_the_run_folder_with_a_plain_name(cwd, stub_build, stub_claude):
     stub_claude()
     assert run_everything("PETR4.SA", "--dpi", "50") == 0
-    assert names(Path("runs/PETR4.SA/2026-11-17T1736_1-3m")) == sorted(PLAIN + ["entries.json"])
+    assert names(Path("runs/PETR4.SA/2026-11-17T1736_1-3m")) == sorted(MADE + ["entries.json"])
 
 
 def test_plot_again_with_entries_needs_a_folder_even_with_a_named_chart(cwd, input_path, projection_path,
