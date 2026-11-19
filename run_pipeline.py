@@ -88,6 +88,7 @@ ROOT = Path(__file__).resolve().parent
 BUILD = ROOT / "build_prompt.py"
 PLOT = ROOT / "plot_projection.py"
 ENTRIES = ROOT / "trade_entries.py"
+SHOW = ROOT / "show_run.py"
 SKILL = "reversal-zones-projection"
 RZ = ROOT / ".claude" / "skills" / SKILL / "scripts" / "rz.py"
 CLAUDE = "claude"
@@ -192,6 +193,32 @@ def open_chart(path):
         start_viewer(path)
     except Exception as error:
         say(f"Warning: could not open {path}: {error}")
+
+
+def show_summary(result, lang=None):
+    """Print show_run.py's summary of the finished run on standard output. Like --open
+    it is a convenience after a run that has already succeeded: whatever goes wrong
+    is one warning line, and the file paths are printed all the same. The script
+    writes into a pipe here, so this side tells it whether a terminal is reading
+    (colour and width); NO_COLOR reaches it through the environment."""
+    command = [sys.executable, SHOW, result["input"], result["projection"]]
+    if result["entries"]:
+        command.append(result["entries"])
+    if lang:
+        command += ["--lang", lang]
+    try:
+        terminal = sys.stdout.isatty()
+        if terminal:
+            command += ["--color", "--width", shutil.get_terminal_size().columns]
+        else:
+            command.append("--no-color")
+        done = run(command, timeout=60)
+        if done.returncode != 0 or not done.stdout.strip():
+            raise PipelineError((done.stderr.strip() or "it printed nothing").splitlines()[-1])
+        # on a terminal the progress lines end just above: set the summary apart from them
+        print(("\n" if terminal else "") + done.stdout.rstrip("\n") + "\n")
+    except Exception as error:
+        say(f"Warning: no summary of the result ({SHOW.name}): {printable(error)}")
 
 
 # ---- step 1 -------------------------------------------------------------------
@@ -764,6 +791,7 @@ SETTINGS = {s.key: s for s in (
     Setting("dpi", "chart", "int", None, "resolution of raster formats, 1 to 1200",
             example=160, unset="160, the chart's default", low=1, high=1200),
     Setting("open", "chart", "flag", False, "open the chart in the default viewer after a run"),
+    Setting("summary", "chart", "flag", True, "print a summary of the result before the file paths"),
 
     Setting("runs_dir", "files", "path", RUNS,
             "one folder per run goes here (default: runs/ in the current directory)",
@@ -1036,6 +1064,7 @@ def configured(args, passthrough):
         if setting.group != "step1":
             setattr(args, key, settled[key][0])
     args.no_entries, args.no_save = not args.entries, not args.save   # the names pipeline() reads
+    args.no_summary = not args.summary
     history, source = settled["history_dir"]
     if source != "default" and not source.startswith("environment"):
         # rz.py save and anything else started from here read the variable: set it once,
@@ -1069,6 +1098,22 @@ def need(*scripts):
         if not script.is_file():    # installed as a copy, away from the repository
             raise PipelineError(f"{script} not found. This command works only from the repository "
                                 "checkout: install it with `uv tool install --editable PATH`.")
+
+
+runs_home = Path(RUNS)   # the commands' runs folder: config_folders() sets it from runs_dir
+
+
+def config_folders():
+    """The commands after a run use the same two folders as a run: `runs_dir` from the
+    config files, and `history_dir` exported as RZ_PROJECTIONS_DIR the way `configured()`
+    exports it (never over a variable the user set). Returns the runs folder."""
+    loaded = [(path, values) for _, path in config_files()
+              if (values := read_config(path)) is not None]
+    settled = settle({}, loaded)
+    history, source = settled["history_dir"]
+    if from_file(source):
+        os.environ[HISTORY_ENV] = str(Path(history).absolute())
+    return Path(settled["runs_dir"][0])
 
 
 def history():
@@ -1149,7 +1194,7 @@ def resolve(what, horizon=None, name=None):
             folder = inside[-1]
     else:
         folder, looked = None, []
-        for base in (Path(RUNS), history()):    # this directory's runs first, then the history
+        for base in (runs_home, history()):    # this directory's runs first, then the history
             looked.append(str(base.resolve() / ticker_folder(what)))
             inside = sorted((found for path in ticker_folders(base, what)
                              for found in folders_under(path, horizon, name)), key=folder_key)
@@ -1237,7 +1282,7 @@ def run_folders(argv):
                             what=False)
     parser.add_argument("ticker", nargs="?", metavar="TICKER", help="only this ticker, in any letter case")
     args = parser.parse_args(argv)
-    base, rows = Path(RUNS), []
+    base, rows = runs_home, []
     if args.ticker:
         tickers = ticker_folders(base, args.ticker)
     else:
@@ -1297,7 +1342,7 @@ def plot_again(argv):
     return code
 
 
-def show_summary(argv):
+def show_again(argv):
     """zones show WHAT [show_run.py options]."""
     parser = command_parser("show", "WHAT [--horizon H] [show_run.py options]", "Print the summary of a run (show_run.py). Other options "
                             "(--lang, --width, --no-color) go to show_run.py.")
@@ -1346,7 +1391,7 @@ def entries_again(argv):
 
 
 COMMANDS = {"list": list_saved, "runs": run_folders, "score": score_saved,
-            "plot": plot_again, "show": show_summary, "entries": entries_again}
+            "plot": plot_again, "show": show_again, "entries": entries_again}
 FORCE_PIPELINE = ("run", "--")
 
 
@@ -1365,7 +1410,9 @@ def dispatch(argv=None):
         return None, argv[1:]
     if not argv or argv[0] not in COMMANDS:
         return None, argv
+    global runs_home
     try:
+        runs_home = config_folders()
         return COMMANDS[argv[0]](argv[1:]), argv
     except PipelineError as error:
         say(f"Error: {error}")
@@ -1402,6 +1449,9 @@ def parse(argv=None):
                             "in --out-dir; the extension picks the format)")
     files.add_argument("--open", action=switch, default=None,
                        help="open the chart in the default viewer when the run succeeds")
+    files.add_argument("--summary", action=switch, default=None,
+                       help="print a summary of the result (show_run.py) before the file "
+                            "paths; --no-summary prints the paths only")
     files.add_argument("--runs-dir", metavar="DIR",
                        help=f"where the run folders are made (default: {RUNS}/ in the current directory)")
     files.add_argument("--history-dir", metavar="DIR",
@@ -1554,6 +1604,8 @@ def main(argv=None):
     except KeyboardInterrupt:
         say("Interrupted.")
         return 130
+    if not args.no_summary:   # before the paths, which stay last and easy to copy
+        show_summary(result, args.lang)
     print(f"input:      {result['input']}")
     print(f"projection: {result['projection']}")
     print(f"chart:      {result['chart']}")

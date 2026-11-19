@@ -7,6 +7,7 @@ started. `rz.py`, `plot_projection.py` and `trade_entries.py` run for real where
 test says so; all three are offline.
 """
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -560,3 +561,50 @@ def test_a_copy_installed_away_from_the_repository_says_so(cwd, make, monkeypatc
         monkeypatch.setattr(run_pipeline, name, cwd / "missing" / name)
     assert main(*argv) == 1
     assert "works only from the repository checkout" in capsys.readouterr().err
+
+
+# ---- the config file's folders ------------------------------------------------
+
+@pytest.fixture
+def config(tmp_path, monkeypatch):
+    """config(text) -> a user config file that ZONES_CONFIG names."""
+    monkeypatch.setattr(run_pipeline, "runs_home", run_pipeline.runs_home)   # restored after the test
+    path = tmp_path / "conf" / "config.toml"
+
+    def write(text):
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        monkeypatch.setenv(run_pipeline.CONFIG_ENV, str(path))
+        return path
+    return write
+
+
+def test_commands_find_runs_in_the_configured_runs_dir(make, config, relayed, tmp_path):
+    config('runs_dir = "../elsewhere"\n')                  # relative to the file's folder
+    run = make(tmp_path / "elsewhere" / TICKER / "2026-11-18T1515_1-3m")
+    assert main("show", TICKER) == 0
+    assert relayed[0][2:4] == [str(run / "input.json"), str(run / "projection.json")]
+
+
+def test_commands_use_the_configured_history(make, config, monkeypatch, tmp_path, relayed):
+    monkeypatch.delenv("RZ_PROJECTIONS_DIR", raising=False)
+    config('history_dir = "../kept"\n')
+    saved = make(tmp_path / "kept" / TICKER / "2026-11-18T1515_1-3m")
+    assert main("show", TICKER) == 0
+    assert os.environ["RZ_PROJECTIONS_DIR"] == str(tmp_path / "kept")
+    assert relayed[0][2] == str(saved / "input.json")
+
+
+def test_the_variable_still_wins_over_the_configured_history(make, config, store, tmp_path, relayed):
+    config('history_dir = "../kept"\n')
+    saved = make(store / TICKER / "2026-11-18T1515_1-3m")
+    assert main("show", TICKER) == 0
+    assert os.environ["RZ_PROJECTIONS_DIR"] == str(store)
+    assert relayed[0][2] == str(saved / "input.json")
+
+
+def test_a_bad_config_stops_a_command_with_one_line(config, capsys, relayed):
+    config('runs_dri = "x"\n')
+    assert main("runs") == 1
+    err = capsys.readouterr().err
+    assert err.startswith("Error: ") and "runs_dri" in err and "Traceback" not in err

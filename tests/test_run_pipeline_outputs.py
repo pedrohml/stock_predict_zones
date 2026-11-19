@@ -50,7 +50,8 @@ def names(folder):
 
 def output_paths(capsys):
     """{'input': Path, 'projection': Path, 'chart': Path} from the lines main() prints."""
-    lines = (line.split(":", 1) for line in capsys.readouterr().out.splitlines())
+    lines = (line.split(":", 1) for line in capsys.readouterr().out.splitlines()
+             if line.startswith(("input:", "projection:", "chart:", "entries:", "saved:")))   # not the summary
     return {key: Path(value.strip()) for key, value in lines}
 
 

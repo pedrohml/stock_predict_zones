@@ -254,7 +254,8 @@ def test_a_run_from_another_folder_puts_everything_where_the_file_says(
     assert option(calls["claude"][0], "--model") == "sonnet"
     assert (option(calls["plot"][0], "--theme"), option(calls["plot"][0], "--dpi")) == ("dark", "80")
     assert "--lang" not in calls["plot"][0]
-    paths = dict(line.split(":", 1) for line in captured.out.splitlines())
+    paths = dict(line.split(":", 1) for line in captured.out.splitlines()
+                 if line.startswith(("input:", "projection:", "chart:", "entries:", "saved:")))   # not the summary
     assert Path(paths["chart"].strip()).parent.parent.parent == file.parent / "runs"
     assert Path(paths["saved"].strip()).parent.parent == file.parent / "history"   # rz.py save got it
     assert (Path(paths["saved"].strip()) / "projection.json").is_file()
@@ -277,7 +278,8 @@ def test_step1_settings_do_not_touch_a_run_from_files(user, input_path, projecti
     """With --input nothing is downloaded, so nothing is injected (and nothing complains)."""
     file = user('language = "pt"\nhorizon = "1-2w"\nvolume = true\nruns_dir = "runs"\n')
     assert run_main("--input", input_path, "--projection", projection_path, "--no-entries") == 0
-    chart = Path(capsys.readouterr().out.splitlines()[2].split(":", 1)[1].strip())
+    chart = Path(next(line for line in capsys.readouterr().out.splitlines()
+                      if line.startswith("chart:")).split(":", 1)[1].strip())
     assert chart.is_file() and file.parent / "runs" in chart.parents
 
 
@@ -417,3 +419,13 @@ def test_step1_settings_match_build_prompt():
 def test_chart_settings_match_plot_projection():
     assert set(run_pipeline.SETTINGS["theme"].choices) == set(plot_projection.THEMES)
     assert set(run_pipeline.SETTINGS["lang"].choices) == set(plot_projection.TEXT)
+
+
+def test_a_file_can_turn_the_summary_off(user, input_path, projection_path, capsys):
+    user("summary = false\n")
+    assert run_main("--input", input_path, "--projection", projection_path, "--no-entries") == 0
+    out = capsys.readouterr().out
+    assert out.splitlines()[0].startswith("input:")
+    user("summary = false\n")
+    assert run_main("--input", input_path, "--projection", projection_path, "--no-entries", "--summary") == 0
+    assert not capsys.readouterr().out.startswith("input:")
