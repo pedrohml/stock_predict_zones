@@ -22,7 +22,11 @@ def main_series(d):
 
 
 def load(path):
-    d = json.load(open(path, encoding="utf-8"))
+    return unpack(json.load(open(path, encoding="utf-8")))
+
+
+def unpack(d):
+    """An input already read -> (input, main series, starts, highs, lows, closes)."""
     main = main_series(d)
     cols = d["data"]["columns"]
     rows = main["rows"]
@@ -38,7 +42,11 @@ def vol(close):
 
 
 def levels(path):
-    d, main, t, h, l, c = load(path)
+    for key, value in facts(*load(path)).items(): print(key, json.dumps(value))
+
+
+def facts(d, main, t, h, l, c):
+    """What `levels` prints, as a dict (backtest.py chooses its zones from it)."""
     price, k, n = d["now"]["price"], 3, len(c)
     piv = lambda a, f: [[t[i], a[i]] for i in range(k, n - k) if a[i] == f(a[i - k:i + k + 1])]
     ih, il = int(h.argmax()), int(l.argmin())
@@ -70,7 +78,7 @@ def levels(path):
         "recent_highs": [[t[i], float(h[i])] for i in range(n - k, n)],
         "gap_candidates": gaps[-8:],
     }
-    for key, value in out.items(): print(key, json.dumps(value))
+    return out
 
 
 def schedule(d, main, t):
@@ -144,8 +152,13 @@ def middles(S, R):
 
 
 def sim(path, zones_path, paths=200_000):
-    d, main, t, h, l, c = load(path)
     z = json.load(open(zones_path, encoding="utf-8"))
+    for key, value in baseline(load(path), z, paths).items(): print(key, json.dumps(value))
+
+
+def baseline(loaded, z, paths=200_000):
+    """What `sim` prints, as a dict. `loaded` is what load() or unpack() returns."""
+    d, main, t, h, l, c = loaded
     price, touched = d["now"]["price"], d["want"]["probability"] == "touched_once"
     p, dates, frac, v, _ = walk(d, main, t, c, z, paths)
     n, lo, hi = len(dates), p.min(axis=1), p.max(axis=1)
@@ -179,7 +192,7 @@ def sim(path, zones_path, paths=200_000):
             {"name": "range", "p": p_range, "low": f"{s_mid} or higher", "high": f"{r_mid} or lower"},
             {"name": "whipsaw", "p": both, "low": f"below {s_mid}", "high": f"above {r_mid}"}],
     }
-    for key, value in out.items(): print(key, json.dumps(value))
+    return out
 
 
 def problems(o, complete=True):
