@@ -18,6 +18,7 @@ for each):
     zones show WHAT                 print the summary of a run
     zones entries WHAT              compute the trade setups of a run again
     zones backtest TICKER...        the baseline probabilities on past dates (hits Yahoo)
+    zones backtest-entries TICKER... the trade setups on past dates, stated odds vs outcome (hits Yahoo)
     zones batch FILE|TICKER...      one run per ticker of a watchlist, with a summary.csv
     zones cache [info|clear|path]   the local cache of downloaded candles
 
@@ -1639,6 +1640,19 @@ def backtest(argv):
     return relay([sys.executable, ROOT / "backtest.py", *argv])
 
 
+def backtest_entries(argv):
+    """zones backtest-entries TICKER... [backtest_entries.py options]: backtest_entries.py with the
+    same arguments."""
+    if argv[:1] in (["-h"], ["--help"]):
+        command_parser("backtest-entries", "TICKER [TICKER ...] [backtest_entries.py options]", "Backtest "
+                       "the trade setups of the mechanical engine on past dates: stated fill, win and edge "
+                       "against what the price did (backtest_entries.py; downloads prices from Yahoo "
+                       "Finance, no Claude call). Every option goes to backtest_entries.py: `uv run python "
+                       "backtest_entries.py --help` lists them.", what=False).parse_args(argv)
+    need(ROOT / "backtest_entries.py", RZ)
+    return relay([sys.executable, ROOT / "backtest_entries.py", *argv])
+
+
 def cache(argv):
     """zones cache [info|clear|path] [TICKER...]: data_source.py's own commands."""
     parser = command_parser("cache", "[info|clear|path] [TICKER ...]", "The local cache of downloaded "
@@ -1666,7 +1680,7 @@ def batch(argv):
 
 COMMANDS = {"list": list_saved, "runs": run_folders, "score": score_saved,
             "plot": plot_again, "show": show_again, "entries": entries_again,
-            "backtest": backtest, "batch": batch, "cache": cache}
+            "backtest": backtest, "backtest-entries": backtest_entries, "batch": batch, "cache": cache}
 FORCE_PIPELINE = ("run", "--")
 
 

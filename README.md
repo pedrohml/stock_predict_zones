@@ -37,6 +37,7 @@ build_prompt.py  ──►  reversal-zones-projection  ──►  plot_projectio
 - [Step 3: plot_projection.py](#step-3-plot_projectionpy)
 - [Ranked trade setups](#ranked-trade-setups)
 - [Backtest of the baseline](#backtest-of-the-baseline)
+- [Backtest of the trade setups](#backtest-of-the-trade-setups)
 - [Does Claude's adjustment help?](#does-claudes-adjustment-help)
 - [Engines: claude or mechanical](#engines-claude-or-mechanical)
 - [How the probabilities are produced](#how-the-probabilities-are-produced)
@@ -312,6 +313,7 @@ Error: /home/you/.config/zones/config.toml: unknown setting 'langauge' (did you 
 | `zones show WHAT` | Prints the summary of a run. | `show_run.py` |
 | `zones entries WHAT` | Computes the [trade setups](#ranked-trade-setups) of a run again and checks them. | `trade_entries.py build`, then `check` |
 | `zones backtest TICKER... [options]` | [Backtests the baseline probabilities](#backtest-of-the-baseline) on past dates. Downloads from Yahoo Finance; no Claude call. | `backtest.py` |
+| `zones backtest-entries TICKER... [options]` | [Backtests the trade setups](#backtest-of-the-trade-setups) of the mechanical engine on past dates: stated odds against what the price did. Downloads from Yahoo Finance; no Claude call. | `backtest_entries.py` |
 | `zones batch FILE\|TICKER... [options]` | One pipeline run per ticker of a watchlist, a few at a time, with a cost cap and a `summary.csv`. See [Batch runs](#batch-runs). | the pipeline, once per ticker |
 | `zones cache [info\|clear\|path] [TICKER...]` | The [candle cache](#the-candle-cache): what it holds, delete it (all or some tickers), or print its folder. | `data_source.py` |
 
@@ -866,8 +868,8 @@ How the setups are built:
 Read the limits before using the output:
 
 - `win_if_filled` is a ceiling. The projection knows whether a zone held or broke by the end of the horizon, not whether the stop was touched before the target.
-- The formulas are a heuristic layered on probabilities that are themselves not backtested. Continuation setups get no distance discount, so they tend to rank above reversals.
-- There is no position size or leverage, and a setup marked `favourable` is not a recommendation.
+- **The stated odds are now backtested, and they are too optimistic.** On 9,438 setups from the mechanical engine (twelve tickers, three horizons, three years of as-of dates; [Backtest of the trade setups](#backtest-of-the-trade-setups)), `fill` was about right or too low, but `win_if_filled` was far too high at every horizon (stated 60-65%, observed 30-47%), so the stated edge (+0.25 to +0.34 R per order) did not appear: the observed mean was -0.20 R at `1-2w`, about zero at `1-3m` and +0.07 R at `6-12m`, the last from long setups in a rising market. Reversal setups win much less often than stated (11-18% against 35-38%). Continuation setups get no distance discount, so they rank above reversals and make up 75-88% of the picks.
+- There is no position size or leverage, and a setup marked `favourable` is not a recommendation. Almost every setup is marked `favourable`, so the label says little.
 
 ## Backtest of the baseline
 
@@ -949,6 +951,83 @@ The same comparison with the real tool, at 200,000 paths, on the scored window (
 Method 2 was better for 9 of the 12 tickers at `1-2w` (not MSFT, SPY, ABEV3.SA), 11 at `1-3m` (not MSFT) and 11 at `6-12m` (not PETR4.SA). Reliability for `reach` at `6-12m` moved closer to the diagonal (forecasts around 25%, 45% and 74% came true 38%, 52% and 69% of the time under method 1, and 23%, 49% and 75% under method 2); breakdowns are still over-forecast and breakouts under-forecast at the long horizons.
 
 To repeat it: `uv run python backtest.py NVDA AAPL MSFT SPY JPM XOM PETR4.SA VALE3.SA ITUB4.SA BBDC4.SA ABEV3.SA WEGE3.SA --horizon 1-3m --start 2024-08-13 --end 2026-08-13 --method 1` and again with `--method 2` (Yahoo's history may have been revised since). The split-by-date search over drift variants and the calibration layer was a one-off study and is not part of the repository. These are descriptions of one sample in one mostly rising market, not properties of the method.
+
+## Backtest of the trade setups
+
+`backtest_entries.py` checks the [trade setups](#ranked-trade-setups) themselves: on many past dates it makes the three setups exactly as a live `zones TICKER --engine mechanical` run would, then plays them on the daily candles that followed and compares the stated `fill`, `win_if_filled` and edge with what happened. It makes no Claude call and costs nothing beyond the Yahoo downloads.
+
+```bash
+uv run python backtest_entries.py PETR4.SA NVDA --horizon 1-3m                    # the last three ended years
+uv run python backtest_entries.py NVDA SPY --horizon 1-2w 1-3m 6-12m               # several horizons in one report
+uv run python backtest_entries.py PETR4.SA --optimistic                            # the other bound of the ordering
+uv run python backtest_entries.py PETR4.SA --json                                  # one JSON object instead of the tables
+uv run python backtest_entries.py PETR4.SA --csv setups.csv                        # every setup, one row each
+uv run zones backtest-entries PETR4.SA NVDA --horizon 1-2w                         # the same, through zones
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--horizon H [H ...]` | `1-3m` | One or more of `1-2w`, `1-3m`, `6-12m`; each gets its own section. |
+| `--start`, `--end`, `--step N` | as [`backtest.py`](#backtest-of-the-baseline) | The as-of grid, per horizon: three years ending one horizon (plus a week) before today, every 5, 10 or 21 trading days. |
+| `--method N` | `2`, as a live run | Sim method of the projection (`mechanical.build(d, method=N)`). |
+| `--optimistic` | off | Resolve a candle whose order is unknown in the setup's favour instead of against it. |
+| `--json`, `--csv FILE`, `--quiet`, `--no-cache` | off | As in `backtest.py`. The CSV has one row per setup: its stated numbers, fill, exit, R, and the other ordering's exit and R. |
+
+**What it does, per ticker, horizon and as-of date** (after that day's close):
+
+1. The input from `backtest.input_as_of()` (no events, `research: none`), the projection from `mechanical.build()`, the setups from `trade_entries.build()`. Nothing is reimplemented: a change to the zone rule, the sim method or the setup rules changes these results.
+2. The setups are walked on **daily** candles after the as-of day up to their `valid_until` (the horizon's last close), even when the horizon's close basis is weekly or monthly; finer candles say more about the order of events.
+
+**Fill and exit rules.**
+
+- The as-of day's own candle is never used: the setups are made after its close.
+- A `limit` order fills when the candle reaches the entry (a long's low at or below it, a short's high at or above it). A `stop` order fills when the candle reaches the entry in the order's direction. A touch is enough, which is generous for limit orders (about 2% of fills were exact touches). When the open is already past the entry, the order fills **at the open**: better than the entry for a limit, worse for a stop. A `market` order would fill at the next open, not at the as-of close it was priced at (none occurred in the run below). An unfilled order stays until `valid_until`, even if the price reaches the target first.
+- After the fill, the stop or the target closes the setup at its price. An open past the stop or the target closes it at that open, so a gap through the stop can lose more than 1R. A setup still open after the last candle is closed at that candle's close (expiry).
+- **Ordering inside a candle is unknown.** On the fill candle, a level the price must have crossed after the entry (the entry lies between the open and that level) is hit after the fill; anything else the candle reached may have come before. When a candle allows two results (stop or target, stop or still open, target or still open), the default counts the **pessimistic** one; `--optimistic` takes the other. Every setup is walked both ways, and the report says how many results differ (`ambig`) and what the mean R would be under the other ordering.
+- **R** is the result in units of the setup's own risk (entry to stop), measured from the actual fill price. An unfilled order is 0R. A win is an exit at the target.
+
+**The report**, per horizon: stated against observed for fill, win among fills, R per fill (`edge.if_filled`) and R per order (`edge.per_order`), overall and by side, kind (reversal, continuation), side and kind, order type, quality, rank and ticker; Brier scores of `fill` and `win_if_filled` next to always forecasting the observed rate; reliability buckets; a 90% bootstrap that resamples whole cases (fixed seed); and the spread of mean R across tickers. The rules and the caveats are printed with every report.
+
+### Result of 19 Nov 2026
+
+Twelve tickers (AAPL, BBDC4.SA, ITUB4.SA, JPM, KO, MSFT, NVDA, PETR4.SA, SPY, VALE3.SA, WEGE3.SA, XOM), the default three-year ranges and steps, sim method 2, pessimistic ordering: **3,146 cases, 9,438 setups**, none skipped. The full report is in [`examples/backtest_entries_2026-11-19.txt`](examples/backtest_entries_2026-11-19.txt). "st/obs" is the stated mean, then the observed value; "R/order (optimistic)" is the same mean with the other ordering.
+
+| Horizon, as-of dates, setups | Fill st/obs | Win if filled st/obs | R per fill st/obs | R per order st/obs | R/order (optimistic) | Ambiguous | 90% bootstrap, R/order |
+|---|---|---|---|---|---|---|---|
+| `1-2w`, 29 Oct 2023 to 29 Oct 2026, 5,421 | 57% / 62% | 60% / 30% | +0.42 / -0.32 | +0.25 / -0.20 | +0.04 | 17% | -0.22 to -0.18 |
+| `1-3m`, 13 Aug 2023 to 13 Aug 2026, 2,721 | 62% / 72% | 65% / 43% | +0.52 / -0.03 | +0.34 / -0.02 | +0.04 | 3% | -0.05 to +0.01 |
+| `6-12m`, 12 Nov 2022 to 12 Nov 2025, 1,296 | 61% / 71% | 65% / 47% | +0.52 / +0.10 | +0.33 / +0.07 | +0.08 | 0% | +0.03 to +0.12 |
+
+By kind (all orders of a kind share one order type: reversals are `limit`, continuations `stop`; no `market` order occurred):
+
+| Horizon | Kind, setups | Fill st/obs | Win st/obs | R per order st/obs |
+|---|---|---|---|---|
+| `1-2w` | continuation, 4,103 | 61% / 71% | 64% / 33% (53% optimistic) | +0.24 / -0.24 |
+| `1-2w` | reversal, 1,318 | 46% / 33% | 37% / 11% | +0.28 / -0.05 |
+| `1-3m` | continuation, 2,362 | 64% / 78% | 67% / 45% | +0.33 / -0.03 |
+| `1-3m` | reversal, 359 | 52% / 35% | 38% / 18% | +0.40 / +0.02 |
+| `6-12m` | continuation, 1,140 | 63% / 77% | 67% / 49% | +0.32 / +0.08 |
+| `6-12m` | reversal, 156 | 47% / 28% | 35% / 14% | +0.40 / -0.00 |
+
+By side: long setups did better than short ones at every horizon (R per order, long / short: `1-2w` -0.16 / -0.24, `1-3m` +0.04 / -0.13, `6-12m` +0.22 / -0.19).
+
+By rank (R per order st/obs): `1-2w` #1 +0.36/-0.17, #2 +0.23/-0.21, #3 +0.16/-0.20; `1-3m` #1 +0.48/-0.02, #2 +0.31/+0.02, #3 +0.22/-0.05; `6-12m` #1 +0.49/+0.19, #2 +0.30/+0.10, #3 +0.20/-0.06.
+
+By quality: 95% of all setups were `favourable` (5,155 of 5,421 at `1-2w`, 2,686 of 2,721 at `1-3m`, 1,265 of 1,296 at `6-12m`). `marginal` setups did worse than `favourable` ones (R per order -0.23, -0.20 and -0.27), but there were few of them, and almost no `unfavourable` ones.
+
+Brier scores (0 is perfect; then always forecasting the observed rate): fill 0.215 (0.236), 0.193 (0.201), 0.195 (0.206); **win 0.296 (0.210), 0.282 (0.245), 0.274 (0.249)**, worse than the constant forecast at every horizon. Reliability of `win_if_filled` at `1-3m`: forecasts of 45%, 56%, 65% and 75% came true 27%, 37%, 40% and 52% of the time. Per ticker, R per order was positive in 0 of 12 tickers at `1-2w`, 5 of 12 at `1-3m` and 8 of 12 at `6-12m`.
+
+**How to read it.**
+
+- **`fill` is roughly calibrated, too low for continuations and too high for reversals.** Breakout stop orders filled more often than the projection's `reach` says (71-78% against 61-64%), reversal limit orders less often (28-35% against 46-52%). Fill is the one stated number that beats the constant forecast.
+- **`win_if_filled` is much too high, as the template warns, and more than a ceiling would explain.** Observed wins are about half the stated value at `1-2w` and two thirds at `1-3m` and `6-12m`. The optimistic ordering narrows the gap only at `1-2w` (48% against 60%). Reversals are the worst: the zone "holds" in the projection's sense (the horizon's extreme close is made there), but the target is the first zone on the other side, which the price seldom reaches before the stop just beyond the zone, so 11-18% win against 35-38% stated.
+- **The stated edge did not appear.** Every horizon states about +0.25 to +0.34 R per order; observed: -0.20 R at `1-2w` (still +0.04 under the optimistic ordering), about zero at `1-3m`, +0.07 R at `6-12m`. At `6-12m` the positive part is long setups in a rising market of survivor tickers; short setups lost there too.
+- **The ranking is weakly informative.** Rank 1 has the highest stated edge, but only at `6-12m` did it do clearly better than ranks 2 and 3. `quality` separates almost nothing, because nearly everything is `favourable`.
+- **Ambiguity matters at `1-2w`.** A daily candle often spans the whole zone between a continuation's entry and stop, so 22% of the `1-2w` continuation results depend on the unknown order inside a candle; the true value lies between the two bounds. At `1-3m` and `6-12m` the stops are wider than a day's range and the bounds nearly agree.
+
+**Caveats** (printed with every report): mechanical zones and unadjusted probabilities, not Claude's; no events in the inputs; no commissions, spread, slippage, borrowing costs or dividends (prices are split-adjusted, not dividend-adjusted); the unknown ordering inside a daily candle, counted pessimistically by default; survivor tickers in a mostly rising market; cases that overlap in time, three setups per case on one path, and tickers that move together, so the bootstrap intervals are too narrow. This checks the calibration of the stated odds of hypothetical setups. It is not a strategy, not a claim about returns anyone could have had, and not advice.
+
+To repeat it: `uv run python backtest_entries.py AAPL BBDC4.SA ITUB4.SA JPM KO MSFT NVDA PETR4.SA SPY VALE3.SA WEGE3.SA XOM --horizon 1-2w 1-3m 6-12m` (Yahoo's history may have been revised since, and the default ranges move with today's date; pass `--start`/`--end` for the dates above).
 
 ## Does Claude's adjustment help?
 
@@ -1075,6 +1154,7 @@ The simulation knows nothing about chart levels. The skill may therefore move a 
 
 - **Mostly uncalibrated.** `backtest.py` checks the unadjusted baseline on past dates, with mechanically chosen zones, no events and twelve tickers ([Backtest of the baseline](#backtest-of-the-baseline)). `value_test.py` scored 88 real step-2 runs (Sonnet 5.5, `1-2w`, research `none`) on dates after the model's training cutoff: Claude never adjusted the baseline, and its zones were not measurably better than the mechanical rule's ([Does Claude's adjustment help?](#does-claudes-adjustment-help)). Projections made with web research, other models and longer horizons have not been checked against a meaningful number of outcomes: `score_projections.py` can compare saved projections with later prices, but the history is days old. This is the most important gap.
 - **One drift for every asset, measured in a rising market.** Method 2's 5% a year was chosen on 2021-2026 data from twelve names that are still listed today; it helped there and in 2017-2021, but lost on cases made in 2018, and it ignores dividend yield (the prices are not dividend-adjusted, so a heavy payer's price drifts less). Long-horizon scenarios are still worse than the base rate, and trending names still get too few breakouts.
+- **The trade setups' odds are miscalibrated.** The [setup backtest](#backtest-of-the-trade-setups) found `win_if_filled` far too high at every horizon (stated 60-65%, observed 30-47%; reversals 11-18% against 35-38%), worse than a constant forecast by Brier score, so the stated edge per order (about +0.3 R) did not appear (-0.20, -0.02 and +0.07 R at `1-2w`, `1-3m`, `6-12m`). Continuation setups, which get no distance discount, fill the ranking (75-88% of picks), and 95% of setups are labelled `favourable`. The rules are unchanged; this is measured, not fixed. The measurement uses the mechanical engine only, with no costs, and depends on the unknown order inside a daily candle at `1-2w`.
 - **Few dates can test a model.** Only as-of dates after a model's training cutoff are fair, so `value_test.py` has a few months of dates for the current models, and almost none for `6-12m`. Its intervals stay wide until time passes.
 - **Scoring a touch on a forming candle.** For `touched_once`, a finished candle does not say whether its high or low came before or after the projection. For the candle that was forming, the scorer counts an extreme only if it is new, otherwise it uses the close, so a touch inside that candle's earlier range can be missed. Everything else is judged exactly as the simulation counts it.
 - **Pre-market and first-of-month projections.** When the newest candle is closed but a new one has not started (a daily projection made before the open, a monthly one before the month's first session), `horizon.first` skips the candle about to begin. The scorer counts it anyway, since it comes after the projection, and notes that there are more closes than scheduled.
@@ -1092,10 +1172,11 @@ The simulation knows nothing about chart levels. The skill may therefore move a 
 1. Extend the backtest (`backtest.py`, which covers the unadjusted baseline): scheduled dividends as `drop` shocks, more tickers and sectors, and scoring the unadjusted simulation next to the skill's adjusted numbers for saved projections.
 2. Re-check sim method 2 when a falling market has ended inside the backtest window, and try a drift net of each asset's dividend yield. Revisit a calibration layer only with enough history that its fitted maps stop tracking one period's average rise.
 3. Measure the paid step where it can adjust: `value_test.py` with events or research as of the past date (a news archive cut at the as-of day), and with more dates as they pass the cutoff. Without research Sonnet 5.5 never adjusted; `--engine mechanical` is now the free path for such runs. Score saved mechanical projections against Claude's as the history grows (`zones score` groups them apart).
-4. Add `json` to `--shape`.
-5. Carry event sizes as numbers (dividend amount, implied move) so the skill does not have to search for them.
-6. State `dividend_adjusted` explicitly in the input.
-7. Data: done are retries, a timeout, a shared rate limit, a cache of finished candles, row checks and CSV import (`data_source.py`). Left: another data vendor behind the same interface, corporate actions in the CSV format (split dates, so unadjusted files can be adjusted here), and an occasional full check of older cached candles.
+4. Recalibrate the trade setups against [their backtest](#backtest-of-the-trade-setups) before relying on their odds: `win_if_filled` needs a path-based estimate (stop before target, which the simulation's paths could count directly) instead of `turn / reach` and the reach ratio; reversal setups need a nearer target or a lower stated win; continuations need a distance discount like reversals'; and `quality`'s 0.20 threshold labels almost everything `favourable`. Any such change is a change to the template and `setups()`/`pick()` together, and should be judged out of sample, as sim method 2 was.
+5. Add `json` to `--shape`.
+6. Carry event sizes as numbers (dividend amount, implied move) so the skill does not have to search for them.
+7. State `dividend_adjusted` explicitly in the input.
+8. Data: done are retries, a timeout, a shared rate limit, a cache of finished candles, row checks and CSV import (`data_source.py`). Left: another data vendor behind the same interface, corporate actions in the CSV format (split dates, so unadjusted files can be adjusted here), and an occasional full check of older cached candles.
 
 ## Project layout
 
@@ -1103,9 +1184,10 @@ The simulation knows nothing about chart levels. The skill may therefore move a 
 stock_predict_zones/
 ├── build_prompt.py                 step 1: Yahoo Finance to input JSON
 ├── plot_projection.py              step 3: input + projection to image
-├── run_pipeline.py                 the `zones` command: all steps in one (step 2 through headless Claude Code), and list, runs, score, plot, show, entries, backtest, batch, cache
+├── run_pipeline.py                 the `zones` command: all steps in one (step 2 through headless Claude Code), and list, runs, score, plot, show, entries, backtest, backtest-entries, batch, cache
 ├── score_projections.py            saved projections against later prices, and the calibration summary
 ├── backtest.py                     the baseline probabilities on past dates: mechanical zones, rz.py sim, rz.outcome
+├── backtest_entries.py             the trade setups on past dates: mechanical engine, trade_entries.py, a walk on daily candles
 ├── mechanical.py                   step 2 without Claude (--engine mechanical): backtest.py's zones, unadjusted rz.py sim
 ├── value_test.py                   paid: Claude's step 2 against the baseline on the same zones, after the model's cutoff
 ├── trade_entries.py                trade setups: computes them, or fills the prompt and checks the reply
@@ -1115,7 +1197,7 @@ stock_predict_zones/
 ├── .claude/skills/reversal-zones-projection/
 │   ├── SKILL.md                    step 2: the skill
 │   └── scripts/rz.py               its helper: levels, simulation, validation, saving, outcomes
-├── examples/                       one complete run: input, projection and charts
+├── examples/                       one complete run: input, projection and charts; reports of the value test and the setup backtest
 ├── prompts/
 │   ├── trade_entries.md            prompt: three ranked trade setups from one run
 │   └── trade_entries.schema.json   JSON Schema of its reply

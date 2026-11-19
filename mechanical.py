@@ -366,8 +366,9 @@ def method_text(d, facts, out, digits, t):
         forming=t["forming"] if out["first_candle_share_left"] < 1 else "")
 
 
-def build(d):
-    """The projection of input `d` (a dict), in SKILL.md's schema and key order."""
+def build(d, method=None):
+    """The projection of input `d` (a dict), in SKILL.md's schema and key order. `method` is the
+    sim method (rz.SIM_METHODS; None for rz's default, which is what a live run uses)."""
     t = language(d)
     digits = trade_entries.places(d)
     loaded = rz.unpack(d)
@@ -376,7 +377,7 @@ def build(d):
     if not chosen["supports"] or not chosen["resistances"]:
         raise MechanicalError("the zone rule found no zone on one side of the price")
     zones = {name: [z["zone"] for z in side] for name, side in chosen.items()}
-    out = rz.baseline(loaded, zones)
+    out = rz.baseline(loaded, zones, method=method)
     core = backtest.projection(d, zones, out)   # asset, as_of, horizon, scenarios, boxes: verbatim from sim
     touched = d["want"]["probability"] == "touched_once"
     swing = facts["swing"]
