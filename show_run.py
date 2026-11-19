@@ -60,6 +60,7 @@ TEXT = {
         "confidence": "Confidence: {level}", "levels": {"low": "low", "medium": "medium"},
         "drivers": "Drivers",
         "made_by": "Made by {what}", "turns": "{n} turns", "rules": "rules {version}",
+        "mechanical": "Made by the mechanical engine (no Claude Code call, $0)",
         "footer": "Probabilistic estimates, not a recommendation to buy or sell. Prices are not dividend-adjusted.",
         "decimal": ".", "thousands": ",",
     },
@@ -85,6 +86,7 @@ TEXT = {
         "confidence": "Confiança: {level}", "levels": {"low": "baixa", "medium": "média"},
         "drivers": "Fatores",
         "made_by": "Feito por {what}", "turns": "{n} turnos", "rules": "regras {version}",
+        "mechanical": "Feito pelo motor mecânico (sem chamada ao Claude Code, US$ 0)",
         "footer": "Estimativas probabilísticas, não recomendação de compra ou venda. Preços sem ajuste por dividendos.",
         "decimal": ",", "thousands": ".",
     },
@@ -383,7 +385,8 @@ def bar(reach, turn=None, width=BAR):
 
 def made_by(provenance, t):
     """'Made by MODEL · Claude Code X · N turns · $C · rules V' from provenance.json, with
-    only what it records; None when it names neither a model nor the rules."""
+    only what it records ('Made by the mechanical engine (...) · rules V' for --engine
+    mechanical); None when it names neither a model nor the rules."""
     if not isinstance(provenance, dict):
         return None
     claude = (provenance.get("projection") or {}).get("claude")
@@ -405,6 +408,8 @@ def made_by(provenance, t):
         if isinstance(rules.get("git"), dict) and rules["git"].get("dirty"):
             version += "*"
         parts.append(t["rules"].format(version=version))
+    if (provenance.get("projection") or {}).get("made_by") == "mechanical":   # --engine mechanical
+        return " · ".join([t["mechanical"], *parts])
     return t["made_by"].format(what=" · ".join(parts)) if parts else None
 
 

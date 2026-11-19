@@ -10,7 +10,7 @@ Each saved projection is judged with the definitions of the simulation that prod
 probabilities (`outcome()` in the skill's rz.py). Projections whose horizon has ended then go
 into a calibration summary: forecast probability against observed frequency, overall and per
 model (from the provenance.json that `zones` saves with each projection; older entries have
-none and count as "unrecorded"). This describes how the probabilities compared with events.
+none and count as "unrecorded"; `zones --engine mechanical` runs count as "mechanical"). This describes how the probabilities compared with events.
 It says nothing about returns, and it is not advice.
 """
 import argparse
@@ -33,6 +33,7 @@ MISMATCH = 0.01    # realised and saved close of the same candle may differ by t
 KINDS = ("reach", "turn", "scenario")
 UNINFORMED = {"reach": 0.5, "turn": 0.5, "scenario": 0.25}
 UNRECORDED = "unrecorded"   # the model of a projection saved without provenance.json
+MECHANICAL = "mechanical"   # the "model" of a projection made by `zones --engine mechanical`: its own group
 
 CAVEATS = [
     "Small samples are anecdote, not evidence: one projection adds about twenty forecasts at once.",
@@ -177,7 +178,10 @@ def made_by(folder):
     rules = record.get("rules") or {}
     git = rules.get("git") or {}
     used = claude.get("models_used") or []
-    out = {"model": claude.get("model") or (used[0] if used else None), "rules": rules.get("version"),
+    model = claude.get("model") or (used[0] if used else None)
+    if (record.get("projection") or {}).get("made_by") == "mechanical":   # --engine mechanical: no model
+        model = MECHANICAL
+    out = {"model": model, "rules": rules.get("version"),
            "commit": git.get("commit"), "dirty": git.get("dirty")}
     return {key: value for key, value in out.items() if value is not None}
 

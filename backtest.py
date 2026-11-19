@@ -163,50 +163,76 @@ def input_as_of(ticker, horizon, data, day, supports=3, resistances=3):
 
 # ---- zones -------------------------------------------------------------------
 
-def choose_zones(facts, supports=3, resistances=3, places=2):
-    """The baseline's zones from the output of `rz.py levels` (rz.facts()). See RULE. Deterministic,
-    and the only place the rule lives. -> {"supports": [[low, high], ...], "resistances": [...]},
-    nearest first, which is what `rz.py sim` reads."""
-    price = float(facts["price"])
-    tick = 10 ** -places
-    width = max(round(sum(facts["typical_zone_width"]) / 2, places), tick)
+def candidates(facts):
+    """The prices `rz.py levels` reports as evidence, each with what it is and where it comes
+    from: [(price, kind, when)], lowest price first. `kind` is pivot_low, pivot_high,
+    recent_low, recent_high (the last three candles; `when` is the candle's start), retracement
+    (`when` is the fraction) or swing_low, swing_high (the dominant swing's two ends)."""
+    found = ([(p, "pivot_low", t) for t, p in facts["pivot_lows"]]
+             + [(p, "pivot_high", t) for t, p in facts["pivot_highs"]]
+             + [(p, "recent_low", t) for t, p in facts["recent_lows"]]
+             + [(p, "recent_high", t) for t, p in facts["recent_highs"]]
+             + [(p, "retracement", f) for f, p in facts["retracements"].items()]
+             + [(facts["swing"]["low"][0], "swing_low", facts["swing"]["low"][1]),
+                (facts["swing"]["high"][0], "swing_high", facts["swing"]["high"][1])])
+    return sorted(((float(p), kind, when) for p, kind, when in found), key=lambda c: c[0])
 
-    candidates = ([p for _, p in facts["pivot_lows"] + facts["pivot_highs"]]
-                  + [p for _, p in facts["recent_lows"] + facts["recent_highs"]]
-                  + list(facts["retracements"].values()) + [facts["swing"]["low"][0], facts["swing"]["high"][0]])
-    candidates = sorted(float(p) for p in candidates)
+
+def zone_width(facts, places=2):
+    """One zone's width: the mean of the two typical_zone_width numbers, at least one tick."""
+    return max(round(sum(facts["typical_zone_width"]) / 2, places), 10 ** -places)
+
+
+def clustered_zones(facts, supports=3, resistances=3, places=2):
+    """The zone rule (see RULE) with what formed each zone: {"supports": [{"zone": [low, high],
+    "members": [(price, kind, when), ...]}, ...], "resistances": [...]}, nearest first.
+    `members` is the cluster of candidates() behind the zone, [] for a zone that only fills a
+    side with too few clusters. choose_zones() is this without the members."""
+    price = float(facts["price"])
+    width = zone_width(facts, places)
+    found = candidates(facts)
 
     def side(count, is_support):
         sign = -1 if is_support else 1           # outward from the price
-        levels = sorted((p for p in candidates if (p < price if is_support else p > price)),
-                        key=lambda p: abs(p - price))
+        levels = sorted((c for c in found if (c[0] < price if is_support else c[0] > price)),
+                        key=lambda c: abs(c[0] - price))
         clusters = []
         for level in levels:
-            if clusters and abs(level - clusters[-1][0]) <= width:
+            if clusters and abs(level[0] - clusters[-1][0][0]) <= width:
                 clusters[-1].append(level)
             else:
                 clusters.append([level])
         beyond = lambda x, y: sign * (x - y) > 0     # x lies further from the price than y
         zones, edge = [], price                  # `edge`: the far edge of the last zone so far
         for members in clusters[:count]:
-            centre = sum(members) / len(members)
+            centre = sum(m[0] for m in members) / len(members)
             near, far = centre - sign * width / 2, centre + sign * width / 2
             if not zones:
                 near = near if beyond(near, price) else price          # cut at the price
             elif not beyond(near, edge) and near != edge:
                 near, far = edge, edge + sign * width                  # pushed past the zone before
-            zones.append(sorted([round(float(near), places), round(float(far), places)]))
-            edge = zones[-1][0] if is_support else zones[-1][1]
+            zones.append({"zone": sorted([round(float(near), places), round(float(far), places)]),
+                          "members": members})
+            edge = zones[-1]["zone"][0] if is_support else zones[-1]["zone"][1]
         while len(zones) < count:                # too few clusters: volatility steps beyond the last zone
             near = edge + sign * width
             far = near + sign * width
             if far <= 0:
                 break
-            zones.append(sorted([round(near, places), round(far, places)]))
-            edge = zones[-1][0] if is_support else zones[-1][1]
+            zones.append({"zone": sorted([round(near, places), round(far, places)]), "members": []})
+            edge = zones[-1]["zone"][0] if is_support else zones[-1]["zone"][1]
         return zones
 
     return {"supports": side(supports, True), "resistances": side(resistances, False)}
+
+
+def choose_zones(facts, supports=3, resistances=3, places=2):
+    """The baseline's zones from the output of `rz.py levels` (rz.facts()). See RULE. Deterministic,
+    and the only place the rule lives (in clustered_zones(), which also says what formed each
+    zone; mechanical.py builds whole projections on it). -> {"supports": [[low, high], ...],
+    "resistances": [...]}, nearest first, which is what `rz.py sim` reads."""
+    chosen = clustered_zones(facts, supports, resistances, places)
+    return {name: [z["zone"] for z in zones] for name, zones in chosen.items()}
 
 
 def projection(d, zones, out):

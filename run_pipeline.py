@@ -54,6 +54,12 @@ skill, the helper script, and reads and writes inside a throwaway work folder
 one line per stage of the skill goes to standard error, then the duration,
 turns and cost that Claude Code reports; --quiet leaves only that last line.
 
+--engine mechanical makes the projection without Claude: mechanical.py chooses
+the zones by backtest.py's fixed rule and copies the unadjusted rz.py sim
+probabilities, in about a second and at no cost. It does no web research, so
+the input asks for none (a research option typed or set in a config file gets
+one warning). `engine = "mechanical"` in a config file makes it the default.
+
 Step 5 writes three hypothetical setups (entry, stop, target), ranked best
 first. trade_entries.py computes them from the projection by fixed rules, so it
 makes no Claude Code call. With --entries-by-claude it sends
@@ -94,6 +100,8 @@ BUILD = ROOT / "build_prompt.py"
 PLOT = ROOT / "plot_projection.py"
 ENTRIES = ROOT / "trade_entries.py"
 SHOW = ROOT / "show_run.py"
+MECHANICAL = ROOT / "mechanical.py"
+ENGINES = ("claude", "mechanical")   # step 2: the skill through `claude -p`, or mechanical.py (no Claude)
 SKILL = "reversal-zones-projection"
 RZ = ROOT / ".claude" / "skills" / SKILL / "scripts" / "rz.py"
 CLAUDE = "claude"
@@ -604,6 +612,31 @@ def project(input_path, data, projection_path, timeout, model=None, quiet=False)
         return claude_facts(out, progress.elapsed(), model)
 
 
+def mechanical_project(input_path, projection_path):
+    """Step 2 with --engine mechanical: mechanical.py writes the projection from the input
+    by fixed rules (backtest.py's zone rule, the unadjusted rz.py sim), with no Claude Code
+    call. Returns what provenance.json records about it."""
+    started = time.monotonic()
+    done = run([sys.executable, MECHANICAL, input_path, "-o", projection_path])
+    seconds = time.monotonic() - started
+    if done.returncode != 0:
+        raise PipelineError("mechanical.py failed:\n" + tail(done.stderr or done.stdout))
+    load_json(projection_path, "Projection from mechanical.py")
+    # not "done in M:SS": batch_runs.py reads that line as the end of a Claude Code call
+    say(f"      made in {seconds:.1f} s · no Claude Code call · $0")
+    facts = {"engine": MECHANICAL.name, "zone_rule": "backtest.py clustered_zones()", "wall_seconds": round(seconds, 1)}
+    method = default_sim_method()
+    if method is not None:
+        facts["sim_method"] = method
+    return facts
+
+
+def research_warning(research):
+    """The one line a research request gets from the mechanical engine, which searches nothing."""
+    return (f"Warning: research '{research}' is not done by the mechanical engine (no web access, no "
+            "Claude): no drivers, and the events are only the input's. Use --engine claude for research.")
+
+
 # ---- steps 3 and 4 ------------------------------------------------------------
 
 def check(projection_path):
@@ -736,6 +769,9 @@ RULE_FILES = {           # what decides the result besides the model, by the nam
     "trade_entries.md": ROOT / "prompts" / "trade_entries.md",
     "trade_entries.schema.json": ROOT / "prompts" / "trade_entries.schema.json",
 }
+# With --engine mechanical the skill decides nothing; mechanical.py and backtest.py's zone rule do.
+MECHANICAL_RULE_FILES = {**{name: path for name, path in RULE_FILES.items() if name != "SKILL.md"},
+                         "mechanical.py": MECHANICAL, "backtest.py": ROOT / "backtest.py"}
 
 
 def sha256_of(path):
@@ -770,10 +806,12 @@ def default_sim_method():
     return int(found.group(1)) if found else None
 
 
-def rules_provenance():
+def rules_provenance(engine="claude"):
     """The rules this checkout applies: a short `version` that changes whenever one of
-    RULE_FILES does (to group results by), the git commit, and each file's sha256."""
-    files = {name: sha256_of(path) for name, path in RULE_FILES.items()}
+    RULE_FILES (MECHANICAL_RULE_FILES for the mechanical engine) does, to group results by,
+    the git commit, and each file's sha256."""
+    chosen = MECHANICAL_RULE_FILES if engine == "mechanical" else RULE_FILES
+    files = {name: sha256_of(path) for name, path in chosen.items()}
     joined = "\n".join(f"{name} {digest}" for name, digest in sorted(files.items()))
     out = {"version": hashlib.sha256(joined.encode("utf-8")).hexdigest()[:12]}
     method = default_sim_method()
@@ -831,9 +869,12 @@ def utc_now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def run_provenance(input_path, data, projection_path, claude):
+def run_provenance(input_path, data, projection_path, claude, engine="claude"):
     """provenance.json of a run that made its projection: `claude` is claude_facts() of
-    step 2. `rules` describes this checkout, the one that ran the skill and its helper."""
+    step 2, or mechanical_project()'s facts with engine "mechanical" (then `made_by` is
+    "mechanical", the facts go under `mechanical` and there is no `claude` block). `rules`
+    describes this checkout, the one that ran the skill or mechanical.py, and the helper."""
+    mechanical = engine == "mechanical"
     proj = load_json(projection_path, "Projection JSON")
     asset, as_of = proj.get("asset") or {}, proj.get("as_of") or {}
     out = {
@@ -843,8 +884,8 @@ def run_provenance(input_path, data, projection_path, claude):
         "subject": {"ticker": asset.get("ticker"), "as_of": as_of.get("time"),
                     "horizon": (proj.get("horizon") or {}).get("label")},
         "input": {"sha256": sha256_of(input_path)},
-        "projection": {"sha256": sha256_of(projection_path), "made_by": "claude-code"},
-        "rules": rules_provenance(),
+        "projection": {"sha256": sha256_of(projection_path), "made_by": "mechanical" if mechanical else "claude-code"},
+        "rules": rules_provenance(engine),
     }
     if "schema_version" in data:
         out["input"]["schema_version"] = data["schema_version"]
@@ -852,7 +893,7 @@ def run_provenance(input_path, data, projection_path, claude):
         out["input"]["data"] = data["provenance"]
     if "schema_version" in proj:
         out["projection"]["schema_version"] = proj["schema_version"]
-    out["projection"]["claude"] = claude
+    out["projection"]["mechanical" if mechanical else "claude"] = claude
     return out
 
 
@@ -909,7 +950,7 @@ class Setting(NamedTuple):
 
 GROUPS = {
     "step1": "Step 1: the request (options of build_prompt.py)",
-    "claude": "Steps 2 and 5: Claude Code, the saved history, trade setups",
+    "claude": "Steps 2 and 5: the engine, Claude Code, the saved history, trade setups",
     "chart": "Step 4: the chart",
     "files": "Where the files go",
 }
@@ -936,6 +977,9 @@ SETTINGS = {s.key: s for s in (
             choices=("none", "decisive_only", "all")),
     Setting("decimals", "step1", "int", 2, "price rounding"),
 
+    Setting("engine", "claude", "choice", "claude",
+            "step 2: claude (the skill, paid) or mechanical (fixed rules, free, no research)",
+            choices=ENGINES),
     Setting("model", "claude", "text", None, "model for `claude -p` (default: Claude Code's own)",
             example="sonnet", unset="Claude Code's own"),
     Setting("timeout", "claude", "number", DEFAULT_TIMEOUT,
@@ -1691,6 +1735,11 @@ def parse(argv=None):
                        help=f"where new projections are kept (default: ${HISTORY_ENV}, else "
                             "projections/ in the current directory)")
     claude = parser.add_argument_group("steps 2 and 5")
+    claude.add_argument("--engine", choices=ENGINES, default=None,
+                        help="who makes the projection: claude (default; the skill through Claude Code, "
+                             "paid, a few minutes, web research) or mechanical (mechanical.py: backtest.py's "
+                             "zone rule and the unadjusted rz.py sim, no Claude Code call, about a second, "
+                             "no research)")
     claude.add_argument("--entries", action=switch, default=None,
                         help="--no-entries stops at the chart: no ranked trade setups (step 5)")
     claude.add_argument("--entries-by-claude", action=switch, default=None,
@@ -1745,7 +1794,8 @@ def pipeline(args, passthrough):
                             + " ".join(passthrough))
     if not args.input and not passthrough:
         raise PipelineError("Give a ticker (e.g. PETR4.SA) or --input FILE. See --help.")
-    for script in (BUILD, PLOT, RZ, ENTRIES):
+    mechanical = args.engine == "mechanical"
+    for script in (BUILD, PLOT, RZ, ENTRIES) + ((MECHANICAL,) if mechanical else ()):
         if not script.is_file():    # installed as a copy, away from the repository
             raise PipelineError(f"{script} not found. This command works only from the repository "
                                 "checkout: install it with `uv tool install --editable PATH`.")
@@ -1756,7 +1806,14 @@ def pipeline(args, passthrough):
         input_path = Path(args.input)
         data = load_json(input_path, "Input JSON")
         say(f"[1/{steps}] Input: using {input_path} (no download)")
+        if mechanical and not args.projection and data.get("research", "none") != "none":
+            say(research_warning(data.get("research")))   # the projection's limits say so too
     else:
+        if mechanical:   # nothing searches, so the input asks for nothing: it is the record of the request
+            found, asked = typed("--research", passthrough)
+            if found and asked not in (None, "none"):   # typed, or from a config file
+                say(research_warning(asked))
+            passthrough = [*passthrough, "--research=none"]   # last: argparse keeps the last one
         say(f"[1/{steps}] Input: build_prompt.py " + " ".join(passthrough))
         fresh, data = build_input(passthrough)
     if args.projection:
@@ -1784,6 +1841,11 @@ def pipeline(args, passthrough):
         say(f"[2/{steps}] Projection: using {projection_path} (Claude Code not run)")
         if own:
             projection_path = Path(shutil.copyfile(projection_path, out_dir / projection_name))
+    elif mechanical:
+        projection_path = out_dir / projection_name
+        say(f"[2/{steps}] Projection: mechanical engine, no Claude Code call (backtest.py's zone rule, "
+            "unadjusted rz.py sim)")
+        claude = mechanical_project(input_path, projection_path)
     else:
         projection_path = out_dir / projection_name
         research = data.get("research", "none")
@@ -1802,7 +1864,7 @@ def pipeline(args, passthrough):
     record = provenance_path = saved_provenance = None
     provenance_name = f"{stem}_provenance.json" if stem else "provenance.json"
     if claude is not None:
-        record = run_provenance(input_path, data, projection_path, claude)
+        record = run_provenance(input_path, data, projection_path, claude, "mechanical" if mechanical else "claude")
         provenance_path = out_dir / provenance_name if out_dir else None
         saved_provenance = Path(saved) / "provenance.json" if saved else None
         write_provenance(record, provenance_path, saved_provenance)

@@ -38,6 +38,7 @@ build_prompt.py  ──►  reversal-zones-projection  ──►  plot_projectio
 - [Ranked trade setups](#ranked-trade-setups)
 - [Backtest of the baseline](#backtest-of-the-baseline)
 - [Does Claude's adjustment help?](#does-claudes-adjustment-help)
+- [Engines: claude or mechanical](#engines-claude-or-mechanical)
 - [How the probabilities are produced](#how-the-probabilities-are-produced)
 - [Glossary](#glossary)
 - [Known limits](#known-limits)
@@ -66,7 +67,7 @@ The install must be editable. `zones` keeps running the scripts and the skill of
 
 Tests: `uv run pytest` runs the offline suite in `tests/` (no network, about two minutes). Yahoo is replaced by fakes, including simulated rate limits, server errors and hung requests; the real download is not exercised.
 
-Step 2 needs Claude with the skill in `.claude/skills/reversal-zones-projection/`. Claude Code picks it up automatically when run in this repository; other Claude apps need it installed. See [Installing the skill](#installing-the-skill).
+Step 2 needs Claude with the skill in `.claude/skills/reversal-zones-projection/`. Claude Code picks it up automatically when run in this repository; other Claude apps need it installed. See [Installing the skill](#installing-the-skill). With `--engine mechanical` step 2 needs neither Claude nor Claude Code ([Engines](#engines-claude-or-mechanical)).
 
 ## Quick start
 
@@ -74,6 +75,12 @@ One command, from ticker to chart and ranked trade setups (needs [Claude Code](h
 
 ```bash
 uv run zones PETR4.SA --open          # plain `zones PETR4.SA --open` after the global install
+```
+
+For a free, fast scan with no Claude call at all, add `--engine mechanical`: the zones and probabilities come from fixed rules in about a second, so a whole watchlist takes seconds per ticker and costs nothing. See [Engines: claude or mechanical](#engines-claude-or-mechanical) for what it gives up.
+
+```bash
+uv run zones PETR4.SA --engine mechanical      # no Claude Code needed; no web research
 ```
 
 It runs the three steps below in order, validates the projection with `rz.py check` before plotting, then computes three ranked trade setups (see [Ranked trade setups](#ranked-trade-setups)). It prints a summary of the result and then where the files are and, with `--open`, shows the chart in your default image viewer. `--horizon` and the other step-1 options work here too (the default horizon is `1-3m`). Step 2 takes about 2 to 6 minutes (longest with `--research deep`) and is the only Claude Code call; the trade-setups step is computed in under a second. Progress goes to standard error. Pass `--no-entries` to stop at the chart. `uv run python run_pipeline.py ...` is the same command. To stop typing the same options on every run, see [Your defaults](#your-defaults).
@@ -180,6 +187,7 @@ A stage that happens again says so (`adjusting the zones`, `simulating again (rz
 | `--chart FILE` | `chart.png` in the run folder, `STEM.png` with `--out-dir` | Chart file. The extension picks the format. |
 | `--open` | off | Open the chart in the default viewer when the run succeeds. A viewer that cannot be started is only a warning. |
 | `--no-summary` | off | Print only the file paths, without the summary of the result before them. A summary that cannot be made is only a warning. |
+| `--engine NAME` | `claude` | Who makes the projection in step 2: `claude` (the skill through Claude Code: paid, minutes, can do web research) or `mechanical` (`mechanical.py`: fixed rules, no Claude Code call, about a second, no research). See [Engines](#engines-claude-or-mechanical). |
 | `--model NAME` | Claude Code's own | Model for the headless run. |
 | `--timeout SECONDS` | `1800` | Give up on each Claude Code call after this long. |
 | `--no-entries` | off | Stop at the chart: skip the trade-setups step. |
@@ -201,6 +209,13 @@ uv run zones --input $RUN/input.json --projection $RUN/projection.json --chart d
 ```
 
 The first two make a new, complete run folder each (`..._2`, then `..._3`), so the earlier chart stays. The third writes only `dark.svg`: plotting again into a named `--chart` creates no folder. To redraw the chart of a run in place, without a new folder, use `zones plot PETR4.SA` (see [Commands](#commands)).
+
+With `--engine mechanical`, step 2 prints instead:
+
+```text
+[2/5] Projection: mechanical engine, no Claude Code call (backtest.py's zone rule, unadjusted rz.py sim)
+      made in 1.1 s · no Claude Code call · $0
+```
 
 Step 2 runs `claude -p` in this repository without bypassing permissions. Claude gets only the skill, the helper script and a throwaway work folder to write in (it can also read files of this repository), plus web search and page fetching when `--research` is not `none`; anything else is denied.
 
@@ -259,6 +274,7 @@ Config: ~/.config/zones/config.toml (language, research, model, open, runs_dir, 
 | Key | Built-in default | Same as |
 |---|---|---|
 | `language`, `horizon`, `research`, `supports`, `resistances`, `volume`, `max_rows`, `shape`, `max_words`, `links`, `decimals` | see [Step 1](#options) | the `build_prompt.py` option of that name |
+| `engine` | `"claude"` | `--engine`; `"mechanical"` makes every run free and Claude-free unless `--engine claude` is typed |
 | `model`, `timeout`, `quiet`, `entries_by_claude` | Claude Code's own, `1800`, `false`, `false` | `--model`, `--timeout`, `--quiet`, `--entries-by-claude` |
 | `entries`, `save` | `true`, `true` | `false` is `--no-entries`, `--no-save` |
 | `theme`, `lang`, `candles`, `dpi` | [step 3](#step-3-plot_projectionpy)'s own | the chart options; `lang` overrides `language` for the chart's labels only |
@@ -269,6 +285,8 @@ Config: ~/.config/zones/config.toml (language, research, model, open, runs_dir, 
 | `cache_dir` | `$ZONES_CACHE_DIR`, else `$XDG_CACHE_HOME/zones`, else `~/.cache/zones` | `--cache-dir DIR`; the [candle cache](#the-candle-cache) and the shared rate-limit file |
 
 What belongs to one run stays on the command line: the ticker, `--event`, `--prices`, `--no-cache`, `--input`, `--projection`, `--name`, `--chart`, `--out-dir`. There are no per-ticker settings.
+
+For a daily scan with no Claude cost, put `engine = "mechanical"` in the file and type `--engine claude` for the runs that should get the skill and its research.
 
 **One run differently.** Whatever is typed wins, e.g. `zones NVDA --language en --research deep`. A switch that a file turns on has an off form for one run: `--no-open`, `--no-quiet`, `--no-entries-by-claude`, `--no-volume`; one that a file turns off has an on form: `--entries`, `--save`, `--summary`.
 
@@ -371,7 +389,9 @@ summary:    runs/batch/2026-11-19T153736/summary.csv
 Analysis for study, not investment advice.
 ```
 
-**Cost.** The cost of a run is the sum of what Claude Code reported for its calls, as the run printed it (to the cent). A run that made no Claude Code call (it failed at step 1) cost nothing. A call that reported no cost, or never finished (a timeout), makes the run's cost unknown: the table shows `?`, `summary.csv` leaves `cost_usd` empty and says why in `cost_note`, and the cap does not count it. Nothing is estimated.
+**A free batch.** `zones batch watchlist.txt --engine mechanical --jobs 3` passes the engine to every run, so no run calls Claude: each row shows `$0.00` with `cost_note` "no Claude Code call", and the time per ticker is mostly the Yahoo download (about 15 s each with an empty candle cache; six US and B3 tickers took 34 s at `--jobs 3`). `engine = "mechanical"` in a config file does the same.
+
+**Cost.** The cost of a run is the sum of what Claude Code reported for its calls, as the run printed it (to the cent). A run that made no Claude Code call (the mechanical engine, or a run that failed at step 1) cost nothing. A call that reported no cost, or never finished (a timeout), makes the run's cost unknown: the table shows `?`, `summary.csv` leaves `cost_usd` empty and says why in `cost_note`, and the cap does not count it. Nothing is estimated.
 
 **The batch folder**, `RUNS_DIR/batch/TIME/`, holds `logs/TICKER.log` (everything one run printed) and `summary.csv`, rewritten after every run so a batch cut short still has one. Its columns: `ticker`, `horizon`, `status` (`ok`, `failed` or `skipped`), `run_folder`, `as_of`, `price`, `currency`; the nearest support and resistance with both edges (the open tails are left out) as `support_from`, `support_to`, `support_reach`, `support_turn` and the same for `resistance_`; `top_scenario` and `top_scenario_p` (the most likely scenario), `confidence`, `cost_usd`, `cost_note`, `duration_s`, `error` (the run's own `Error:` line) and `log`. A run that failed after making its folder still points at it, with whatever its files hold.
 
@@ -716,6 +736,7 @@ Every `zones` run that makes a projection writes `provenance.json` beside its fi
 | `input.data` | The input's own `provenance`, written by `build_prompt.py` at download time (absent for older inputs). |
 | `input.sha256`, `projection.sha256`, `entries.sha256` | sha256 of the files exactly as written in the run folder. |
 | `projection.claude` | Claude Code's own event stream: `model`, `claude_code_version` and `session_id` from the `system` init event; `num_turns`, `total_cost_usd`, `duration_ms`, `duration_api_ms` and `usage` from the final `result` event; `models_used` and `model_usage` from the result's `modelUsage` (else the models named on the assistant messages). A field Claude Code does not report is left out, never guessed. `requested_model` is what `--model` asked for, and `wall_seconds` what `zones` measured. |
+| `projection.mechanical` | With `--engine mechanical`, in place of `claude` (and `made_by` is `"mechanical"`): `engine` (`mechanical.py`), `zone_rule`, `sim_method` and `wall_seconds`. The `rules` files are then `mechanical.py`, `backtest.py` and the others below except `SKILL.md`, so the `version` differs from a Claude run's. |
 | `rules` | The checkout that ran: the sha256 of each rule file, a short `version` (the first 12 hex digits of a hash over those) that changes whenever any of them does, `sim_method` (the version `rz.py sim` uses by default there), and the git commit with `dirty` set when tracked files differ from it (untracked files such as `runs/` are not counted). Without git, `git` is left out. |
 | `entries` | Added when the setups are written: by `trade_entries.py`, or by Claude Code with its own `claude` block (`--entries-by-claude`). |
 
@@ -991,6 +1012,32 @@ Paired difference per case (mean over 88 cases, 95% bootstrap interval; negative
 
 Read it with the same care as the backtest: 88 cases over four months, overlapping dates across tickers that move together, survivor tickers, no events. It says nothing about runs with web research (`one_search`, `deep`), where catalysts are what the skill allows it to adjust for; that needs as-of dates after the cutoff and news as of those dates, which `value_test.py` does not provide. It describes calibration, not returns, and is not advice.
 
+## Engines: claude or mechanical
+
+Step 2 has two engines. `--engine claude` (the default) runs the skill through Claude Code. `--engine mechanical` runs `mechanical.py` instead, which builds the whole projection by fixed rules, with no Claude Code call:
+
+| Part of the projection | `claude` (the skill) | `mechanical` (`mechanical.py`) |
+|---|---|---|
+| Zones | Chosen by Claude from `rz.py levels`, following SKILL.md | `backtest.py`'s zone rule (`clustered_zones()`, the one place it lives; [Backtest](#backtest-of-the-baseline), step 2) on the same facts, with the input's `want.supports`/`want.resistances` and prices at the input's precision |
+| Probabilities | `rz.py sim`, then adjusted by at most 0.10 per side | `rz.py sim` with the default sim method, copied unadjusted, no shocks |
+| Evidence | Written by Claude from the rows | The pivots, last-three-candle extremes, retracements and swing ends that formed each zone, with prices and candles; a zone that only fills a side with too few clusters says it has no fact behind it |
+| Strength | Claude's reading of SKILL.md's rule | `strong` for three or more kinds of evidence (pivots, recent extremes, retracements, swing ends) or three tested candles; `moderate` for two; `weak` for one or none |
+| Events | From the input, plus what research found | The input's events inside the horizon, passed through and not simulated (the input carries no sizes) |
+| Drivers, research | Web research when `research` is not `none` | None: `drivers` is `[]` |
+| Confidence | `low` or `medium` | Always `low`, with limits saying the numbers are mechanical and unadjusted, and naming events, filled zones and the nearest zone at risk |
+| Cost, time | About $0.20-0.60 and one to six minutes | $0 and about a second (the run's time is the Yahoo download) |
+
+Both write the same schema and pass the same `rz.py check`, then the run continues identically: saved history, chart, trade setups, summary and `provenance.json`. A mechanical projection's free text follows `reply.language` (English and Portuguese; other languages get English); the same input always gives the same file, byte for byte. Its `provenance.json` has `made_by: "mechanical"`, a `mechanical` block instead of `claude`, and a rules version over `mechanical.py`, `backtest.py`, `rz.py` and the other rule files (not `SKILL.md`), so `zones score` groups these projections as `mechanical`, apart from every model.
+
+**Research.** The mechanical engine searches nothing. Without `--input` it builds the input with `--research none`, so the input records what was done; if a research level was typed or set in a config file it prints one warning and continues. A given `--input` that asks for research gets the same warning, and the projection's `confidence.limits` says the research was not done.
+
+**When to use which.** The [value test](#does-claudes-adjustment-help) found that without web research Claude never changed the simulated probabilities (88 of 88 runs, Sonnet 5.5, `1-2w`), and its zones scored no better than the mechanical rule beyond noise. So for a watchlist scan with `research: none`, the mechanical engine gives the same kind of numbers for free, in a second, reproducibly. The paid engine still writes evidence and limits by reading the chart, and only it can do web research; whether research runs improve the probabilities has **not been measured** (`value_test.py` cannot give Claude news as of a past date). Use `claude` when you want the reading and the research, `mechanical` for breadth and daily scans. Neither is advice, and neither engine's probabilities are calibrated beyond what the [backtest](#backtest-of-the-baseline) describes.
+
+```bash
+uv run zones NVDA --engine mechanical --language pt
+uv run python mechanical.py runs/NVDA/2026-11-19T1528_1-3m/input.json -o projection.json   # step 2 alone
+```
+
 ## How the probabilities are produced
 
 The helper simulates the future closes of the main series and counts how often each zone is reached or broken.
@@ -1037,14 +1084,14 @@ The simulation knows nothing about chart levels. The skill may therefore move a 
 - **Not dividend-adjusted.** For heavy dividend payers, old levels sit higher than a total-return chart would show.
 - **Holidays.** A week ending on a holiday Friday is labelled `forming` until the weekend.
 - **24-hour markets.** The session and week-end logic assumes a Monday-to-Friday exchange, so crypto tickers get wrong `forming` labels.
-- **Zone choice is judgment.** Two runs on the same input can pick slightly different zone edges. The baseline probabilities for a given set of zones are reproducible.
+- **Zone choice is judgment.** Two Claude runs on the same input can pick slightly different zone edges. The baseline probabilities for a given set of zones are reproducible, and `--engine mechanical` reproduces the whole projection, at the price of a fixed rule that reads no context and no news.
 - **`--shape json` is missing.** The skill accepts `"shape": "json"` (projection only, no prose), but `build_prompt.py` does not offer it yet. Edit the field by hand if needed.
 
 ## Roadmap
 
 1. Extend the backtest (`backtest.py`, which covers the unadjusted baseline): scheduled dividends as `drop` shocks, more tickers and sectors, and scoring the unadjusted simulation next to the skill's adjusted numbers for saved projections.
 2. Re-check sim method 2 when a falling market has ended inside the backtest window, and try a drift net of each asset's dividend yield. Revisit a calibration layer only with enough history that its fitted maps stop tracking one period's average rise.
-3. Measure the paid step where it can adjust: `value_test.py` with events or research as of the past date (a news archive cut at the as-of day), and with more dates as they pass the cutoff. Without research Sonnet 5.5 never adjusted, so a cheaper run could skip Claude's probability step and keep only its zone choice.
+3. Measure the paid step where it can adjust: `value_test.py` with events or research as of the past date (a news archive cut at the as-of day), and with more dates as they pass the cutoff. Without research Sonnet 5.5 never adjusted; `--engine mechanical` is now the free path for such runs. Score saved mechanical projections against Claude's as the history grows (`zones score` groups them apart).
 4. Add `json` to `--shape`.
 5. Carry event sizes as numbers (dividend amount, implied move) so the skill does not have to search for them.
 6. State `dividend_adjusted` explicitly in the input.
@@ -1059,6 +1106,7 @@ stock_predict_zones/
 ├── run_pipeline.py                 the `zones` command: all steps in one (step 2 through headless Claude Code), and list, runs, score, plot, show, entries, backtest, batch, cache
 ├── score_projections.py            saved projections against later prices, and the calibration summary
 ├── backtest.py                     the baseline probabilities on past dates: mechanical zones, rz.py sim, rz.outcome
+├── mechanical.py                   step 2 without Claude (--engine mechanical): backtest.py's zones, unadjusted rz.py sim
 ├── value_test.py                   paid: Claude's step 2 against the baseline on the same zones, after the model's cutoff
 ├── trade_entries.py                trade setups: computes them, or fills the prompt and checks the reply
 ├── show_run.py                     one run as a text summary in the terminal
