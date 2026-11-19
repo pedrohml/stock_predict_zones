@@ -27,3 +27,6 @@ runs/
 
 # Subagent worktrees
 .claude/worktrees/
+
+# value_test.py output: inputs, projections and scores of the paid measurement
+value_runs/
