@@ -69,7 +69,9 @@ Give each event a `certainty`: `high` when you read it on the company's or the e
 
 ## Probabilities
 
-The helper simulates the future closes of the main series: fat-tailed, no drift, volatility decaying from recent to long-run levels, and a shortened first step when the last candle is still forming. With `touched_once` it measures intra-candle extremes, otherwise closes.
+The helper simulates the future closes of the main series: fat-tailed, volatility decaying from recent to long-run levels, a shortened first step when the last candle is still forming, and a small fixed upward drift (the expected price grows 5% a year; none on intraday candles). With `touched_once` it measures intra-candle extremes, otherwise closes.
+
+`sim` prints `sim_method`, the version of these rules (now 2; version 1 was the same simulation without drift, still available with `--method 1` for comparing old baselines). Name the version in `method` ("sim method 2") and do not copy `sim_method` into the output as a key. Do not pass `--method` unless the user asks for it.
 
 `zones.json`:
 
@@ -98,6 +100,7 @@ Adjusting the baseline. The simulation knows nothing about levels, so it may be 
 
 - Move at most 0.10 of probability in total on each side, in hundredths. Typical moves: from the tail into a `strong` zone, or toward the tail when a known catalyst points that way.
 - Do not adjust to make the picture look decisive. If the baseline is flat across zones, that is the finding.
+- The drift is already in the baseline. Do not move probability toward the resistances for the general tendency of prices to rise, nor for the recent trend alone: backtests found that extrapolating the trend of the candles made the probabilities worse, not better.
 - After changing `turn`, recompute every `reach` as the sum of `turn` from that entry outward. The nearest zone's `reach` stays what the simulation gave.
 - Then fix the scenarios: keep `whipsaw` at the simulated value, set `breakdown` so that `breakdown + whipsaw` equals the `reach` of the entry after the middle support, set `breakout` the same way on the resistance side, and give `range` the remainder.
 - State in `method` what was moved and why.
@@ -173,7 +176,7 @@ Keep the keys, their order and the id names exactly as below. Take `structure` f
     "limits": ["S1's floor is 2% below the price; the December dividend alone is a 2.7% drop", "oil and fuel-policy news will outweigh chart levels"]
   },
 
-  "method": "200,000 simulated paths of 13 weekly closes (fat-tailed, weekly volatility 6.3% decaying to 4.6%, 1.19 ex-dividend drop); moved 0.08 from the support tail into S1-S3 and 0.07 from the resistance tail into R1-R3 for clustered evidence"
+  "method": "sim method 2: 200,000 simulated paths of 13 weekly closes (fat-tailed, 5% a year drift, weekly volatility 6.3% decaying to 4.6%, 1.19 ex-dividend drop); moved 0.08 from the support tail into S1-S3 and 0.07 from the resistance tail into R1-R3 for clustered evidence"
 }
 ```
 
@@ -199,7 +202,7 @@ This is analysis, not advice. Do not add buy, sell or hold calls, stops, targets
 
 ```
 rz.py levels INPUT.json              -> facts for choosing zones
-rz.py sim    INPUT.json ZONES.json   -> baseline probabilities
+rz.py sim    INPUT.json ZONES.json [--method N]  -> baseline probabilities (N: sim method, default the newest)
 rz.py check  OUTPUT.json             -> validate the finished projection
 rz.py save   INPUT.json OUTPUT.json [DIR]  -> keep both under DIR/TICKER/TIME_HORIZON/
 rz.py list   [DIR]                   -> the saved projections, oldest first

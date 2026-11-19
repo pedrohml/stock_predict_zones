@@ -67,12 +67,13 @@ def candle_starts(d, main, dates):
     return [(first + timedelta(minutes=15 * i)).strftime("%Y-%m-%dT%H:%M") for i in range(len(dates))]
 
 
-def as_candles(rz, d, zones, paths, merge_forming=True):
-    """Simulated paths, each as the candle rows Yahoo would later show for it."""
+def as_candles(rz, d, zones, paths, merge_forming=True, method=None):
+    """Simulated paths, each as the candle rows Yahoo would later show for it: the paths sim()
+    counts under sim method `method` (None: the default), drift included."""
     main = rz.main_series(d)
     starts = [row[0] for row in main["rows"]]
     close = np.array([row[4] for row in main["rows"]], float)
-    p, dates, _, _, sub = rz.walk(d, main, starts, close, zones, paths)
+    p, dates, _, _, sub = rz.walk(d, main, starts, close, zones, paths, rz.drift_of(main, method))
     labels, was = candle_starts(d, main, dates), main["rows"][-1]
     out = []
     for path in p:
@@ -107,8 +108,8 @@ def frequencies(rz, d, proj, candle_paths):
 @pytest.fixture
 def simulated(rz, run_sim, projection_from_sim):
     """(input, projection carrying sim()'s own numbers, sim output) for one variant."""
-    def make(d, zones):
-        sim_out = run_sim(zones, d, paths=PATHS)
+    def make(d, zones, method=None):
+        sim_out = run_sim(zones, d, paths=PATHS, method=method)
         proj = projection_from_sim(sim_out, zones)
         proj["as_of"] = {"time": d["now"]["time"], "price": d["now"]["price"]}
         return proj, sim_out
@@ -120,14 +121,17 @@ EXACT = [(basis, forming, touched)
          if not (forming and touched)]
 
 
+@pytest.mark.parametrize("method", [1, 2])
 @pytest.mark.parametrize("basis, forming, touched", EXACT)
-def test_outcome_frequencies_reproduce_sim(rz, input_data, zones, simulated, basis, forming, touched):
-    """The key test: outcome() applied to sim()'s own paths gives sim()'s reach, turn and scenarios."""
+def test_outcome_frequencies_reproduce_sim(rz, input_data, zones, simulated, basis, forming, touched, method):
+    """The key test: outcome() applied to sim()'s own paths gives sim()'s reach, turn and
+    scenarios, for every sim method (2 adds drift to the paths)."""
     d = variant(input_data, basis, forming, touched)
     zones["shocks"] = SHOCKS
-    proj, sim_out = simulated(d, zones)
+    proj, sim_out = simulated(d, zones, method)
     assert sim_out["measure"] == ("touch" if touched else "close")
-    freq = frequencies(rz, d, proj, as_candles(rz, d, zones, PATHS))
+    assert sim_out["sim_method"]["version"] == method
+    freq = frequencies(rz, d, proj, as_candles(rz, d, zones, PATHS, method=method))
     for side in ("supports", "resistances"):
         for entry in sim_out[side]:
             # sim rounds reach once, so reach must match to the cent; turn is a difference of two

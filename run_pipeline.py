@@ -759,12 +759,25 @@ def git_state(root=ROOT):
     return {"commit": head.stdout.strip(), "dirty": bool(status.stdout.strip())}
 
 
+def default_sim_method():
+    """The sim method `rz.py sim` uses by default in this checkout (its SIM_METHOD line), or
+    None when rz.py cannot be read. Read as text: this file shares no code with rz.py."""
+    try:
+        found = re.search(r"^SIM_METHOD = (\d+)", Path(RZ).read_text(encoding="utf-8"), re.M)
+    except OSError:
+        return None
+    return int(found.group(1)) if found else None
+
+
 def rules_provenance():
     """The rules this checkout applies: a short `version` that changes whenever one of
     RULE_FILES does (to group results by), the git commit, and each file's sha256."""
     files = {name: sha256_of(path) for name, path in RULE_FILES.items()}
     joined = "\n".join(f"{name} {digest}" for name, digest in sorted(files.items()))
     out = {"version": hashlib.sha256(joined.encode("utf-8")).hexdigest()[:12]}
+    method = default_sim_method()
+    if method is not None:
+        out["sim_method"] = method
     state = git_state()
     if state:
         out["git"] = state

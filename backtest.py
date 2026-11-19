@@ -13,7 +13,8 @@ for every `--step`-th trading day between `--start` and `--end`, it:
 1. builds the input JSON as of that day's close with build_prompt.py's own code, from candles
    that end on that day (nothing later enters the input);
 2. chooses zones from `rz.py levels` with the fixed rule in choose_zones();
-3. runs `rz.py sim` on those zones (the same simulation and seed as a live run);
+3. runs `rz.py sim` on those zones (the same simulation and seed as a live run; `--method`
+   picks the sim method version, so the original one stays reproducible);
 4. judges the result with `rz.outcome()` against the candles that followed, as
    score_projections.py judges a saved projection.
 
@@ -214,9 +215,9 @@ def projection(d, zones, out):
 
 # ---- one case and the whole run ----------------------------------------------
 
-def run_case(ticker, horizon, data, day, realised, today, paths=DEFAULT_PATHS):
+def run_case(ticker, horizon, data, day, realised, today, paths=DEFAULT_PATHS, method=None):
     """One past date -> a record with the zones, the forecasts and the outcome, or a
-    `skipped` reason."""
+    `skipped` reason. `method` is the sim method (rz.SIM_METHODS; None for rz's default)."""
     record = {"ticker": ticker, "as_of": day.isoformat()}
     d = input_as_of(ticker, horizon, data, day)
     loaded = rz.unpack(d)
@@ -227,7 +228,7 @@ def run_case(ticker, horizon, data, day, realised, today, paths=DEFAULT_PATHS):
     zones = choose_zones(rz.facts(*loaded), d["want"]["supports"], d["want"]["resistances"])
     if not zones["supports"] or not zones["resistances"]:
         return {**record, "skipped": "the zone rule found no zone on one side"}
-    out = rz.baseline(loaded, zones, paths)
+    out = rz.baseline(loaded, zones, paths, method)
     o = projection(d, zones, out)
     bad = rz.problems(o, complete=False)
     if bad:
@@ -256,9 +257,12 @@ def default_range(horizon, today):
     return end.replace(year=end.year - DEFAULT_YEARS), end
 
 
-def run(tickers, horizon, start=None, end=None, step=None, paths=DEFAULT_PATHS, today=None, progress=True):
-    """The whole backtest -> {"settings", "records", "summary"}."""
+def run(tickers, horizon, start=None, end=None, step=None, paths=DEFAULT_PATHS, today=None, progress=True,
+        method=None):
+    """The whole backtest -> {"settings", "records", "summary"}. `method`: the sim method
+    version (rz.SIM_METHODS), None for the one `rz.py sim` uses by default."""
     step = step or DEFAULT_STEP[horizon]
+    method = rz.sim_method(method)
     first_start, first_end = default_range(horizon, today or date.today())
     start, end = start or first_start, end or first_end
     if start > end:
@@ -278,14 +282,15 @@ def run(tickers, horizon, start=None, end=None, step=None, paths=DEFAULT_PATHS, 
         places = build_prompt.arguments().get_default("decimals")
         realised = [[row[0]] + [round(x, places) for x in row[1:]] for row in sp.aggregate(data["rows"], basis)]
         days = as_of_days(data["rows"], start, end, step)
-        mine = [run_case(ticker, horizon, data, day, realised, ticker_today, paths) for day in days]
+        mine = [run_case(ticker, horizon, data, day, realised, ticker_today, paths, method) for day in days]
         records += mine
         used = sum(1 for r in mine if "skipped" not in r)
         say(f"{ticker}: {len(days)} dates, {used} scored, {len(days) - used} skipped "
             f"({time.monotonic() - clock:.0f}s)", progress)
     settings = {"tickers": [t.upper() for t in tickers], "horizon": horizon, "start": start.isoformat(),
                 "end": end.isoformat(), "step_trading_days": step, "paths": paths,
-                "default_paths": DEFAULT_PATHS, "rule": RULE, "failed": failed}
+                "default_paths": DEFAULT_PATHS, "sim_method": method, "default_sim_method": rz.SIM_METHOD,
+                "drift_per_year": rz.SIM_METHODS[method]["drift_per_year"], "rule": RULE, "failed": failed}
     return {"settings": settings, "records": records, "summary": summarise(records)}
 
 
@@ -360,6 +365,9 @@ def render(report):
     lines = [f"BACKTEST of the baseline probabilities, horizon {s['horizon']}",
              f"  {', '.join(s['tickers'])}; as-of dates {s['start']} to {s['end']}, every "
              f"{s['step_trading_days']} trading day(s), after the close",
+             f"  sim method {s['sim_method']} (drift {s['drift_per_year']:.0%} a year)"
+             + ("" if s["sim_method"] == s["default_sim_method"] else
+                f"; rz.py sim uses method {s['default_sim_method']} by default"),
              f"  {summary['cases']} case(s) scored"
              + (f"; skipped: " + ", ".join(f"{n} {why}" for why, n in summary["skipped"].items())
                 if summary["skipped"] else "")]
@@ -414,6 +422,9 @@ def main(argv=None):
                              + ", ".join(f"{h} {n}" for h, n in DEFAULT_STEP.items()) + ")")
     parser.add_argument("--paths", type=int, default=DEFAULT_PATHS,
                         help=f"simulated paths per case (default: {DEFAULT_PATHS:,}, as rz.py sim)")
+    parser.add_argument("--method", type=int, choices=sorted(rz.SIM_METHODS), default=rz.SIM_METHOD,
+                        help=f"sim method version (default: {rz.SIM_METHOD}, as rz.py sim; 1 is the "
+                             "original simulation without drift)")
     parser.add_argument("--json", action="store_true", help="print one JSON object instead of the tables")
     parser.add_argument("--csv", metavar="FILE", help="also write every forecast of every case to FILE")
     parser.add_argument("--quiet", action="store_true", help="no progress lines on stderr")
@@ -423,7 +434,7 @@ def main(argv=None):
 
     try:
         report = run(args.tickers, args.horizon, args.start, args.end, args.step, args.paths,
-                     progress=not args.quiet)
+                     progress=not args.quiet, method=args.method)
     except BacktestError as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1

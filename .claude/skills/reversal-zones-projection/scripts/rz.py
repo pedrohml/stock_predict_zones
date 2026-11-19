@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Helper for the reversal-zones projection. Usage:
   rz.py levels INPUT.json              -> facts for choosing zones
-  rz.py sim    INPUT.json ZONES.json   -> baseline probabilities
+  rz.py sim    INPUT.json ZONES.json [--method N]  -> baseline probabilities (N: SIM_METHODS)
   rz.py check  OUTPUT.json             -> validate the finished projection
   rz.py save   INPUT.json OUTPUT.json [DIR]  -> keep both under DIR/TICKER/TIME_HORIZON/
   rz.py list   [DIR]                   -> the saved projections, oldest first
@@ -15,6 +15,13 @@ import numpy as np
 HORIZON_DAYS = {"today": 1, "1-2w": 14, "1-3m": 91, "6-12m": 365}
 SCHEMA_VERSIONS = (1,)   # projection formats check accepts; a projection without the key predates them
 CANDLE_DAYS = {"1D": 1.4, "1W": 7, "1M": 30.44}
+# How sim turns zones into probabilities. 1: no drift (until Nov 2026). 2: the expected price
+# grows `drift_per_year` (5%) a year, a deterministic term added after the random draws. Chosen
+# out of sample with backtest.py (README, "Backtest of the baseline"). Never change the meaning
+# of a number: a new rule gets a new one, so saved baselines can be told apart and reproduced.
+SIM_METHODS = {1: {"drift_per_year": 0.0}, 2: {"drift_per_year": 0.05}}
+SIM_METHOD = 2   # the default of `sim` and baseline()
+CANDLES_PER_YEAR = {"1D": 252, "1W": 365.25 / 7, "1M": 12}   # intraday candles get no drift
 
 
 def main_series(d):
@@ -115,8 +122,18 @@ def schedule(d, main, t):
     return dates, frac
 
 
-def walk(d, main, t, c, z, paths):
-    """The simulated prices: one row per path, `sub` points per candle, in the order of `dates`."""
+def drift_steps(drift, n, sub, frac):
+    """The deterministic log-drift added at each simulated point: `drift` per candle, split evenly
+    over its `sub` points, the first candle shortened like its volatility. Draws nothing."""
+    out = np.full(n * sub, drift / sub)
+    out[:sub] *= frac
+    return out
+
+
+def walk(d, main, t, c, z, paths, drift=0.0):
+    """The simulated prices: one row per path, `sub` points per candle, in the order of `dates`.
+    `drift` (log-return per candle) is a deterministic term added after the random draws, so the
+    draws are the same for every drift: same seed, same numbers, same order."""
     price, touched = d["now"]["price"], d["want"]["probability"] == "touched_once"
     dates, frac = schedule(d, main, t)
     n, v, sub = len(dates), vol(c), 4 if touched else 1
@@ -130,6 +147,8 @@ def walk(d, main, t, c, z, paths):
         if i is None: continue
         if "jump" in s: shock[:, i * sub] += rng.standard_normal(paths) * s["jump"]
         if "drop" in s: drop[i * sub:] += s["drop"]
+    if drift:
+        shock += drift_steps(drift, n, sub, frac)
     return price * np.exp(np.cumsum(shock, axis=1)) - drop, dates, frac, v, sub
 
 
@@ -152,16 +171,43 @@ def middles(S, R):
     return S[min(1, len(S) - 1)][0], R[min(1, len(R) - 1)][1]
 
 
-def sim(path, zones_path, paths=200_000):
+def sim_method(method=None):
+    """A sim method version (None: the default) -> its number, or ValueError."""
+    method = SIM_METHOD if method is None else int(method)
+    if method not in SIM_METHODS:
+        raise ValueError(f"unknown sim method {method}; known: {', '.join(map(str, SIM_METHODS))}")
+    return method
+
+
+def drift_of(main, method=None):
+    """The log-drift per candle of the main series under a sim method: log(1 + yearly rate)
+    spread over the candles of a year, so the expected price grows by that rate."""
+    rate = SIM_METHODS[sim_method(method)]["drift_per_year"]
+    per_year = CANDLES_PER_YEAR.get(main["candles"])
+    return float(np.log1p(rate) / per_year) if rate and per_year else 0.0
+
+
+def sim(path, zones_path, paths=200_000, method=None):
     z = json.load(open(zones_path, encoding="utf-8"))
-    for key, value in baseline(load(path), z, paths).items(): print(key, json.dumps(value))
+    for key, value in baseline(load(path), z, paths, method).items(): print(key, json.dumps(value))
 
 
-def baseline(loaded, z, paths=200_000):
-    """What `sim` prints, as a dict. `loaded` is what load() or unpack() returns."""
+def baseline(loaded, z, paths=200_000, method=None):
+    """What `sim` prints, as a dict. `loaded` is what load() or unpack() returns; `method` is a
+    key of SIM_METHODS, None for SIM_METHOD."""
     d, main, t, h, l, c = loaded
+    method = sim_method(method)
+    drift = drift_of(main, method)
+    p, dates, frac, v, _ = walk(d, main, t, c, z, paths, drift)
+    out = tally(d, main, z, p, dates, frac, v)
+    out["sim_method"] = {"version": method, "drift_per_year": SIM_METHODS[method]["drift_per_year"],
+                         "drift_per_candle": round(drift, 6)}
+    return out
+
+
+def tally(d, main, z, p, dates, frac, v):
+    """The baseline numbers from the simulated prices `p` (what walk() returns)."""
     price, touched = d["now"]["price"], d["want"]["probability"] == "touched_once"
-    p, dates, frac, v, _ = walk(d, main, t, c, z, paths)
     n, lo, hi = len(dates), p.min(axis=1), p.max(axis=1)
 
     def side(zones, is_support):
@@ -363,5 +409,19 @@ def score(input_path, output_path, candles_path):
     for key, value in out.items(): print(key, json.dumps(value))
 
 
+def cli(argv):
+    """`sim` takes `--method N` (a key of SIM_METHODS) anywhere after its two files."""
+    command, rest = argv[0], list(argv[1:])
+    if command == "sim" and "--method" in rest:
+        i = rest.index("--method")
+        try: method = sim_method(rest[i + 1])
+        except (IndexError, ValueError) as e:
+            print(f"--method needs one of {', '.join(map(str, SIM_METHODS))}" + (f" ({e})" if not isinstance(e, IndexError) else ""))
+            sys.exit(2)
+        del rest[i:i + 2]
+        return sim(*rest, method=method)
+    {"levels": levels, "sim": sim, "check": check, "save": save, "list": list_saved, "score": score}[command](*rest)
+
+
 if __name__ == "__main__":
-    {"levels": levels, "sim": sim, "check": check, "save": save, "list": list_saved, "score": score}[sys.argv[1]](*sys.argv[2:])
+    cli(sys.argv[1:])

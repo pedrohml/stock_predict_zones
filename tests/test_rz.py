@@ -1,7 +1,9 @@
 """Step 2 helper, scripts/rz.py: levels, schedule, sim and check."""
 import copy
+import inspect
 from datetime import date
 
+import numpy as np
 import pytest
 
 SMALL = 4_000   # paths for tests that only look at the structure of the output
@@ -148,7 +150,9 @@ def test_schedule_intraday_covers_the_rest_of_the_session(rz):
 def test_sim_output_structure(run_sim, zones):
     out = run_sim(zones, paths=SMALL)
     assert list(out) == ["horizon", "volatility", "first_candle_share_left", "measure",
-                         "supports", "resistances", "scenarios"]
+                         "supports", "resistances", "scenarios", "sim_method"]
+    assert out["sim_method"] == {"version": 2, "drift_per_year": 0.05,
+                                 "drift_per_candle": round(float(np.log(1.05) / (365.25 / 7)), 6)}
     assert out["horizon"] == {"label": "1-3m", "close_basis": "1W", "closes": 13,
                               "first": "2026-11-20", "last": "2027-02-12"}
     assert out["first_candle_share_left"] == 0.6
@@ -195,11 +199,12 @@ def test_sim_is_deterministic_with_default_paths(rz, input_path, write_json, cap
     rz.sim(str(input_path), zones_path)
     second = capsys.readouterr().out
     assert first == second
-    assert first.count("\n") == 7
+    assert first.count("\n") == 8
 
 
 def test_sim_default_is_200_000_paths(rz):
-    assert rz.sim.__defaults__ == (200_000,)
+    assert inspect.signature(rz.sim).parameters["paths"].default == 200_000
+    assert inspect.signature(rz.baseline).parameters["paths"].default == 200_000
 
 
 def test_sim_single_zone_per_side(run_sim):
@@ -208,6 +213,82 @@ def test_sim_single_zone_per_side(run_sim):
     assert [entry["id"] for entry in out["resistances"]] == ["R1", "above"]
     assert out["scenarios"][0]["low"] == "below 43.2"
     assert out["scenarios"][1]["high"] == "above 47.1"
+
+
+# ---- sim method versions --------------------------------------------------------
+
+# rz.py sim of the fixture with these shocks, 200,000 paths, before sim methods existed. Method 1
+# must keep giving exactly this: saved baselines stay reproducible.
+METHOD_1_SHOCKS = [{"date": "2026-12-21", "drop": 1.19}, {"date": "2026-11-26", "jump": 0.05}]
+METHOD_1 = {
+    "supports": [{"id": "S1", "reach": 1.0, "turn": 0.22}, {"id": "S2", "reach": 0.78, "turn": 0.27},
+                 {"id": "S3", "reach": 0.51, "turn": 0.29}, {"id": "below", "reach": 0.22, "turn": 0.22}],
+    "resistances": [{"id": "R1", "reach": 0.6, "turn": 0.2}, {"id": "R2", "reach": 0.4, "turn": 0.2},
+                    {"id": "R3", "reach": 0.2, "turn": 0.12}, {"id": "above", "reach": 0.08, "turn": 0.08}],
+    "scenarios": [0.5, 0.19, 0.3, 0.01],
+}
+
+
+def test_sim_method_1_reproduces_the_original_baseline(run_sim, zones):
+    zones["shocks"] = METHOD_1_SHOCKS
+    out = run_sim(zones, method=1)
+    assert out["sim_method"] == {"version": 1, "drift_per_year": 0.0, "drift_per_candle": 0.0}
+    assert out["supports"] == METHOD_1["supports"]
+    assert out["resistances"] == METHOD_1["resistances"]
+    assert [s["p"] for s in out["scenarios"]] == METHOD_1["scenarios"]
+
+
+def test_sim_default_method_is_the_newest_and_recorded(rz, run_sim, zones):
+    assert rz.SIM_METHOD == max(rz.SIM_METHODS) == 2
+    assert run_sim(zones, paths=SMALL)["sim_method"]["version"] == rz.SIM_METHOD
+    assert run_sim(zones, paths=SMALL, method=1)["sim_method"]["version"] == 1
+
+
+def test_drift_does_not_change_the_random_draws(rz, input_path, zones):
+    """Drift is a deterministic term added after the draws: the same seed gives the same
+    numbers in the same order, so a drifted path is the undrifted one times exp(cumsum(drift))."""
+    d, main, t, h, l, c = rz.load(str(input_path))
+    plain, dates, frac, _, sub = rz.walk(d, main, t, c, zones, SMALL)
+    drift = rz.drift_of(main, 2)
+    assert drift == pytest.approx(np.log(1.05) / (365.25 / 7))
+    moved = rz.walk(d, main, t, c, zones, SMALL, drift)[0]
+    steps = rz.drift_steps(drift, len(dates), sub, frac)
+    assert steps[0] == pytest.approx(drift * frac) and steps[1] == pytest.approx(drift)
+    np.testing.assert_allclose(moved, plain * np.exp(np.cumsum(steps)), rtol=1e-12)
+
+
+def test_sim_method_2_drifts_up(run_sim, zones):
+    old, new = run_sim(zones, paths=20_000, method=1), run_sim(zones, paths=20_000, method=2)
+    for e_old, e_new in zip(old["resistances"][1:], new["resistances"][1:]):
+        assert e_new["reach"] >= e_old["reach"]
+    for e_old, e_new in zip(old["supports"][1:], new["supports"][1:]):
+        assert e_new["reach"] <= e_old["reach"]
+    p = lambda out, name: next(s["p"] for s in out["scenarios"] if s["name"] == name)
+    assert p(new, "breakout") > p(old, "breakout") and p(new, "breakdown") < p(old, "breakdown")
+
+
+def test_drift_per_candle_and_none_intraday(rz):
+    rate = np.log(1.05)
+    assert rz.drift_of({"candles": "1D"}, 2) == pytest.approx(rate / 252)
+    assert rz.drift_of({"candles": "1M"}, 2) == pytest.approx(rate / 12)
+    assert rz.drift_of({"candles": "15m"}, 2) == 0.0
+    assert rz.drift_of({"candles": "1W"}, 1) == 0.0
+
+
+def test_unknown_sim_method_is_refused(rz, input_path, zones):
+    with pytest.raises(ValueError, match="unknown sim method 9"):
+        rz.baseline(rz.load(str(input_path)), zones, SMALL, 9)
+
+
+def test_sim_command_line_takes_a_method(rz, input_path, write_json, printed, zones, capsys):
+    zones_path = write_json("zones.json", zones)
+    printed()
+    rz.cli(["sim", str(input_path), zones_path, "--method", "1"])
+    assert printed()["sim_method"]["version"] == 1
+    with pytest.raises(SystemExit) as stop:
+        rz.cli(["sim", str(input_path), zones_path, "--method", "7"])
+    assert stop.value.code == 2
+    assert "--method needs one of 1, 2" in capsys.readouterr().out
 
 
 def test_sim_cash_drop_pushes_the_price_down(run_sim, zones):

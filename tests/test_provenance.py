@@ -171,6 +171,12 @@ def test_rules_name_every_rule_file_and_its_hash():
     assert re.fullmatch(r"[0-9a-f]{12}", rules["version"])
 
 
+def test_rules_name_the_default_sim_method(rz):
+    """Read from rz.py as text; must be the number rz.py itself uses."""
+    assert run_pipeline.default_sim_method() == rz.SIM_METHOD
+    assert run_pipeline.rules_provenance()["sim_method"] == rz.SIM_METHOD
+
+
 def test_rules_without_git_leave_the_commit_out(monkeypatch):
     def no_git(command, timeout=None):
         raise FileNotFoundError("git")

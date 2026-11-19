@@ -22,7 +22,7 @@ build_prompt.py  ──►  reversal-zones-projection  ──►  plot_projectio
 
 *Example output from the files in [`examples/`](examples/), using data as of 18 Nov 2026. It shows what the pipeline produces; it is not a forecast.*
 
-> **Read this first.** The probabilities are internally consistent, but only their unadjusted baseline has been backtested, on a few tickers and mechanically chosen zones (see [Backtest of the baseline](#backtest-of-the-baseline)). The numbers a real projection shows, with Claude's zones and adjustments, have not been checked against outcomes. Treat the output as a structured way to look at a chart, not as a forecast you can rely on. Nothing here is investment advice.
+> **Read this first.** The probabilities are internally consistent, but only their unadjusted baseline has been backtested, on twelve tickers and mechanically chosen zones (see [Backtest of the baseline](#backtest-of-the-baseline)). The numbers a real projection shows, with Claude's zones and adjustments, have not been checked against outcomes. Treat the output as a structured way to look at a chart, not as a forecast you can rely on. Nothing here is investment advice.
 
 ## Contents
 
@@ -558,7 +558,7 @@ The helper, `.claude/skills/reversal-zones-projection/scripts/rz.py`, can be use
 ```bash
 RZ=.claude/skills/reversal-zones-projection/scripts/rz.py
 uv run python $RZ levels input.json              # facts for choosing zones
-uv run python $RZ sim input.json zones.json      # baseline probabilities
+uv run python $RZ sim input.json zones.json      # baseline probabilities (--method 1: the original, without drift)
 uv run python $RZ check projection.json          # validate a projection
 uv run python $RZ save input.json projection.json   # keep the pair under projections/
 uv run python $RZ list                           # the saved projections, oldest first
@@ -629,6 +629,7 @@ Every `zones` run that makes a projection writes `provenance.json` beside its fi
   },
   "rules": {
     "version": "8ada605feb46",
+    "sim_method": 2,
     "git": { "commit": "e6723b6f3f7d0f82fb30a10884cf17f3736b2d13", "dirty": false },
     "files": { "SKILL.md": "3f451f13...", "rz.py": "ba4be519...", "build_prompt.py": "2548a8c1...",
                "trade_entries.py": "17498a76...", "trade_entries.md": "6a625630...", "trade_entries.schema.json": "142cd64d..." }
@@ -642,7 +643,7 @@ Every `zones` run that makes a projection writes `provenance.json` beside its fi
 | `input.data` | The input's own `provenance`, written by `build_prompt.py` at download time (absent for older inputs). |
 | `input.sha256`, `projection.sha256`, `entries.sha256` | sha256 of the files exactly as written in the run folder. |
 | `projection.claude` | Claude Code's own event stream: `model`, `claude_code_version` and `session_id` from the `system` init event; `num_turns`, `total_cost_usd`, `duration_ms`, `duration_api_ms` and `usage` from the final `result` event; `models_used` and `model_usage` from the result's `modelUsage` (else the models named on the assistant messages). A field Claude Code does not report is left out, never guessed. `requested_model` is what `--model` asked for, and `wall_seconds` what `zones` measured. |
-| `rules` | The checkout that ran: the sha256 of each rule file, a short `version` (the first 12 hex digits of a hash over those) that changes whenever any of them does, and the git commit with `dirty` set when tracked files differ from it (untracked files such as `runs/` are not counted). Without git, `git` is left out. |
+| `rules` | The checkout that ran: the sha256 of each rule file, a short `version` (the first 12 hex digits of a hash over those) that changes whenever any of them does, `sim_method` (the version `rz.py sim` uses by default there), and the git commit with `dirty` set when tracked files differ from it (untracked files such as `runs/` are not counted). Without git, `git` is left out. |
 | `entries` | Added when the setups are written: by `trade_entries.py`, or by Claude Code with its own `claude` block (`--entries-by-claude`). |
 
 Why it lives there: the data half is known at download time, so `build_prompt.py` writes it into the input. The run half cannot come from Claude, which does not reliably know its model id or cost, so `zones` reads it from Claude Code's events instead of asking Claude to fill fields in the projection. A run that reuses a projection (`--projection`) writes no provenance, since it did not make it; it copies the file beside the given projection into a new run folder when there is one, and never overwrites one.
@@ -792,6 +793,7 @@ uv run zones backtest PETR4.SA NVDA --horizon 1-2w                  # the same, 
 | `--start`, `--end` | three years ending one horizon (plus a week) before today | The range of as-of dates, `YYYY-MM-DD`. A case whose horizon has not ended is skipped. |
 | `--step N` | `5` for `1-2w`, `10` for `1-3m`, `21` for `6-12m` | Trading days between two as-of dates. |
 | `--paths N` | `200000`, as `rz.py sim` | Simulated paths per case. Fewer is faster; the report then says the numbers differ from a live run's. |
+| `--method N` | `2`, as `rz.py sim` | Sim method version: `1` is the original simulation without drift, `2` adds the 5% a year drift ([below](#sim-method-2-a-small-drift-chosen-out-of-sample)). The report names the method. |
 | `--json` | off | One JSON object (settings, skipped cases, the summaries) instead of the tables. |
 | `--csv FILE` | none | Also write every forecast: ticker, as-of date, price, entry, zone, forecast, happened. |
 | `--quiet` | off | No progress lines on standard error. |
@@ -800,19 +802,12 @@ For each ticker it downloads daily candles once (split-adjusted, not dividend-ad
 
 1. **Input.** The input JSON is built by `build_prompt.py`'s own code (`make_all_series()` and `assemble()`, the same presets, row counts, `close_basis` and `last_row` labels) from the candles that end on that day. Nothing after the as-of day enters the input. There are no events, `research` is `none`, and the session is `closed`.
 2. **Zones.** Three supports and three resistances, chosen by a fixed rule from the output of `rz.py levels` (`choose_zones()`, the only place the rule lives): the zone width is the mean of the two `typical_zone_width` numbers; the candidates are the prices `levels` reports as evidence (pivot lows and highs, the lows and highs of the last three candles, the retracement levels, the two ends of the dominant swing); walking outward from the price, a candidate within one width of the first member of the current cluster joins it, and each cluster becomes one zone of that width centred on the mean of its members, cut at the price and pushed outward so it never overlaps the zone before it; the nearest clusters are kept; a side with too few clusters is filled with one-width zones, one width apart. It is not what Claude would choose: it is a reproducible baseline.
-3. **Probabilities.** `rz.py sim` on those zones, with its fixed seed, and no shocks.
+3. **Probabilities.** `rz.py sim` on those zones, with its fixed seed, and no shocks, under the sim method `--method` names (default: the one `rz.py sim` uses).
 4. **Outcome.** `rz.outcome()` against the candles that followed, exactly as `score_projections.py` judges a saved projection; a case with fewer than half of its scheduled closes is skipped.
 
 The report is the calibration summary of `score_projections.py` (the same buckets, Brier scores and reference forecasts) for `reach`, `turn` and the four scenarios together, plus each scenario on its own, overall and per ticker. A case is not skipped silently: the reasons are counted at the top.
 
-Results of a run on 19 Nov 2026 (PETR4.SA, NVDA and VALE3.SA; 200,000 paths; as-of dates over the three years before the default end). Brier score of the baseline, next to always forecasting the sample's own rate (lower is better):
-
-| Horizon | Cases | `reach` | `turn` | Scenarios (all four) |
-|---|---|---|---|---|
-| `1-2w`, every 5 days | 451 | 0.206 vs 0.249 | 0.159 vs 0.166 | 0.168 vs 0.188 |
-| `1-3m`, every 10 days | 226 | 0.206 vs 0.249 | 0.165 vs 0.172 | 0.163 vs 0.188 |
-
-The reliability buckets were close to the diagonal for `reach` and `turn` (for `1-2w`, forecasts of 15%, 25%, 34%, 45%, 55%, 65% and 74% came true 16%, 26%, 35%, 45%, 58%, 64% and 73% of the time). The individual scenarios were weaker: the simulation has no drift, so a ticker in a long trend gets too few breakouts (NVDA `1-3m`: breakout forecast about 40%, observed 57%), and a run on NVDA `6-12m` scored worse than always forecasting the base rate. Treat these as a description of one sample, not as a property of the method.
+The first run of the backtest (19 Nov 2026; PETR4.SA, NVDA and VALE3.SA; sim method 1, which had no drift) found `reach` well calibrated (Brier 0.206 against 0.249 for always forecasting the sample's own rate) and `turn` calibrated but barely better than the base rate. The scenarios were the weak part: a ticker in a long rise got too few breakouts (NVDA `1-3m`: breakout forecast about 40%, observed 57%), and NVDA `6-12m` scored worse than the base rate. That led to sim method 2, below.
 
 Read it with the same care as the scoring of saved projections, and more:
 
@@ -822,6 +817,44 @@ Read it with the same care as the scoring of saved projections, and more:
 - Tickers chosen today are survivors, and the prices are on today's split-adjusted scale.
 - It describes calibration. It is not a measure of returns, does not show that the method works, and is not advice.
 
+### Sim method 2: a small drift, chosen out of sample
+
+`rz.py sim` now uses **sim method 2**: the same simulation, same seed and same random numbers, plus a deterministic drift under which the expected price grows 5% a year (none on intraday candles). `--method 1` gives the original simulation, in `rz.py sim` and in `backtest.py`, and every `sim` output names its method in `sim_method`, so baselines made before and after can be told apart and reproduced.
+
+How it was chosen. Twelve liquid names, six in the US and six on B3: NVDA, AAPL, MSFT, SPY, JPM, XOM, PETR4.SA, VALE3.SA, ITUB4.SA, BBDC4.SA, ABEV3.SA, WEGE3.SA. Four years of as-of dates per horizon (the default steps), 4,188 cases with mechanical zones. Two remedies were compared with the original:
+
+1. **Drift in the simulation.** Two kinds: a trend estimate from the main series (mean, median or least-squares slope of the log closes over the last 26 or 52 candles or all of them, shrunk by 0.25, 0.5 or 1), and a fixed rate (2.5%, 5%, 7.5%, 10% or 15% a year).
+2. **A calibration layer after the simulation**, fitted per horizon on backtest cases: a monotone map (Platt-style, or isotonic) of every `reach`, per side or pooled, with `turn` and the scenarios then rederived the way SKILL.md rederives them after an adjustment.
+
+Everything was fitted and chosen on earlier dates and scored on later ones, twice: fit on as-of years 1-2 and score year 3, then fit on years 1-3 and score year 4. A fit case had to have its whole horizon end before the first scored as-of date, so no outcome seen in fitting falls in the scored period. The choice was the one with the lowest mean of the `reach`, `turn` and scenario Brier scores on the fit cases, over the three horizons.
+
+Brier scores on the two scored years together (20,000 paths per case; lower is better):
+
+| Horizon, scored cases | Original (method 1) | Fixed drift 5% (method 2) | Trend drift | Calibration layer | Method 2 + calibration |
+|---|---|---|---|---|---|
+| `1-2w`, 1,194: `reach` / `turn` / scenarios | 0.2041 / 0.1605 / 0.1677 | 0.2033 / 0.1603 / 0.1672 | 0.2059 / 0.1609 / 0.1689 | 0.2025 / 0.1600 / 0.1669 | 0.2026 / 0.1599 / 0.1667 |
+| `1-3m`, 600 | 0.2057 / 0.1653 / 0.1686 | 0.2020 / 0.1637 / 0.1661 | 0.2056 / 0.1652 / 0.1688 | 0.1992 / 0.1626 / 0.1648 | 0.1996 / 0.1626 / 0.1651 |
+| `6-12m`, 288 | 0.2181 / 0.1651 / 0.1688 | 0.1965 / 0.1574 / 0.1546 | 0.2057 / 0.1603 / 0.1612 | 0.1907 / 0.1540 / 0.1505 | 0.1870 / 0.1522 / 0.1482 |
+
+What this says, and why only the fixed drift was shipped:
+
+- **The trend of the candles does not help.** No trend variant beat the fixed rates on the fit years (in the first split the best trend variant was no drift at all), and on the scored years trend drift made `1-2w` worse in 9 of 12 tickers, did nothing at `1-3m`, and helped at `6-12m` by about half as much as the fixed rate. Extrapolating momentum is not the fix for the NVDA breakouts.
+- **A fixed 5% a year helps a little, consistently.** It was the first split's choice (the second chose 10%). Against the original, scored on later dates: better at every horizon, in 10 to 11 of the 12 tickers, and never worse than the original by more than 0.0001 in any split and horizon, for `reach`, `turn` or the scenarios together. A ticker-cluster bootstrap of the difference (90% interval, `reach`): `1-2w` -0.0007 [-0.0011, -0.0004], `1-3m` -0.0037 [-0.0051, -0.0023], `6-12m` -0.0215 [-0.0314, -0.0127]. As a check on a different regime, the same comparison on as-of dates from Nov 2017 to Oct 2021 (the 2018 sell-offs and the 2020 crash) also favoured 5% at every horizon, though it lost on cases made in 2018 at `1-3m` and `6-12m`. 10% did better in the most recent year and worse in 2018, so the smaller rate was kept.
+- **The calibration layer was not shipped.** Pooled it scored slightly better than the drift, but it was not consistent: its `reach` was worse than the original's in two of the six split-and-horizon cells, and adding it on top of method 2 was worse than method 2 alone in three of six. The fitted maps show why: they mostly learn the average rise of these twelve surviving names in 2021-2026 (at `6-12m` they turn a 50% resistance `reach` into about 69% and a 50% support `reach` into about 29%), well beyond the 5% rate, which is a property of the sample more than of the method. A table like that would mislead in a falling market and would break the rule that `sim` reports what its own paths do.
+- **Where neither helps.** At `1-2w` all the differences are small (under 0.002). The individual scenarios at `6-12m` are still worse than always forecasting their own rate, and `breakdown` at `1-3m` too: one horizon-long path per case, a dozen overlapping cases per ticker and year, and two strong years, so the breakouts of trending names are still under-forecast (NVDA `6-12m` breakout: 35% under method 1, 39% under method 2, observed 75%).
+
+The same comparison with the real tool, at 200,000 paths, on the scored window (the last two years of as-of dates; `backtest.py ... --method 1` and `--method 2`; Brier score, then always forecasting the sample's own rate):
+
+| Horizon, as-of dates, cases | `reach` 1 → 2 (base) | `turn` 1 → 2 (base) | Scenarios 1 → 2 (base) | `breakout` 1 → 2 (base) | `breakdown` 1 → 2 (base) |
+|---|---|---|---|---|---|
+| `1-2w`, 29 Oct 2024 to 29 Oct 2026, 1,206 | 0.2042 → 0.2035 (0.249) | 0.1608 → 0.1606 (0.168) | 0.1666 → 0.1662 (0.188) | 0.225 → 0.225 (0.232) | 0.213 → 0.212 (0.215) |
+| `1-3m`, 13 Aug 2024 to 13 Aug 2026, 606 | 0.2021 → 0.1981 (0.248) | 0.1680 → 0.1665 (0.175) | 0.1731 → 0.1705 (0.188) | 0.248 → 0.244 (0.247) | 0.213 → 0.206 (0.203) |
+| `6-12m`, 12 Nov 2023 to 12 Nov 2025, 288 | 0.2197 → 0.1980 (0.248) | 0.1650 → 0.1575 (0.170) | 0.1690 → 0.1546 (0.188) | 0.291 → 0.261 (0.238) | 0.197 → 0.171 (0.152) |
+
+Method 2 was better for 9 of the 12 tickers at `1-2w` (not MSFT, SPY, ABEV3.SA), 11 at `1-3m` (not MSFT) and 11 at `6-12m` (not PETR4.SA). Reliability for `reach` at `6-12m` moved closer to the diagonal (forecasts around 25%, 45% and 74% came true 38%, 52% and 69% of the time under method 1, and 23%, 49% and 75% under method 2); breakdowns are still over-forecast and breakouts under-forecast at the long horizons.
+
+To repeat it: `uv run python backtest.py NVDA AAPL MSFT SPY JPM XOM PETR4.SA VALE3.SA ITUB4.SA BBDC4.SA ABEV3.SA WEGE3.SA --horizon 1-3m --start 2024-08-13 --end 2026-08-13 --method 1` and again with `--method 2` (Yahoo's history may have been revised since). The split-by-date search over drift variants and the calibration layer was a one-off study and is not part of the repository. These are descriptions of one sample in one mostly rising market, not properties of the method.
+
 ## How the probabilities are produced
 
 The helper simulates the future closes of the main series and counts how often each zone is reached or broken.
@@ -829,14 +862,15 @@ The helper simulates the future closes of the main series and counts how often e
 | Ingredient | Choice |
 |---|---|
 | Paths | 200,000, with a fixed random seed so identical inputs give identical baselines |
-| Returns | Student-t with 5 degrees of freedom (fat tails), no drift |
+| Returns | Student-t with 5 degrees of freedom (fat tails), plus a fixed drift: the expected price grows 5% a year (none on intraday candles). The drift is added after the random draws, so the draws are the same as without it |
+| Method version | `sim_method` in the output: 2 since Nov 2026, chosen out of sample ([Backtest of the baseline](#sim-method-2-a-small-drift-chosen-out-of-sample)); 1, the same without drift, stays available with `rz.py sim ... --method 1` |
 | Volatility | Starts at the average of the last 13 and last 26 candles, decays linearly to the average of the last 52 and the whole series |
 | Number of steps | 10 daily closes for `1-2w`, 13 weekly for `1-3m`, 12 monthly for `6-12m`, and the rest of the session for `today` |
 | First step | Shortened when the newest candle is still forming |
 | Scheduled shocks | `drop`: a cash dividend subtracted from the ex-date on. `jump`: an extra move on an event date, such as an options-implied earnings move |
 | Measure | Closes for `close_in_zone`, intra-candle extremes for `touched_once` |
 
-The simulation knows nothing about chart levels. The skill may therefore move a little probability, at most 0.10 in total on each side, typically from a tail into a zone with strong evidence. Every such move is written into `method`.
+The simulation knows nothing about chart levels. The skill may therefore move a little probability, at most 0.10 in total on each side, typically from a tail into a zone with strong evidence. Every such move is written into `method`, which also names the sim method. The skill does not move probability for the general rise of prices (the drift already covers it) or for the recent trend alone (extrapolating it made the backtest worse).
 
 ## Glossary
 
@@ -856,7 +890,8 @@ The simulation knows nothing about chart levels. The skill may therefore move a 
 
 ## Known limits
 
-- **Mostly uncalibrated.** `backtest.py` checks the unadjusted baseline on past dates, with mechanically chosen zones, no events and a handful of tickers ([Backtest of the baseline](#backtest-of-the-baseline)). The probabilities of a real projection, with Claude's zones and adjustments, have not been checked against a meaningful number of outcomes: `score_projections.py` can compare saved projections with later prices, but the history is days old. This is the most important gap.
+- **Mostly uncalibrated.** `backtest.py` checks the unadjusted baseline on past dates, with mechanically chosen zones, no events and twelve tickers ([Backtest of the baseline](#backtest-of-the-baseline)).
+- **One drift for every asset, measured in a rising market.** Method 2's 5% a year was chosen on 2021-2026 data from twelve names that are still listed today; it helped there and in 2017-2021, but lost on cases made in 2018, and it ignores dividend yield (the prices are not dividend-adjusted, so a heavy payer's price drifts less). Long-horizon scenarios are still worse than the base rate, and trending names still get too few breakouts. The probabilities of a real projection, with Claude's zones and adjustments, have not been checked against a meaningful number of outcomes: `score_projections.py` can compare saved projections with later prices, but the history is days old. This is the most important gap.
 - **Scoring a touch on a forming candle.** For `touched_once`, a finished candle does not say whether its high or low came before or after the projection. For the candle that was forming, the scorer counts an extreme only if it is new, otherwise it uses the close, so a touch inside that candle's earlier range can be missed. Everything else is judged exactly as the simulation counts it.
 - **Pre-market and first-of-month projections.** When the newest candle is closed but a new one has not started (a daily projection made before the open, a monthly one before the month's first session), `horizon.first` skips the candle about to begin. The scorer counts it anyway, since it comes after the projection, and notes that there are more closes than scheduled.
 - **Yahoo Finance is unofficial.** Quotes can be delayed about 15 minutes on some exchanges and requests are sometimes rate-limited. One failed request currently ends the run.
@@ -869,10 +904,11 @@ The simulation knows nothing about chart levels. The skill may therefore move a 
 ## Roadmap
 
 1. Extend the backtest (`backtest.py`, which covers the unadjusted baseline): scheduled dividends as `drop` shocks, more tickers and sectors, and scoring the unadjusted simulation next to the skill's adjusted numbers for saved projections.
-2. Add `json` to `--shape`.
-3. Carry event sizes as numbers (dividend amount, implied move) so the skill does not have to search for them.
-4. State `dividend_adjusted` explicitly in the input.
-5. Retry on Yahoo failures and guard against duplicated or malformed rows.
+2. Re-check sim method 2 when a falling market has ended inside the backtest window, and try a drift net of each asset's dividend yield. Revisit a calibration layer only with enough history that its fitted maps stop tracking one period's average rise.
+3. Add `json` to `--shape`.
+4. Carry event sizes as numbers (dividend amount, implied move) so the skill does not have to search for them.
+5. State `dividend_adjusted` explicitly in the input.
+6. Retry on Yahoo failures and guard against duplicated or malformed rows.
 
 ## Project layout
 

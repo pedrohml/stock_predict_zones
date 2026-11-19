@@ -211,6 +211,35 @@ def test_run_is_reproducible(yahoo):
     assert a == b
 
 
+def test_run_takes_the_sim_method(yahoo, rz):
+    """Both sim methods stay runnable, so the comparison that chose the default is reproducible."""
+    yahoo()
+    span = (["AAA"], "1-3m", date(2024, 1, 2), date(2024, 6, 28))
+    old = bt.run(*span, step=20, paths=PATHS, today=TODAY, progress=False, method=1)
+    new = bt.run(*span, step=20, paths=PATHS, today=TODAY, progress=False)
+    assert old["settings"]["sim_method"] == 1 and old["settings"]["drift_per_year"] == 0.0
+    assert new["settings"]["sim_method"] == rz.SIM_METHOD == new["settings"]["default_sim_method"]
+    assert "sim method 1 (drift 0% a year); rz.py sim uses method 2 by default" in bt.render(old)
+    pairs = [(a, b) for a, b in zip(old["records"], new["records"]) if "skipped" not in a]
+    assert pairs and all(a["zones"] == b["zones"] and a["scenario"] == b["scenario"] for a, b in pairs)
+    up = lambda r: sum(e["reach"] for e in r["resistances"])
+    assert sum(up(b) for _, b in pairs) > sum(up(a) for a, _ in pairs)
+    d = bt.input_as_of("AAA", "1-3m", DATA, date.fromisoformat(pairs[0][0]["as_of"]))
+    z = pairs[0][0]["zones"]
+    assert [e["reach"] for e in pairs[0][0]["supports"]] == \
+        [e["reach"] for e in rz.baseline(rz.unpack(d), z, PATHS, 1)["supports"]]
+
+
+def test_cli_method_flag(yahoo, monkeypatch, capsys):
+    yahoo()
+    monkeypatch.setattr(sp, "today_in", lambda tz: TODAY)
+    code = bt.main(["AAA", "--horizon", "1-2w", "--start", "2024-01-01", "--end", "2024-02-01",
+                    "--paths", str(PATHS), "--method", "1", "--json", "--quiet"])
+    assert code == 0 and json.loads(capsys.readouterr().out)["settings"]["sim_method"] == 1
+    with pytest.raises(SystemExit):
+        bt.main(["AAA", "--method", "9"])
+
+
 def test_cases_scored_against_the_later_candles(yahoo, rz):
     yahoo()
     report = bt.run(["AAA"], "1-2w", date(2024, 5, 1), date(2024, 5, 1), paths=PATHS, today=TODAY, progress=False)
