@@ -2,16 +2,17 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "trade_entries.schema.json",
   "title": "Ranked trade setups",
-  "description": "Reply to prompts/trade_entries.md: up to three trade setups derived from one reversal-zones input and projection, ranked by edge per order. A failed precondition is reported as {task, error} instead.",
+  "description": "Reply to prompts/trade_entries.md: up to three trade setups derived from one reversal-zones input and projection, prices from zone edges and odds counted on simulated paths, ranked by edge per order. A failed precondition, or no valid setup, is reported as {task, error} instead.",
   "oneOf": [{ "$ref": "#/$defs/result" }, { "$ref": "#/$defs/failure" }],
 
   "$defs": {
     "result": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["task", "asset", "as_of", "valid_until", "probability", "units", "entries", "confidence", "method", "note"],
+      "required": ["task", "rules", "asset", "as_of", "valid_until", "probability", "units", "entries", "confidence", "method", "note"],
       "properties": {
         "task": { "const": "trade_entries" },
+        "rules": { "const": 2, "description": "Version of the setup rules. 2: odds counted on simulated paths. Files without it were written by version 1 (odds from reach and turn by formulas) and are not checked against version 2." },
         "asset": {
           "type": "object",
           "additionalProperties": false,
@@ -31,7 +32,7 @@
           }
         },
         "valid_until": { "type": "string", "format": "date", "description": "The projection's horizon.last. The setups mean nothing after it." },
-        "probability": { "enum": ["close_in_zone", "touched_once"], "description": "What the projection's probabilities measure." },
+        "probability": { "enum": ["close_in_zone", "touched_once"], "description": "What the projection's reach and turn measure (the input's want.probability). The setups' own odds always count touches of daily highs and lows." },
         "units": {
           "type": "object",
           "additionalProperties": false,
@@ -47,7 +48,7 @@
           "minItems": 1,
           "maxItems": 3,
           "items": { "$ref": "#/$defs/entry" },
-          "description": "Best first. Fewer than three only when fewer are valid."
+          "description": "Best first, by edge.per_order, whatever its sign. Fewer than three only when fewer are valid. When no valid setup has a positive edge, confidence.limits says so."
         },
         "confidence": {
           "type": "object",
@@ -109,9 +110,9 @@
           "additionalProperties": false,
           "required": ["fill", "win_if_filled", "basis"],
           "properties": {
-            "fill": { "$ref": "#/$defs/probability", "description": "Chance the entry order fills within the horizon." },
-            "win_if_filled": { "$ref": "#/$defs/probability", "description": "Ceiling on the chance the target is reached once filled." },
-            "basis": { "type": "string", "minLength": 1, "description": "The projection numbers and the formula behind both odds." }
+            "fill": { "$ref": "#/$defs/probability", "description": "Share of the simulated paths on which the entry order fills by valid_until." },
+            "win_if_filled": { "$ref": "#/$defs/probability", "description": "Share of the filled paths that reach the target before the stop (a day reaching both counts as the stop)." },
+            "basis": { "type": "string", "minLength": 1, "description": "Where the odds come from: the simulated paths, and the shares that end at the target, at the stop, or still open." }
           }
         },
         "edge": {
@@ -119,11 +120,11 @@
           "additionalProperties": false,
           "required": ["if_filled", "per_order"],
           "properties": {
-            "if_filled": { "type": "number", "description": "Expected result in units of risk once filled." },
-            "per_order": { "type": "number", "description": "fill x if_filled. The ranking key." }
+            "if_filled": { "type": "number", "description": "Mean result of the filled simulated paths, in units of risk: -1 at the stop, +ratio at the target, the last close against the entry when still open." },
+            "per_order": { "type": "number", "description": "fill x if_filled: the same, counting orders that never fill as zero. The ranking key." }
           }
         },
-        "quality": { "enum": ["favourable", "marginal", "unfavourable"] },
+        "quality": { "enum": ["favourable", "marginal", "unfavourable"], "description": "From edge.if_filled: favourable at +0.05 or more, unfavourable at -0.05 or less, marginal between." },
         "why": { "type": "string", "minLength": 1 },
         "watch": { "type": "array", "items": { "type": "string" }, "description": "Zones in the way and events that can hurt the setup. May be empty." }
       }

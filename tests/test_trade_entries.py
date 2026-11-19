@@ -3,6 +3,9 @@ import copy
 import json
 from pathlib import Path
 
+import math
+
+import numpy as np
 import pytest
 
 import trade_entries
@@ -44,37 +47,40 @@ def test_the_template_example_passes_its_own_check(example):
 
 
 def test_the_template_example_is_the_reference_pick(example):
-    picked = trade_entries.pick(trade_entries.setups(example[1]))
+    picked = trade_entries.pick(trade_entries.setups(*example))
     assert [entry["id"] for entry in template_example()["entries"]] == [item["id"] for item in picked]
     assert template_example()["units"] == trade_entries.units(example[1])
+    assert template_example()["rules"] == trade_entries.RULES
 
 
 # ---- the rules --------------------------------------------------------------------
 
 def test_setups_follow_the_rules(example):
-    proj = example[1]
-    found = trade_entries.setups(proj)
-    assert found == sorted(found, key=lambda item: (-item["per_order"], -item["fill"]))
+    found = trade_entries.setups(*example)
+    assert found == sorted(found, key=lambda item: (-item["per_order"], -item["fill"], item["id"]))
     for item in found:
         if item["side"] == "long":
             assert item["stop"] < item["entry"] < item["target"]
         else:
             assert item["target"] < item["entry"] < item["stop"]
         assert item["ratio"] >= 0.5 and 0 <= item["win_if_filled"] <= 1 and 0 <= item["fill"] <= 1
-        assert item["per_order"] == pytest.approx(item["fill"] * item["if_filled"], abs=0.006)
+        assert item["per_order"] == trade_entries.half_up(item["fill"] * item["if_filled"])
+        assert item["quality"] == trade_entries.quality(item["if_filled"])
+        d = item["detail"]
+        assert item["win_if_filled"] + d["loss"] + d["open"] == pytest.approx(1, abs=0.006)
     # continuation never starts from the last zone on a side
     assert not {"short-S3-continuation", "long-R3-continuation"} & {item["id"] for item in found}
 
 
-def test_price_inside_a_zone_gives_a_market_order(projection_data):
-    by_id = {item["id"]: item for item in trade_entries.setups(projection_data)}
+def test_price_inside_a_zone_gives_a_market_order(input_data, projection_data):
+    by_id = {item["id"]: item for item in trade_entries.setups(input_data, projection_data)}
     inside = by_id["long-S1-reversal"]          # the fixture's price 44.06 sits in S1 43.2-44.6
     assert (inside["order"], inside["entry"], inside["fill"]) == ("market", 44.06, 1.0)
 
 
-def test_pick_keeps_three_distinct_entries_on_both_sides(example, projection_data):
-    for proj in (example[1], projection_data):
-        picked = trade_entries.pick(trade_entries.setups(proj))
+def test_pick_keeps_three_distinct_entries_on_both_sides(example, input_data, projection_data):
+    for source, proj in (example, (input_data, projection_data)):
+        picked = trade_entries.pick(trade_entries.setups(source, proj))
         assert len(picked) == 3 and len({item["entry"] for item in picked}) == 3
         assert len({item["side"] for item in picked}) == 2
 
@@ -166,14 +172,44 @@ def test_build_reproduces_the_prompt_example(example):
     reply = trade_entries.build(source, proj)
     first = reply["entries"][0]
     assert (first["id"], first["entry"]["anchor"], first["stop"]["anchor"], first["target"]["anchor"]) == (
-        "short-S1-continuation", "S1 far edge", "S1 near edge 42.52 + buffer 0.70", "S2 far edge")
-    assert first["odds"]["basis"] == "fill = reach(S2) 0.67; win = reach(S3) 0.39 / reach(S2) 0.67"
+        "long-R1-continuation", "R1 far edge", "R1 near edge 43.23 − buffer 0.70", "R2 far edge")
+    assert first["odds"]["basis"] == template_example()["entries"][0]["odds"]["basis"]
     second = reply["entries"][1]
-    assert second["stop"]["anchor"] == "S2 far edge 37.40 − buffer 0.70"
-    assert second["watch"][0] == "S1 40.65–42.52 lies between entry and target"
+    assert second["stop"]["anchor"] == "S1 near edge 42.52 + buffer 0.70"
     assert all(any("2026-12-21" in line for line in entry["watch"]) for entry in reply["entries"])
-    assert "8 setups were valid, 3 kept" in reply["method"]
+    assert "8 setups were valid, 3 kept" in reply["method"] and "20,000 simulated paths" in reply["method"]
+    for got, shown in zip(reply["entries"], template_example()["entries"]):
+        assert (got["odds"]["fill"], got["odds"]["win_if_filled"], got["edge"]) == (
+            shown["odds"]["fill"], shown["odds"]["win_if_filled"], shown["edge"])
     assert trade_entries.problems(source, proj, reply) == []
+
+
+def test_a_reversal_names_the_zones_in_the_way(example):
+    by_id = {item["id"]: item for item in trade_entries.setups(*example)}
+    t = trade_entries.TEXT["en"]
+    entry = trade_entries.entry_of(1, by_id["long-S2-reversal"], example[1], t)
+    assert entry["stop"]["anchor"] == "S2 far edge 37.40 − buffer 0.70"
+    assert entry["watch"][0] == "S1 40.65–42.52 lies between entry and target"
+
+
+def test_no_positive_edge_is_said_plainly(input_data, projection_data, monkeypatch):
+    real = trade_entries.odds
+    monkeypatch.setattr(trade_entries, "odds", lambda *args: {**real(*args), "if_filled": -0.3})
+    reply = trade_entries.build(input_data, projection_data)
+    assert reply["entries"] and all(entry["quality"] == "unfavourable" for entry in reply["entries"])
+    assert trade_entries.TEXT["en"]["no_edge"] in reply["confidence"]["limits"]
+    assert trade_entries.problems(input_data, projection_data, reply) == []
+    monkeypatch.setattr(trade_entries, "odds", real)
+    reply = trade_entries.build(input_data, projection_data)
+    has_positive = any(item["per_order"] > 0 for item in trade_entries.setups(input_data, projection_data))
+    assert (trade_entries.TEXT["en"]["no_edge"] in reply["confidence"]["limits"]) == (not has_positive)
+
+
+def test_an_entries_file_of_the_earlier_rules_is_named_as_such(input_data, projection_data, entries_data):
+    old = copy.deepcopy(entries_data)
+    del old["rules"]
+    bad = trade_entries.problems(input_data, projection_data, old)
+    assert len(bad) == 1 and "earlier version of the rules (rules 1" in bad[0] and "zones entries" in bad[0]
 
 
 def test_build_reports_why_nothing_can_be_built(input_data, projection_data):
@@ -226,7 +262,7 @@ def test_a_price_around_four_cents_builds_and_checks(example):
     for small, large in zip(reply["entries"], big["entries"]):
         assert small["payoff"]["ratio"] == large["payoff"]["ratio"]
         assert small["stop"]["price"] == pytest.approx(large["stop"]["price"] / 1000, abs=1e-9)
-    assert reply["entries"][0]["stop"]["anchor"] == "S1 near edge 0.04252 + buffer 0.00070"
+    assert reply["entries"][0]["stop"]["anchor"] == "R1 near edge 0.04323 − buffer 0.00070"
 
 
 def test_the_checker_is_as_strict_on_small_prices(example):
@@ -240,7 +276,7 @@ def test_a_risk_that_rounds_to_zero_is_no_setup(example):
     """Rows at two decimals cannot describe a 0.04 asset: zones and buffer collapse, every
     setup is discarded, and the error reply says so instead of dividing by zero."""
     source, proj = scaled(example, 0.001, 2)
-    assert trade_entries.setups(proj, trade_entries.places(source)) == []
+    assert trade_entries.setups(source, proj) == []
     reply = trade_entries.build(source, proj)
     assert reply == {"task": "trade_entries", "error": "no setup passes the rules for this projection"}
     assert trade_entries.problems(source, proj, reply) == []
@@ -251,7 +287,7 @@ def test_zone_edges_finer_than_the_rows_never_divide_by_zero(example):
     support = proj["supports"][1]
     support["zone"] = [round(support["zone"][1] - 0.004, 3), support["zone"][1]]   # finer than the rows
     proj["structure"]["volatility"]["assumed"] = [0.0001, 0.0001]                  # buffer 0.00
-    found = trade_entries.setups(proj, trade_entries.places(source))
+    found = trade_entries.setups(source, proj)
     assert all(item["risk"] > 0 for item in found)
     assert "long-S2-reversal" not in {item["id"] for item in found}
 
@@ -264,5 +300,103 @@ def test_expected_command_takes_the_input_for_the_precision(tmp_path, example, c
         paths[-1].write_text(json.dumps(doc), encoding="utf-8")
     assert trade_entries.main(["expected", str(paths[0]), str(paths[1])]) == 0
     assert json.loads(capsys.readouterr().out.splitlines()[0]) == {"move": 0.00278, "buffer": 0.0007, "range": 0.00894}
-    assert trade_entries.main(["expected", str(paths[1])]) == 0          # without the input: two decimals
-    assert json.loads(capsys.readouterr().out.splitlines()[0])["move"] == 0.0
+    assert trade_entries.main(["expected", str(paths[1])]) == 2          # the input is needed for the paths
+
+
+# ---- the path estimate: paths() and odds() -------------------------------------------
+
+def days(highs, lows, last):
+    """A hand-made simulation for odds(): one row per path, prices (not logs) per day."""
+    return {"high": np.log(np.array(highs, float)), "low": np.log(np.array(lows, float)),
+            "last": np.array(last, float), "steps": len(highs[0]), "method": 2}
+
+
+def test_odds_on_known_paths():
+    """A long limit at 100, stop 95, target 110 (ratio 2), on four paths of three days."""
+    sim = days(highs=[[104, 103, 111],    # fills on day 1, target on day 3: +2
+                      [104, 101, 102],    # fills on day 1, stop on day 2: -1
+                      [106, 107, 108],    # never fills: 0
+                      [101, 103, 104]],   # fills on day 1, still open, last close 103: +0.6
+               lows=[[99, 98, 104],
+                     [99, 94, 97],
+                     [101, 102, 103],
+                     [99.5, 99, 101]],
+               last=[110, 96, 107, 103])
+    got = trade_entries.odds(sim, "long", "limit", 100, 95, 110, 2.0)
+    assert got["fill"] == 0.75
+    assert got["win"] == pytest.approx(1 / 3) and got["loss"] == pytest.approx(1 / 3)
+    assert got["open"] == pytest.approx(1 / 3)
+    assert got["if_filled"] == pytest.approx((2 - 1 + 0.6) / 3)
+
+
+def test_odds_count_a_day_with_both_levels_as_the_stop():
+    """Pessimistic, as backtest_entries.walk() by default: stop and target on one day is a loss,
+    and so is a stop touched on the fill day; a stop order may reach its target that same day."""
+    both = days(highs=[[104, 111]], lows=[[99, 94]], last=[100])
+    assert trade_entries.odds(both, "long", "limit", 100, 95, 110, 2.0)["loss"] == 1.0
+    fill_day = days(highs=[[104, 120]], lows=[[94, 101]], last=[115])
+    assert trade_entries.odds(fill_day, "long", "limit", 100, 95, 110, 2.0)["loss"] == 1.0
+    breakout = days(highs=[[111, 112]], lows=[[101, 108]], last=[110])       # long stop at 105, 110 that day
+    assert trade_entries.odds(breakout, "long", "stop", 105, 100, 110, 1.0)["win"] == 1.0
+    limit_same_day = days(highs=[[111, 109]], lows=[[99, 101]], last=[108])  # a limit fill does not count it
+    assert trade_entries.odds(limit_same_day, "long", "limit", 100, 95, 110, 2.0)["win"] == 0.0
+
+
+def test_odds_match_the_gamblers_ruin_on_brownian_paths():
+    """Driftless Brownian paths in log price, fine steps: from the entry, the chance of reaching
+    +b before -a is a / (a + b). A short at the same levels wins the other way round."""
+    rng = np.random.default_rng(1)
+    logs = np.log(100) + np.cumsum(rng.standard_normal((5_000, 1_500)) * 0.004, axis=1)
+    sim = {"high": logs, "low": logs, "last": np.exp(logs[:, -1]), "steps": 1_500, "method": 2}
+    a, b = math.log(100 / 96), math.log(108 / 100)
+    got = trade_entries.odds(sim, "long", "market", 100, 96, 108, 2.0)
+    assert got["fill"] == 1.0 and got["open"] < 0.03
+    assert got["win"] / (got["win"] + got["loss"]) == pytest.approx(a / (a + b), abs=0.025)
+    short = trade_entries.odds(sim, "short", "market", 100, 108, 96, 0.5)
+    assert short["win"] / (short["win"] + short["loss"]) == pytest.approx(b / (a + b), abs=0.025)
+
+
+def test_paths_are_reproducible_and_leave_walk_alone(example, rz):
+    source = example[0]
+    one, two = trade_entries.paths(source), trade_entries.paths(source)
+    assert all(np.array_equal(one[key], two[key]) for key in ("high", "low", "last"))
+    assert trade_entries.setups(*example) == trade_entries.setups(*example)
+    # the paths are the first PATHS rows of the baseline's own walk(): same seed, same draws
+    d, main, t, h, l, c = rz.unpack(source)
+    drift = rz.drift_of(main)
+    small = rz.walk(d, main, t, c, {}, trade_entries.PATHS, drift)[0]
+    large = rz.walk(d, main, t, c, {}, 3 * trade_entries.PATHS, drift)[0]
+    assert np.array_equal(small, large[:trade_entries.PATHS])
+    assert np.allclose(one["last"], small[:, -1])       # the bridge keeps walk()'s closes exactly
+    assert (one["high"] >= one["low"]).all()
+    # weekly closes become trading days: five a week, the forming week its share
+    assert one["steps"] >= 5 * (example[1]["horizon"]["closes"] - 1) + 1
+
+
+def test_wider_daily_highs_and_lows_only_add_touches(example, monkeypatch):
+    """SPREAD 0 counts only the bridge's daily points; a wider day can only fill more often."""
+    wide = {item["id"]: item["fill"] for item in trade_entries.setups(*example)}
+    monkeypatch.setattr(trade_entries, "SPREAD", 0.0)
+    narrow = {item["id"]: item["fill"] for item in trade_entries.setups(*example)}
+    assert all(wide[key] >= narrow[key] for key in narrow if key in wide)
+    assert any(wide[key] > narrow[key] for key in narrow if key in wide)
+
+
+def test_prompt_carries_the_computed_setups(example):
+    source, proj = example
+    prompt = trade_entries.fill(json.dumps(source), json.dumps(proj))
+    listed = prompt[prompt.index("<setups>\n") + 9:prompt.index("\n</setups>")]
+    rows = json.loads(listed)
+    assert [row["id"] for row in rows] == [item["id"] for item in trade_entries.setups(source, proj)]
+    assert all("win_if_filled" in row and "loss" in row["detail"] for row in rows)
+    assert "{{" not in prompt
+
+
+def test_an_order_that_almost_never_fills_is_no_setup(input_data, projection_data, monkeypatch):
+    """Its edge per order rounds to zero and would rank above every negative one."""
+    real = trade_entries.odds
+    monkeypatch.setattr(trade_entries, "odds", lambda *args: {**real(*args), "fill": 0.04})
+    assert trade_entries.setups(input_data, projection_data) == []
+    reply = trade_entries.build(input_data, projection_data)
+    assert reply == {"task": "trade_entries", "error": trade_entries.NO_SETUP}
+    assert trade_entries.problems(input_data, projection_data, reply) == []

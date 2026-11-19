@@ -62,9 +62,10 @@ the input asks for none (a research option typed or set in a config file gets
 one warning). `engine = "mechanical"` in a config file makes it the default.
 
 Step 5 writes three hypothetical setups (entry, stop, target), ranked best
-first. trade_entries.py computes them from the projection by fixed rules, so it
-makes no Claude Code call. With --entries-by-claude it sends
-prompts/trade_entries.md, filled with the two files, to `claude -p` with no
+first. trade_entries.py computes them by fixed rules (prices from the zone edges,
+odds counted on the simulation's paths), so it makes no Claude Code call. With
+--entries-by-claude it sends prompts/trade_entries.md, filled with the two files
+and the computed candidates, to `claude -p` with no
 tools at all, so that Claude writes the sentences; every number of that reply is
 checked against the computed one. Pass --no-entries to skip the step.
 

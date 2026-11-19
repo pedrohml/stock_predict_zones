@@ -4,32 +4,53 @@
     python trade_entries.py build  INPUT.json PROJECTION.json [-o FILE]  -> the setups as JSON, no Claude needed
     python trade_entries.py prompt INPUT.json PROJECTION.json            -> the filled prompt, on stdout
     python trade_entries.py check  INPUT.json PROJECTION.json REPLY.json -> OK, or what is wrong (exit 1)
-    python trade_entries.py expected [INPUT.json] PROJECTION.json        -> every valid setup, best first
+    python trade_entries.py expected INPUT.json PROJECTION.json          -> every valid setup, best first
 
 The prompt is prompts/trade_entries.md and the reply's shape is
 prompts/trade_entries.schema.json. Every number in a reply follows from the
-projection by the template's rules, so `build` computes them here and `check`
-recomputes them and compares. `build` also writes the sentences around the
-numbers from fixed wording (TEXT), which is why it needs no language model; the
-prompt is for when Claude should write them instead. The setups are
-hypothetical, for study: not a recommendation.
+input and the projection by the template's rules, so `build` computes them here
+and `check` recomputes them and compares. Prices come from zone edges; `fill`,
+`win_if_filled` and the edge are counted on simulated price paths (paths(),
+odds()): rz.walk() with its fixed seed, refined to daily steps by a Brownian
+bridge with a fixed seed of its own, so the same files always give the same
+numbers. `build` also writes the sentences around the numbers from fixed wording
+(TEXT), which is why it needs no language model; the prompt is for when Claude
+should write them instead, and it carries the computed candidates. The setups
+are hypothetical, for study: not a recommendation.
 """
+import importlib.util
 import json
 import math
 import sys
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+import numpy as np
+
 ROOT = Path(__file__).resolve().parent
 TEMPLATE = ROOT / "prompts" / "trade_entries.md"
 SCHEMA = ROOT / "prompts" / "trade_entries.schema.json"
+RZ_PATH = ROOT / ".claude" / "skills" / "reversal-zones-projection" / "scripts" / "rz.py"
+RULES = 2   # version of the rules; 1 (until 19 Nov 2026) took fill and win from reach and turn by formulas
+
+# The path estimate (paths(), odds()). A change to any of these is a new RULES number: an
+# entries file is checked by recomputing it.
+PATHS = 20_000       # the first 20,000 of rz.walk()'s paths: the same draws as a 200,000-path sim's first rows
+BRIDGE_SEED = 8      # the days between two closes and each day's high and low; walk() keeps its seed 7
+DAYS = {"1D": 1, "1W": 5, "1M": 21}   # trading days per candle of the close basis; intraday: one step
+# Each day's high and low are Brownian-bridge extremes with SPREAD x the simulation's volatility.
+# 1 would be the simulation's own volatility; 0.65 was chosen on the first two years of as-of
+# dates of the setup backtest (README, "Backtest of the trade setups").
+SPREAD = 0.65
+EDGE_BAND = 0.05     # quality: favourable from +0.05 R per fill, unfavourable from -0.05 down
+MIN_FILL = 0.05      # a setup whose order fills on fewer paths says nothing (its edge rounds to zero and would rank first)
 TOLERANCE = 0.011        # one hundredth, for a rounding that fell the other way
 RANK_TOLERANCE = 0.021   # two setups this close in edge.per_order may swap places
 MIN_PLACES, MAX_PLACES = 2, 8   # prices are rounded to the candle rows' precision, within these
 
 
 def half_up(value, digits=2):
-    return round(value + 1e-9, digits)
+    return round(value + 1e-9, digits) + 0.0   # + 0.0: never -0.0
 
 
 def places(source):
@@ -55,12 +76,32 @@ def price_tolerance(digits):
     return TOLERANCE * 10 ** (MIN_PLACES - digits)
 
 
+def candidates(source, proj):
+    """Every valid setup with its computed numbers, best first, as the prompt carries them: what
+    Claude cannot compute without tools (the simulated paths). [] when no setup can be built."""
+    if precondition(source, proj):
+        return []
+    rows = []
+    for item in setups(source, proj):
+        detail = {key: value for key, value in item["detail"].items() if key not in ("paths", "method")}
+        detail.update(loss=half_up(detail["loss"]), open=half_up(detail["open"]))
+        rows.append({**{key: value for key, value in item.items() if key != "detail"}, "detail": detail})
+    return rows
+
+
 def fill(input_text, projection_text):
-    """The prompt to send: the template below its opening comment, with both files in place."""
+    """The prompt to send: the template below its opening comment, with both files and the
+    computed candidates (candidates()) in place."""
     template = TEMPLATE.read_text(encoding="utf-8")
     template = template[template.index("-->") + 3:].lstrip()
+    try:
+        found = candidates(json.loads(input_text), json.loads(projection_text))
+    except (ValueError, KeyError, TypeError, IndexError):
+        found = []
+    listed = "[\n" + ",\n".join("  " + json.dumps(row, ensure_ascii=False) for row in found) + "\n]" if found else "[]"
     return (template.replace("{{INPUT_JSON}}", input_text.strip())
-                    .replace("{{PROJECTION_JSON}}", projection_text.strip()))
+                    .replace("{{PROJECTION_JSON}}", projection_text.strip())
+                    .replace("{{SETUPS_JSON}}", listed))
 
 
 def bounded(zones):
@@ -86,18 +127,123 @@ def units(proj, digits=MIN_PLACES):
             "range": half_up(price * sum(vol) / 2 * math.sqrt(proj["horizon"]["closes"]), digits)}
 
 
-def travel(distance, reach_of_horizon):
-    share = distance / reach_of_horizon
-    return 0.9 if share <= 0.5 else 0.7 if share <= 1.0 else 0.5 if share <= 1.5 else 0.3
+_RZ = None
 
 
-def setups(proj, digits=MIN_PLACES):
-    """Every valid setup the template's rules allow, ranked by edge per order, then fill.
-    `digits` is the precision of the candle rows (places() of the input)."""
+def rz():
+    """The skill's helper (rz.py), which holds walk(); loaded once, by path."""
+    global _RZ
+    if _RZ is None:
+        spec = importlib.util.spec_from_file_location("rz", RZ_PATH)
+        _RZ = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_RZ)
+    return _RZ
+
+
+def paths(source):
+    """The simulated days the setups are played on -> {"high", "low", "last", "steps", "method"}.
+
+    1. rz.walk() on the input, as `rz.py sim` runs it (default sim method and its drift, seed 7,
+       no shocks), PATHS paths: closes of the main series.
+    2. Between two closes, daily points on a Brownian bridge in log price with the simulation's
+       own volatility for that candle (DAYS per candle; the forming candle gets its share). The
+       closes stay exactly as walk() made them; the bridge only fills in the days.
+    3. Each day's high and low: the extremes of a Brownian bridge between its two points, drawn
+       by the exact inverse of their distribution, with SPREAD x the day's volatility. They count
+       the touches inside a candle that closes alone would miss.
+    Steps 2 and 3 draw from their own generator (BRIDGE_SEED), so walk()'s draws are untouched
+    and the same input always gives the same days."""
+    lib = rz()
+    d, main, t, h, l, c = lib.unpack(source)
+    method = lib.sim_method(None)
+    walked, dates, frac, v, sub = lib.walk(d, main, t, c, {}, PATHS, lib.drift_of(main, method))
+    n, start_price = len(dates), math.log(d["now"]["price"])
+    sigma = np.repeat(np.linspace(v["assumed"][0], v["assumed"][1], n), sub) / np.sqrt(sub)   # as walk()
+    sigma[:sub] *= np.sqrt(frac)
+    per = DAYS.get(main["candles"], 1) / sub
+    counts = [max(1, round(per * (frac if i < sub else 1.0))) for i in range(n * sub)]
+    rng = np.random.default_rng(BRIDGE_SEED)
+    closes = np.log(walked)
+    before = np.full(PATHS, start_price)
+    points, scale = [], []
+    for i, m in enumerate(counts):
+        day = sigma[i] / math.sqrt(m)
+        if m > 1:
+            noise = np.cumsum(rng.standard_normal((PATHS, m)) * day, axis=1)
+            share = np.arange(1, m + 1) / m
+            points.append(before[:, None] + noise - share * noise[:, -1:]
+                          + share * (closes[:, i] - before)[:, None])
+        else:
+            points.append(closes[:, i:i + 1])
+        scale += [day] * m
+        before = closes[:, i]
+    end = np.concatenate(points, axis=1)
+    start = np.concatenate([np.full((PATHS, 1), start_price), end[:, :-1]], axis=1)
+    twice = 2 * (SPREAD * np.array(scale)) ** 2
+    middle, gap = start + end, (end - start) ** 2
+    high = (middle + np.sqrt(gap - twice * np.log(rng.random(end.shape)))) / 2
+    low = (middle - np.sqrt(gap - twice * np.log(rng.random(end.shape)))) / 2
+    return {"high": high, "low": low, "last": np.exp(end[:, -1]), "steps": end.shape[1], "method": method}
+
+
+def first(mask, steps):
+    """Index of the first True of each row, or `steps` when there is none."""
+    return np.where(mask.any(axis=1), mask.argmax(axis=1), steps)
+
+
+def odds(sim, side, order, entry, stop, target, ratio):
+    """One setup played on every simulated path (paths()) by the rules of backtest_entries.walk()
+    under its default, pessimistic ordering -> {"fill", "win", "loss", "open", "if_filled"}:
+    the share of paths that fill, the shares of the filled ones that end at the target, at the
+    stop or still open at valid_until, and the mean R of the filled ones.
+
+    - A market order fills before the first day; a limit or stop order on the first day whose
+      low (falling orders) or high (rising orders) reaches the entry.
+    - Then the stop and the target, day by day. On the fill day the stop counts if the day
+      reaches it (it may have come first: counted against the setup), the target only for a stop
+      order, whose target lies beyond the entry in the direction of the fill. A day that reaches
+      both counts as the stop.
+    - R: -1 at the stop, +ratio at the target, the last close against the entry when still open,
+      0 when never filled."""
+    long, steps = side == "long", sim["steps"]
+    high, low = sim["high"], sim["low"]
+    days = np.arange(steps)[None, :]
+    if order == "market":
+        filled_on = np.full(len(high), -1)
+    else:
+        falling = (order == "limit") == long
+        filled_on = first(low <= math.log(entry) if falling else high >= math.log(entry), steps)
+    filled = filled_on < steps
+    on = filled_on[:, None]
+    stop_hit = (low <= math.log(stop)) if long else (high >= math.log(stop))
+    target_hit = (high >= math.log(target)) if long else (low <= math.log(target))
+    stopped = first(stop_hit & (days >= on), steps)
+    reached = first(target_hit & ((days > on) | ((days == on) & (order == "stop"))), steps)
+    lost = filled & (stopped < steps) & (stopped <= reached)
+    won = filled & ~lost & (reached < steps)
+    still = filled & ~lost & ~won
+    held = ((sim["last"] - entry) if long else (entry - sim["last"])) / abs(entry - stop)
+    r = np.where(lost, -1.0, np.where(won, ratio, np.where(still, held, 0.0)))
+    count = int(filled.sum())
+    share = lambda mask: float(mask.sum()) / count if count else 0.0
+    return {"fill": float(filled.mean()), "win": share(won), "loss": share(lost), "open": share(still),
+            "if_filled": float(r[filled].mean()) if count else 0.0}
+
+
+def quality(if_filled):
+    """favourable, marginal or unfavourable, from the edge per fill and EDGE_BAND."""
+    return "favourable" if if_filled >= EDGE_BAND else "unfavourable" if if_filled <= -EDGE_BAND else "marginal"
+
+
+def setups(source, proj, sim=None):
+    """Every valid setup the template's rules allow, ranked by edge per order, then fill, then id.
+    Prices come from the projection's zone edges, rounded to the input's rows (places()); the
+    odds from the simulated paths of the input (paths(), computed here unless `sim` is given)."""
+    digits = places(source)
     price, unit = proj["as_of"]["price"], units(proj, digits)
-    buffer, found = unit["buffer"], []
+    buffer, found, played = unit["buffer"], [], {"sim": sim}
 
-    def add(side, kind, zone_id, order, entry, stop, target, fill_p, win, detail):
+    def add(side, kind, zone_id, order, entry, stop, target, detail):
         ordered = stop < entry < target if side == "long" else target < entry < stop
         if not ordered:
             return
@@ -107,15 +253,21 @@ def setups(proj, digits=MIN_PLACES):
         ratio = half_up(reward / risk)
         if ratio < 0.5:
             return
-        fill_p, win = half_up(fill_p), half_up(win)
-        if_filled = half_up(win * ratio - (1 - win))
+        stop = half_up(stop, digits)
+        if played["sim"] is None:
+            played["sim"] = paths(source)
+        sim_now = played["sim"]
+        result = odds(sim_now, side, order, entry, stop, target, ratio)
+        fill_p, win, if_filled = half_up(result["fill"]), half_up(result["win"]), half_up(result["if_filled"])
+        if fill_p < MIN_FILL:
+            return
         found.append({
             "id": f"{side}-{zone_id}-{kind}", "side": side, "setup": kind, "order": order,
-            "entry": entry, "stop": half_up(stop, digits), "target": target,
+            "entry": entry, "stop": stop, "target": target,
             "risk": risk, "reward": reward, "ratio": ratio, "fill": fill_p, "win_if_filled": win,
-            "if_filled": if_filled, "per_order": half_up(fill_p * if_filled),
-            "quality": "favourable" if if_filled >= 0.20 else "marginal" if if_filled > 0 else "unfavourable",
-            "detail": dict(detail, zone=zone_id, buffer=buffer)})
+            "if_filled": if_filled, "per_order": half_up(fill_p * if_filled), "quality": quality(if_filled),
+            "detail": dict(detail, zone=zone_id, buffer=buffer, loss=result["loss"], open=result["open"],
+                           paths=PATHS, method=sim_now["method"])})
 
     for listed, opposite, support in ((proj["supports"], proj["resistances"], True),
                                       (proj["resistances"], proj["supports"], False)):
@@ -126,31 +278,23 @@ def setups(proj, digits=MIN_PLACES):
 
             # reversal: the zone holds; long at a support, short at a resistance
             inside = low <= price <= high
-            entry, order, fill_p = (price, "market", 1.0) if inside else (near, "limit", zone["reach"])
+            entry, order = (price, "market") if inside else (near, "limit")
             if inside or (entry <= price if support else entry >= price):
-                target = first_opposite[0] if support else first_opposite[1]
-                hold = zone["turn"] / zone["reach"] if zone["reach"] else 0.0
-                distance = abs(target - entry)
                 add("long" if support else "short", "reversal", zone["id"], order, entry,
-                    far - buffer if support else far + buffer, target, fill_p,
-                    hold * travel(distance, unit["range"]),
-                    {"edge": far, "target_zone": bounded(opposite)[0]["id"], "reach": zone["reach"],
-                     "turn": zone["turn"], "hold": hold, "travel": travel(distance, unit["range"]),
-                     "share": distance / unit["range"],
+                    far - buffer if support else far + buffer,
+                    first_opposite[0] if support else first_opposite[1],
+                    {"edge": far, "target_zone": bounded(opposite)[0]["id"],
                      "between": [[z["id"], *z["zone"]] for z in zones[:index]]})
 
-            # continuation: the zone breaks; not for the last zone on a side
-            if index + 1 < len(zones) and index + 2 < len(listed) and (far < price if support else far > price):
-                following, after = zones[index + 1], listed[index + 2]
-                if following["reach"]:
-                    add("short" if support else "long", "continuation", zone["id"], "stop", far,
-                        near + buffer if support else near - buffer,
-                        following["zone"][0] if support else following["zone"][1],
-                        following["reach"], after["reach"] / following["reach"],
-                        {"edge": near, "next": following["id"], "after": after["id"],
-                         "reach_next": following["reach"], "reach_after": after["reach"]})
+            # continuation: the zone breaks; not for the last zone with two edges on a side
+            if index + 1 < len(zones) and (far < price if support else far > price):
+                following = zones[index + 1]
+                add("short" if support else "long", "continuation", zone["id"], "stop", far,
+                    near + buffer if support else near - buffer,
+                    following["zone"][0] if support else following["zone"][1],
+                    {"edge": near, "next": following["id"]})
 
-    found.sort(key=lambda item: (-item["per_order"], -item["fill"]))
+    found.sort(key=lambda item: (-item["per_order"], -item["fill"], item["id"]))
     return found
 
 
@@ -167,7 +311,7 @@ def pick(found):
                       and all(item["entry"] != kept["entry"] for kept in chosen[:2])), None)
         if other:
             chosen[2] = other
-            chosen.sort(key=lambda item: (-item["per_order"], -item["fill"]))
+            chosen.sort(key=lambda item: (-item["per_order"], -item["fill"], item["id"]))
     return chosen
 
 
@@ -178,43 +322,41 @@ TEXT = {
         "near": "{zone} near edge", "far": "{zone} far edge", "price": "current price, inside {zone}",
         "plus": "{zone} {which} edge {edge} + buffer {buffer}", "minus": "{zone} {which} edge {edge} − buffer {buffer}",
         "which": {"near": "near", "far": "far"},
-        "basis_reversal": "fill = reach({zone}) {reach}; win = turn({zone}) {turn} / reach({zone}) {reach} × travel {travel} (distance {share} of range)",
-        "basis_market": "fill = 1.00, a market order inside {zone}; win = turn({zone}) {turn} / reach({zone}) {reach} × travel {travel} (distance {share} of range)",
-        "basis_continuation": "fill = reach({next}) {reach_next}; win = reach({after}) {reach_after} / reach({next}) {reach_next}",
-        "why_reversal": "{zone} holds in {hold} of the paths that reach it, and the reward to {target_zone} is {ratio} times the risk.",
-        "why_continuation": "{zone} breaks in {fill} of the paths, and once it does, {next} breaks too in {win} of them.",
+        "basis": "{paths} simulated paths: the order fills in {fill}; of the fills, {win} reach the target first, {loss} the stop, {open} are still open at valid_until",
+        "basis_market": "{paths} simulated paths: a market order inside {zone} fills at once; {win} reach the target first, {loss} the stop, {open} are still open at valid_until",
+        "why_reversal": "If {zone} holds and the price turns back to {target_zone}, the reward is {ratio} times the risk; on the simulated paths the target comes before the stop in {win} of the fills.",
+        "why_continuation": "If {zone} breaks and the price carries on to {next}, the reward is {ratio} times the risk; on the simulated paths the target comes before the stop in {win} of the fills.",
         "between": "{zone} {low}–{high} lies between entry and target",
         "dividend": {"long": "{date} {what}: the drop works against a long and can jump the stop",
                      "short": "{date} {what}: a short pays the dividend, and the drop can fill the order on a gap"},
         "event": "{date} {what}: a price gap can jump the stop",
-        "ceiling": "win_if_filled is a ceiling: the projection does not know whether the stop is touched before the target",
-        "closes": "probabilities are for {basis} closes; stops and targets trigger inside the candle",
-        "touches": "probabilities count a touch inside a {basis} candle, in any order within it",
-        "uncalibrated": "the projection's probabilities are not backtested, and its own confidence is {level}",
+        "paths": "fill, win_if_filled and the edge are counted on random price paths with the projection's volatility and drift; the paths know nothing of the zones, so the odds describe the setup's distances, not an effect of a zone holding or breaking",
+        "touch": "fills, stops and targets are judged on simulated daily highs and lows, and a day that reaches both the stop and the target counts as the stop; the projection's own reach and turn are for {basis} closes",
+        "calibration": "a backtest of these rules on the mechanical engine compared the odds with outcomes on average over many past dates, before costs, not for this setup; the projection's own confidence is {level}",
+        "no_edge": "no setup has a positive edge per order on the simulated paths: each of them loses on average, before costs",
         "fewer": "only {n} setup(s) pass the rules for this projection",
-        "method": "Setups built from zone edges only; fill and win taken from the projection's reach and turn; ranked by edge per order. {valid} setups were valid, {kept} kept. Written by trade_entries.py, without a language model.",
-        "note": "Hypothetical setups for study, derived mechanically from uncalibrated probabilities. Not a recommendation to buy or sell.",
+        "method": "Prices from zone edges only; fill, win and edge counted on {paths} simulated paths of the projection's simulation (sim method {sim}), refined to daily highs and lows; ranked by edge per order. {valid} setups were valid, {kept} kept. Written by trade_entries.py, without a language model.",
+        "note": "Hypothetical setups for study, derived mechanically from a price simulation. Not a recommendation to buy or sell.",
     },
     "pt": {
         "near": "borda próxima de {zone}", "far": "borda distante de {zone}", "price": "preço atual, dentro de {zone}",
         "plus": "borda {which} de {zone} {edge} + margem {buffer}", "minus": "borda {which} de {zone} {edge} − margem {buffer}",
         "which": {"near": "próxima", "far": "distante"},
-        "basis_reversal": "fill = reach({zone}) {reach}; win = turn({zone}) {turn} / reach({zone}) {reach} × travel {travel} (distância {share} do range)",
-        "basis_market": "fill = 1.00, ordem a mercado dentro de {zone}; win = turn({zone}) {turn} / reach({zone}) {reach} × travel {travel} (distância {share} do range)",
-        "basis_continuation": "fill = reach({next}) {reach_next}; win = reach({after}) {reach_after} / reach({next}) {reach_next}",
-        "why_reversal": "{zone} segura em {hold} dos caminhos que chegam a ela, e o ganho até {target_zone} é {ratio} vezes o risco.",
-        "why_continuation": "{zone} rompe em {fill} dos caminhos e, quando rompe, {next} também rompe em {win} deles.",
+        "basis": "{paths} caminhos simulados: a ordem é executada em {fill}; das execuções, {win} chegam antes ao alvo, {loss} ao stop, {open} seguem abertas em valid_until",
+        "basis_market": "{paths} caminhos simulados: uma ordem a mercado dentro de {zone} é executada na hora; {win} chegam antes ao alvo, {loss} ao stop, {open} seguem abertas em valid_until",
+        "why_reversal": "Se {zone} segurar e o preço voltar até {target_zone}, o ganho é {ratio} vezes o risco; nos caminhos simulados o alvo vem antes do stop em {win} das execuções.",
+        "why_continuation": "Se {zone} romper e o preço seguir até {next}, o ganho é {ratio} vezes o risco; nos caminhos simulados o alvo vem antes do stop em {win} das execuções.",
         "between": "{zone} {low}–{high} fica entre a entrada e o alvo",
         "dividend": {"long": "{date} {what}: a queda joga contra uma posição comprada e pode pular o stop",
                      "short": "{date} {what}: a posição vendida paga o dividendo, e a queda pode executar a ordem num gap"},
         "event": "{date} {what}: um gap de preço pode pular o stop",
-        "ceiling": "win_if_filled é um teto: a projeção não sabe se o stop é tocado antes do alvo",
-        "closes": "as probabilidades valem para fechamentos de {basis}; stops e alvos disparam dentro do candle",
-        "touches": "as probabilidades contam um toque dentro de um candle de {basis}, em qualquer ordem",
-        "uncalibrated": "as probabilidades da projeção não foram testadas contra o passado, e a confiança dela é {level}",
+        "paths": "fill, win_if_filled e o edge são contados em caminhos aleatórios de preço com a volatilidade e o drift da projeção; os caminhos não sabem nada das zonas, então as chances descrevem as distâncias do setup, não um efeito de a zona segurar ou romper",
+        "touch": "execuções, stops e alvos são julgados nas máximas e mínimas diárias simuladas, e um dia que alcança o stop e o alvo conta como stop; o reach e o turn da própria projeção valem para fechamentos de {basis}",
+        "calibration": "um backtest destas regras no motor mecânico comparou as chances com os resultados em média, em muitas datas passadas e antes de custos, não para este setup; a confiança da própria projeção é {level}",
+        "no_edge": "nenhum setup tem edge por ordem positivo nos caminhos simulados: em média, todos perdem, antes de custos",
         "fewer": "apenas {n} setup(s) passam nas regras para esta projeção",
-        "method": "Setups montados só com bordas de zonas; fill e win vêm do reach e do turn da projeção; ordenados pelo edge por ordem. {valid} setups válidos, {kept} mantidos. Escrito por trade_entries.py, sem modelo de linguagem.",
-        "note": "Setups hipotéticos para estudo, derivados mecanicamente de probabilidades não calibradas. Não é recomendação de compra ou venda.",
+        "method": "Preços só de bordas de zonas; fill, win e edge contados em {paths} caminhos simulados da simulação da projeção (sim method {sim}), refinados para máximas e mínimas diárias; ordenados pelo edge por ordem. {valid} setups válidos, {kept} mantidos. Escrito por trade_entries.py, sem modelo de linguagem.",
+        "note": "Setups hipotéticos para estudo, derivados mecanicamente de uma simulação de preços. Não é recomendação de compra ou venda.",
     },
 }
 FALLBACK_LANG = "en"
@@ -241,16 +383,17 @@ def entry_of(rank, item, proj, t, digits=MIN_PLACES):
     decimals, probabilities and ratios with two."""
     d, long, zone = item["detail"], item["side"] == "long", item["detail"]["zone"]
     away = t["minus"] if long else t["plus"]          # the stop sits beyond an edge, away from the entry
+    counted = {"paths": f"{d['paths']:,}", "fill": share(item["fill"]), "win": share(item["win_if_filled"]),
+               "loss": share(d["loss"]), "open": share(d["open"]), "zone": zone}
     if item["setup"] == "reversal":
         market = item["order"] == "market"
         entry_anchor = t["price" if market else "near"].format(zone=zone)
         stop_anchor = away.format(zone=zone, which=t["which"]["far"], edge=money(d["edge"], digits),
                                   buffer=money(d["buffer"], digits))
         target_anchor = t["near"].format(zone=d["target_zone"])
-        basis = t["basis_market" if market else "basis_reversal"].format(
-            zone=zone, reach=money(d["reach"]), turn=money(d["turn"]), travel=d["travel"], share=money(d["share"]))
-        why = t["why_reversal"].format(zone=zone, hold=share(d["hold"]), target_zone=d["target_zone"],
-                                       ratio=money(item["ratio"]))
+        basis = t["basis_market" if market else "basis"].format(**counted)
+        why = t["why_reversal"].format(zone=zone, target_zone=d["target_zone"], ratio=money(item["ratio"]),
+                                       win=share(item["win_if_filled"]))
         watch = [t["between"].format(zone=name, low=money(low, digits), high=money(high, digits))
                  for name, low, high in d["between"]]
     else:
@@ -258,9 +401,8 @@ def entry_of(rank, item, proj, t, digits=MIN_PLACES):
         stop_anchor = away.format(zone=zone, which=t["which"]["near"], edge=money(d["edge"], digits),
                                   buffer=money(d["buffer"], digits))
         target_anchor = t["far"].format(zone=d["next"])
-        basis = t["basis_continuation"].format(next=d["next"], after=d["after"],
-                                               reach_next=money(d["reach_next"]), reach_after=money(d["reach_after"]))
-        why = t["why_continuation"].format(zone=zone, fill=share(item["fill"]), next=d["next"],
+        basis = t["basis"].format(**counted)
+        why = t["why_continuation"].format(zone=zone, next=d["next"], ratio=money(item["ratio"]),
                                            win=share(item["win_if_filled"]))
         watch = []
     for event in proj.get("events") or []:
@@ -280,30 +422,36 @@ def entry_of(rank, item, proj, t, digits=MIN_PLACES):
         "quality": item["quality"], "why": why, "watch": watch}
 
 
-def build(source, proj):
-    """The whole reply, computed: what the prompt asks Claude for, with fixed wording."""
+NO_SETUP = "no setup passes the rules for this projection"
+
+
+def build(source, proj, found=None):
+    """The whole reply, computed: what the prompt asks Claude for, with fixed wording. `found`
+    is setups(source, proj) when the caller has it already."""
     reason = precondition(source, proj)
     if reason:
         return {"task": "trade_entries", "error": reason}
     t, digits = language(source), places(source)
-    found = setups(proj, digits)
+    found = setups(source, proj) if found is None else found
     kept, measure = pick(found), source["want"]["probability"]
     if not kept:
-        return {"task": "trade_entries", "error": "no setup passes the rules for this projection"}
+        return {"task": "trade_entries", "error": NO_SETUP}
     level = proj["confidence"]["level"]
-    limits = [t["ceiling"],
-              t["closes" if measure == "close_in_zone" else "touches"].format(basis=proj["horizon"]["close_basis"]),
-              t["uncalibrated"].format(level=level)]
+    limits = [t["paths"], t["touch"].format(basis=proj["horizon"]["close_basis"]),
+              t["calibration"].format(level=level)]
+    if all(item["per_order"] <= 0 for item in found):
+        limits.append(t["no_edge"])
     if len(kept) < 3:
         limits.append(t["fewer"].format(n=len(kept)))
     return {
-        "task": "trade_entries",
+        "task": "trade_entries", "rules": RULES,
         "asset": {"ticker": proj["asset"]["ticker"], "currency": proj["asset"]["currency"]},
         "as_of": proj["as_of"], "valid_until": proj["horizon"]["last"], "probability": measure,
         "units": units(proj, digits),
         "entries": [entry_of(rank, item, proj, t, digits) for rank, item in enumerate(kept, 1)],
         "confidence": {"level": level, "limits": limits},
-        "method": t["method"].format(valid=len(found), kept=len(kept)),
+        "method": t["method"].format(paths=f"{PATHS:,}", sim=found[0]["detail"]["method"],
+                                     valid=len(found), kept=len(kept)),
         "note": t["note"]}
 
 
@@ -324,11 +472,15 @@ def problems(source, proj, reply):
     """Everything wrong with a reply, as lines. Empty means it is consistent with the projection."""
     reason = precondition(source, proj)
     if isinstance(reply, dict) and set(reply) == {"task", "error"}:
-        if reason or not setups(proj, places(source)):   # unusable files, or no setup passes the rules
+        if reason or not setups(source, proj):   # unusable files, or no setup passes the rules
             return []
         return [f"the reply reports an error but the files are usable: {reply['error']}"]
     if reason:
         return [f"no setup can be built ({reason}), but the reply holds entries"]
+    if isinstance(reply, dict) and "entries" in reply and reply.get("rules") != RULES:
+        return [f"written by an earlier version of the rules (rules {reply.get('rules', 1)}, now {RULES}): its odds "
+                "came from reach and turn by formulas, not from simulated paths; compute the setups again "
+                "(`zones entries` or `trade_entries.py build`)"]
     bad = schema_problems(reply)
     if bad:
         return bad
@@ -347,7 +499,7 @@ def problems(source, proj, reply):
         if abs(reply["units"][name] - value) > near:
             bad.append(f"units.{name}: {reply['units'][name]}, expected {value}")
 
-    found = setups(proj, digits)
+    found = setups(source, proj)
     by_id, wanted, got = {item["id"]: item for item in found}, pick(found), reply["entries"]
     numbers = (("entry.price", lambda e: e["entry"]["price"], "entry"), ("stop.price", lambda e: e["stop"]["price"], "stop"),
                ("target.price", lambda e: e["target"]["price"], "target"), ("payoff.risk", lambda e: e["payoff"]["risk"], "risk"),
@@ -402,14 +554,17 @@ def main(argv=None):
             bad = problems(load(argv[1]), load(argv[2]), load(argv[3]))
             print("OK" if not bad else "\n".join(bad))
             return 1 if bad else 0
-        if len(argv) in (2, 3) and argv[0] == "expected":
-            proj = load(argv[-1])
-            digits = places(load(argv[1])) if len(argv) == 3 else MIN_PLACES
-            found = setups(proj, digits)
+        if len(argv) == 3 and argv[0] == "expected":
+            source, proj = load(argv[1]), load(argv[2])
+            reason = precondition(source, proj)
+            if reason:
+                print(f"Error: {reason}", file=sys.stderr)
+                return 1
+            found = candidates(source, proj)
             keep = {item["id"] for item in pick(found)}
-            print(json.dumps(units(proj, digits)))
+            print(json.dumps(units(proj, places(source))))
             for item in found:
-                print("*" if item["id"] in keep else " ", json.dumps({k: v for k, v in item.items() if k != "detail"}))
+                print("*" if item["id"] in keep else " ", json.dumps(item, ensure_ascii=False))
             return 0
     except (OSError, ValueError, KeyError, TypeError, IndexError) as error:
         print(f"Error: {type(error).__name__}: {error}", file=sys.stderr)

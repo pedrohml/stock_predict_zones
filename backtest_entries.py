@@ -238,7 +238,7 @@ def run(tickers, horizons, start=None, end=None, step=None, today=None, progress
             backtest.say(f"{ticker} {horizon}: {len(days)} dates, {used} with setups, {len(days) - used} skipped "
                          f"({time.monotonic() - clock:.0f}s)", progress)
     settings = {"tickers": [t.upper() for t in tickers], "horizons": list(horizons), "ranges": ranges,
-                "sim_method": method, "default_sim_method": rz.SIM_METHOD,
+                "sim_method": method, "default_sim_method": rz.SIM_METHOD, "setup_rules": trade_entries.RULES,
                 "ordering": "optimistic" if optimistic else "pessimistic", "rules": RULES, "failed": failed}
     return {"settings": settings, "records": records, "summary": summarise(records, horizons)}
 
@@ -412,7 +412,7 @@ def render(report):
              f"  {', '.join(s['tickers'])}; horizons {', '.join(s['horizons'])}; sim method {s['sim_method']}"
              + ("" if s["sim_method"] == s["default_sim_method"] else
                 f" (rz.py sim uses method {s['default_sim_method']} by default)")
-             + f"; ordering inside a candle: {s['ordering']}"]
+             + f"; ordering inside a candle: {s['ordering']}; setup rules {s.get('setup_rules', 1)}"]
     for horizon, r in s["ranges"].items():
         lines.append(f"  {horizon}: as-of dates {r['start']} to {r['end']}, every {r['step_trading_days']} trading day(s)")
     lines.append(f"  {summary['cases']} case(s), {summary['setups']} setups"
