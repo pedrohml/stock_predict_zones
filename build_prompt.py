@@ -102,11 +102,8 @@ def last_row_state(interval, start, now, session):
     return "unsure"
 
 
-def fetch_series(ticker, interval, period, max_rows, tz, now, session, volume,
-                 decimals, before=None):
-    """Return (series, first candle start). With `before`, keep only candles
-    that start on an earlier date, so a context series never repeats history
-    the main series already covers. Returns (None, None) if nothing is left."""
+def history(ticker, interval, period, tz):
+    """One Yahoo request -> the candles of `interval` over `period`, indexed in exchange time."""
     # auto_adjust=False keeps prices split-adjusted but not dividend-adjusted,
     # which is what most charting platforms show by default.
     frame = ticker.history(period=period, interval=interval,
@@ -114,13 +111,21 @@ def fetch_series(ticker, interval, period, max_rows, tz, now, session, volume,
     frame = frame.dropna(subset=["Open", "High", "Low", "Close"])
     if not frame.empty:
         frame = frame.tz_convert(tz) if frame.index.tz is not None else frame.tz_localize(tz)
+    return frame
+
+
+def make_series(frame, interval, max_rows, now, session, volume, decimals, before=None,
+                name="this ticker"):
+    """Candles already in exchange time -> (series, first candle start). With `before`, keep
+    only candles that start on an earlier date, so a context series never repeats history
+    the main series already covers. Returns (None, None) if nothing is left. No network."""
     if before is not None:
         frame = frame[frame.index.normalize() < before.normalize()]
     frame = frame.tail(max_rows)
     if frame.empty:
         if before is not None:
             return None, None
-        raise SystemExit(f"No {interval} data returned for {ticker.ticker}.")
+        raise SystemExit(f"No {interval} data returned for {name}.")
 
     stamp = "%Y-%m-%dT%H:%M" if interval in INTRADAY else "%Y-%m-%d"
     rows = []
@@ -137,6 +142,27 @@ def fetch_series(ticker, interval, period, max_rows, tz, now, session, volume,
         "rows": rows,
     }
     return series, frame.index[0]
+
+
+def make_all_series(args, candles_of, now, session, name="this ticker"):
+    """The input's `data.series` for `args.horizon`, context first. `candles_of(interval,
+    period)` returns the candles of one preset entry in exchange time: a Yahoo request when
+    live, a slice of candles already downloaded in backtest.py. The context is asked for only
+    after the main series, and only candles that start before the main series are kept."""
+    preset = PRESETS[args.horizon]
+    interval, period, max_rows = preset["main"]
+    main, main_start = make_series(
+        candles_of(interval, period), interval, min(max_rows, args.max_rows or max_rows),
+        now, session, args.volume, args.decimals, name=name)
+    series = [main]
+    if preset["context"]:
+        interval, period, max_rows = preset["context"]
+        context, _ = make_series(candles_of(interval, period), interval, max_rows, now,
+                                 session, args.volume, args.decimals, before=main_start,
+                                 name=name)
+        if context:
+            series.insert(0, context)  # older, coarser history first
+    return series
 
 
 def upcoming_events(ticker, now, days, manual):
@@ -171,6 +197,7 @@ def upcoming_events(ticker, now, days, manual):
 
 
 def build(args):
+    """The live input: everything from Yahoo, as of now."""
     preset = PRESETS[args.horizon]
     ticker = yf.Ticker(args.ticker)
 
@@ -184,18 +211,24 @@ def build(args):
     session = session_state(meta, now, tz)
     price = meta.get("regularMarketPrice") or float(probe["Close"].iloc[-1])
 
+    series = make_all_series(args, lambda interval, period: history(ticker, interval, period, tz),
+                             now, session, name=ticker.ticker)
+    events = upcoming_events(ticker, now, preset["event_days"], args.event)
+    prompt = assemble(args, meta, now, session, price, series, events)
+    # provenance is stamped here, on the live path only: backtest.py's past inputs come
+    # from candles it downloaded itself and are never saved as projections
     interval, period, max_rows = preset["main"]
-    main, main_start = fetch_series(
-        ticker, interval, period, min(max_rows, args.max_rows or max_rows),
-        tz, now, session, args.volume, args.decimals)
-    series = [main]
-    if preset["context"]:
-        interval, period, max_rows = preset["context"]
-        context, _ = fetch_series(ticker, interval, period, max_rows, tz, now,
-                                  session, args.volume, args.decimals,
-                                  before=main_start)
-        if context:
-            series.insert(0, context)  # older, coarser history first
+    main_request = (interval, period, min(max_rows, args.max_rows or max_rows))
+    requested = [preset["context"], main_request] if len(series) == 2 else [main_request]
+    version = getattr(yf, "__version__", None)
+    prompt["provenance"] = provenance(prompt, SOURCE, requested, f"yfinance {version}" if version else None)
+    return prompt
+
+
+def assemble(args, meta, now, session, price, series, events):
+    """The input JSON from its parts. No network: backtest.py calls it for past dates."""
+    preset = PRESETS[args.horizon]
+    tz = meta.get("exchangeTimezoneName") or "America/New_York"
     columns = ["start", "open", "high", "low", "close"] + (["volume"] if args.volume else [])
 
     prompt = {
@@ -218,7 +251,7 @@ def build(args):
             "columns": columns,
             "series": series,
         },
-        "events": upcoming_events(ticker, now, preset["event_days"], args.event),
+        "events": events,
         "want": {
             "supports": args.supports,
             "resistances": args.resistances,
@@ -233,11 +266,6 @@ def build(args):
             "links": args.links,
         },
     }
-    interval, period, max_rows = preset["main"]
-    main_request = (interval, period, min(max_rows, args.max_rows or max_rows))
-    requested = [preset["context"], main_request] if len(series) == 2 else [main_request]
-    version = getattr(yf, "__version__", None)
-    prompt["provenance"] = provenance(prompt, SOURCE, requested, f"yfinance {version}" if version else None)
     return prompt
 
 
@@ -259,7 +287,7 @@ def provenance(prompt, source, requested=None, library=None, downloaded=None):
         out["library"] = library
     out.update({
         "downloaded_at": downloaded.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "auto_adjust": False,          # split-adjusted, not dividend-adjusted (see fetch_series)
+        "auto_adjust": False,          # split-adjusted, not dividend-adjusted (see history())
         "series": [],
         "data_sha256": data_hash(prompt["data"]),
     })

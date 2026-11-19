@@ -19,7 +19,7 @@ import run_pipeline
 from test_run_pipeline import PNG_MAGIC, store  # noqa: F401  (autouse: RZ_PROJECTIONS_DIR in a temp folder)
 
 TICKER = "PETR4.SA"     # the ticker of tests/fixtures
-NAMES = ["list", "runs", "score", "plot", "show", "entries"]
+NAMES = ["list", "runs", "score", "plot", "show", "entries", "backtest"]
 
 
 @pytest.fixture(autouse=True)

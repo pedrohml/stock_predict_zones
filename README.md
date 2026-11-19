@@ -22,7 +22,7 @@ build_prompt.py  ──►  reversal-zones-projection  ──►  plot_projectio
 
 *Example output from the files in [`examples/`](examples/), using data as of 18 Nov 2026. It shows what the pipeline produces; it is not a forecast.*
 
-> **Read this first.** The probabilities are internally consistent but have **not been backtested**. Nobody has yet checked whether a zone given a 20% chance of holding actually holds about 20% of the time. Treat the output as a structured way to look at a chart, not as a forecast you can rely on. Nothing here is investment advice.
+> **Read this first.** The probabilities are internally consistent, but only their unadjusted baseline has been backtested, on a few tickers and mechanically chosen zones (see [Backtest of the baseline](#backtest-of-the-baseline)). The numbers a real projection shows, with Claude's zones and adjustments, have not been checked against outcomes. Treat the output as a structured way to look at a chart, not as a forecast you can rely on. Nothing here is investment advice.
 
 ## Contents
 
@@ -34,6 +34,7 @@ build_prompt.py  ──►  reversal-zones-projection  ──►  plot_projectio
 - [Step 2: the reversal-zones-projection skill](#step-2-the-reversal-zones-projection-skill)
 - [Step 3: plot_projection.py](#step-3-plot_projectionpy)
 - [Ranked trade setups](#ranked-trade-setups)
+- [Backtest of the baseline](#backtest-of-the-baseline)
 - [How the probabilities are produced](#how-the-probabilities-are-produced)
 - [Glossary](#glossary)
 - [Known limits](#known-limits)
@@ -288,6 +289,7 @@ Error: /home/you/.config/zones/config.toml: unknown setting 'langauge' (did you 
 | `zones plot WHAT [plot options]` | Draws the chart of a run again. | `plot_projection.py` |
 | `zones show WHAT` | Prints the summary of a run. | `show_run.py` |
 | `zones entries WHAT` | Computes the [trade setups](#ranked-trade-setups) of a run again and checks them. | `trade_entries.py build`, then `check` |
+| `zones backtest TICKER... [options]` | [Backtests the baseline probabilities](#backtest-of-the-baseline) on past dates. Downloads from Yahoo Finance; no Claude call. | `backtest.py` |
 
 ```bash
 zones list                                   # every saved projection
@@ -714,6 +716,54 @@ Read the limits before using the output:
 - The formulas are a heuristic layered on probabilities that are themselves not backtested. Continuation setups get no distance discount, so they tend to rank above reversals.
 - There is no position size or leverage, and a setup marked `favourable` is not a recommendation.
 
+## Backtest of the baseline
+
+`backtest.py` measures how well the simulation's own probabilities (`rz.py sim`, before any adjustment by the skill) matched what happened, on many past dates at once. It makes no Claude call.
+
+```bash
+uv run python backtest.py PETR4.SA NVDA --horizon 1-3m              # the last three ended years
+uv run python backtest.py NVDA --horizon 1-2w --start 2022-01-01 --end 2025-06-30 --step 5
+uv run python backtest.py PETR4.SA --json                           # one JSON object instead of the tables
+uv run python backtest.py PETR4.SA --csv cases.csv                  # every forecast of every case, one row each
+uv run zones backtest PETR4.SA NVDA --horizon 1-2w                  # the same, through zones
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--horizon` | `1-3m` | `1-2w`, `1-3m` or `6-12m`. `today` is not offered: Yahoo keeps 15-minute candles for about 60 days. |
+| `--start`, `--end` | three years ending one horizon (plus a week) before today | The range of as-of dates, `YYYY-MM-DD`. A case whose horizon has not ended is skipped. |
+| `--step N` | `5` for `1-2w`, `10` for `1-3m`, `21` for `6-12m` | Trading days between two as-of dates. |
+| `--paths N` | `200000`, as `rz.py sim` | Simulated paths per case. Fewer is faster; the report then says the numbers differ from a live run's. |
+| `--json` | off | One JSON object (settings, skipped cases, the summaries) instead of the tables. |
+| `--csv FILE` | none | Also write every forecast: ticker, as-of date, price, entry, zone, forecast, happened. |
+| `--quiet` | off | No progress lines on standard error. |
+
+For each ticker it downloads daily candles once (split-adjusted, not dividend-adjusted, like step 1) and builds weekly and monthly candles from them. Then for every as-of date, after that day's close:
+
+1. **Input.** The input JSON is built by `build_prompt.py`'s own code (`make_all_series()` and `assemble()`, the same presets, row counts, `close_basis` and `last_row` labels) from the candles that end on that day. Nothing after the as-of day enters the input. There are no events, `research` is `none`, and the session is `closed`.
+2. **Zones.** Three supports and three resistances, chosen by a fixed rule from the output of `rz.py levels` (`choose_zones()`, the only place the rule lives): the zone width is the mean of the two `typical_zone_width` numbers; the candidates are the prices `levels` reports as evidence (pivot lows and highs, the lows and highs of the last three candles, the retracement levels, the two ends of the dominant swing); walking outward from the price, a candidate within one width of the first member of the current cluster joins it, and each cluster becomes one zone of that width centred on the mean of its members, cut at the price and pushed outward so it never overlaps the zone before it; the nearest clusters are kept; a side with too few clusters is filled with one-width zones, one width apart. It is not what Claude would choose: it is a reproducible baseline.
+3. **Probabilities.** `rz.py sim` on those zones, with its fixed seed, and no shocks.
+4. **Outcome.** `rz.outcome()` against the candles that followed, exactly as `score_projections.py` judges a saved projection; a case with fewer than half of its scheduled closes is skipped.
+
+The report is the calibration summary of `score_projections.py` (the same buckets, Brier scores and reference forecasts) for `reach`, `turn` and the four scenarios together, plus each scenario on its own, overall and per ticker. A case is not skipped silently: the reasons are counted at the top.
+
+Results of a run on 19 Nov 2026 (PETR4.SA, NVDA and VALE3.SA; 200,000 paths; as-of dates over the three years before the default end). Brier score of the baseline, next to always forecasting the sample's own rate (lower is better):
+
+| Horizon | Cases | `reach` | `turn` | Scenarios (all four) |
+|---|---|---|---|---|
+| `1-2w`, every 5 days | 451 | 0.206 vs 0.249 | 0.159 vs 0.166 | 0.168 vs 0.188 |
+| `1-3m`, every 10 days | 226 | 0.206 vs 0.249 | 0.165 vs 0.172 | 0.163 vs 0.188 |
+
+The reliability buckets were close to the diagonal for `reach` and `turn` (for `1-2w`, forecasts of 15%, 25%, 34%, 45%, 55%, 65% and 74% came true 16%, 26%, 35%, 45%, 58%, 64% and 73% of the time). The individual scenarios were weaker: the simulation has no drift, so a ticker in a long trend gets too few breakouts (NVDA `1-3m`: breakout forecast about 40%, observed 57%), and a run on NVDA `6-12m` scored worse than always forecasting the base rate. Treat these as a description of one sample, not as a property of the method.
+
+Read it with the same care as the scoring of saved projections, and more:
+
+- It measures the baseline only, on mechanical zones. The zones and adjusted probabilities of a real projection are not tested here.
+- No events: earnings and ex-dividend dates are not simulated, while the realised prices contain them. A large dividend shows up as a drop the simulation did not include.
+- Cases overlap whenever the step is shorter than the horizon, and every entry of one case is judged on the same path, so the number of forecasts overstates the evidence by a wide margin.
+- Tickers chosen today are survivors, and the prices are on today's split-adjusted scale.
+- It describes calibration. It is not a measure of returns, does not show that the method works, and is not advice.
+
 ## How the probabilities are produced
 
 The helper simulates the future closes of the main series and counts how often each zone is reached or broken.
@@ -748,7 +798,7 @@ The simulation knows nothing about chart levels. The skill may therefore move a 
 
 ## Known limits
 
-- **Uncalibrated.** The probabilities have not been checked against a meaningful number of outcomes. `score_projections.py` can now compare saved projections with later prices, but the history is days old and no horizon has ended yet; no backtest on past dates has been run. This is the most important gap.
+- **Mostly uncalibrated.** `backtest.py` checks the unadjusted baseline on past dates, with mechanically chosen zones, no events and a handful of tickers ([Backtest of the baseline](#backtest-of-the-baseline)). The probabilities of a real projection, with Claude's zones and adjustments, have not been checked against a meaningful number of outcomes: `score_projections.py` can compare saved projections with later prices, but the history is days old. This is the most important gap.
 - **Scoring a touch on a forming candle.** For `touched_once`, a finished candle does not say whether its high or low came before or after the projection. For the candle that was forming, the scorer counts an extreme only if it is new, otherwise it uses the close, so a touch inside that candle's earlier range can be missed. Everything else is judged exactly as the simulation counts it.
 - **Pre-market and first-of-month projections.** When the newest candle is closed but a new one has not started (a daily projection made before the open, a monthly one before the month's first session), `horizon.first` skips the candle about to begin. The scorer counts it anyway, since it comes after the projection, and notes that there are more closes than scheduled.
 - **Yahoo Finance is unofficial.** Quotes can be delayed about 15 minutes on some exchanges and requests are sometimes rate-limited. One failed request currently ends the run.
@@ -760,7 +810,7 @@ The simulation knows nothing about chart levels. The skill may therefore move a 
 
 ## Roadmap
 
-1. Backtest the baseline probabilities on past dates, to measure calibration on a sample large enough to mean something. Scoring of saved projections exists (`score_projections.py`); what is missing is the history. A useful addition is to score the unadjusted simulation next to the skill's adjusted numbers.
+1. Extend the backtest (`backtest.py`, which covers the unadjusted baseline): scheduled dividends as `drop` shocks, more tickers and sectors, and scoring the unadjusted simulation next to the skill's adjusted numbers for saved projections.
 2. Add `json` to `--shape`.
 3. Carry event sizes as numbers (dividend amount, implied move) so the skill does not have to search for them.
 4. State `dividend_adjusted` explicitly in the input.
@@ -774,6 +824,7 @@ stock_predict_zones/
 ├── plot_projection.py              step 3: input + projection to image
 ├── run_pipeline.py                 the `zones` command: all steps in one (step 2 through headless Claude Code), and list, runs, score, plot, show, entries
 ├── score_projections.py            saved projections against later prices, and the calibration summary
+├── backtest.py                     the baseline probabilities on past dates: mechanical zones, rz.py sim, rz.outcome
 ├── trade_entries.py                trade setups: computes them, or fills the prompt and checks the reply
 ├── show_run.py                     one run as a text summary in the terminal
 ├── .claude/skills/reversal-zones-projection/

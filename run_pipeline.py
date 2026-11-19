@@ -17,6 +17,7 @@ for each):
     zones plot WHAT [plot options]  draw the chart of a run again
     zones show WHAT                 print the summary of a run
     zones entries WHAT              compute the trade setups of a run again
+    zones backtest TICKER...        the baseline probabilities on past dates (hits Yahoo)
 
 WHAT is a folder holding input.json and projection.json, or a ticker, meaning
 its latest run under runs/ here, else its latest saved projection. A first
@@ -1552,8 +1553,19 @@ def entries_again(argv):
     return 0
 
 
+def backtest(argv):
+    """zones backtest TICKER... [backtest.py options]: backtest.py with the same arguments."""
+    if argv[:1] in (["-h"], ["--help"]):
+        command_parser("backtest", "TICKER [TICKER ...] [backtest.py options]", "Backtest the baseline "
+                       "probabilities on past dates (backtest.py; downloads prices from Yahoo Finance, "
+                       "no Claude call). Every option goes to backtest.py: `uv run python backtest.py "
+                       "--help` lists them.", what=False).parse_args(argv)
+    need(ROOT / "backtest.py", RZ)
+    return relay([sys.executable, ROOT / "backtest.py", *argv])
+
+
 COMMANDS = {"list": list_saved, "runs": run_folders, "score": score_saved,
-            "plot": plot_again, "show": show_again, "entries": entries_again}
+            "plot": plot_again, "show": show_again, "entries": entries_again, "backtest": backtest}
 FORCE_PIPELINE = ("run", "--")
 
 
