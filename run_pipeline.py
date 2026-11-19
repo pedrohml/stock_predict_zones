@@ -18,6 +18,7 @@ for each):
     zones show WHAT                 print the summary of a run
     zones entries WHAT              compute the trade setups of a run again
     zones backtest TICKER...        the baseline probabilities on past dates (hits Yahoo)
+    zones batch FILE|TICKER...      one run per ticker of a watchlist, with a summary.csv
 
 WHAT is a folder holding input.json and projection.json, or a ticker, meaning
 its latest run under runs/ here, else its latest saved projection. A first
@@ -1564,8 +1565,19 @@ def backtest(argv):
     return relay([sys.executable, ROOT / "backtest.py", *argv])
 
 
+def batch(argv):
+    """zones batch FILE|TICKER... [options]: one pipeline run per ticker (batch_runs.py).
+    In this process, not relayed: Ctrl-C must reach its loop, which then writes the summary."""
+    need(ROOT / "batch_runs.py")
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    import batch_runs
+    return batch_runs.main(argv)
+
+
 COMMANDS = {"list": list_saved, "runs": run_folders, "score": score_saved,
-            "plot": plot_again, "show": show_again, "entries": entries_again, "backtest": backtest}
+            "plot": plot_again, "show": show_again, "entries": entries_again,
+            "backtest": backtest, "batch": batch}
 FORCE_PIPELINE = ("run", "--")
 
 

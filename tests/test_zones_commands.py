@@ -1,4 +1,4 @@
-"""The commands of `zones` after a run: list, runs, score, plot, show, entries.
+"""The commands of `zones` beside a run: list, runs, score, plot, show, entries, batch.
 
 Offline and contained: every test runs in an empty temporary directory with the
 saved history in another one, Yahoo is never reached (`relay`, which would start
@@ -19,7 +19,7 @@ import run_pipeline
 from test_run_pipeline import PNG_MAGIC, store  # noqa: F401  (autouse: RZ_PROJECTIONS_DIR in a temp folder)
 
 TICKER = "PETR4.SA"     # the ticker of tests/fixtures
-NAMES = ["list", "runs", "score", "plot", "show", "entries", "backtest"]
+NAMES = ["list", "runs", "score", "plot", "show", "entries", "backtest", "batch"]
 
 
 @pytest.fixture(autouse=True)

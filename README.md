@@ -30,6 +30,7 @@ build_prompt.py  ──►  reversal-zones-projection  ──►  plot_projectio
 - [Quick start](#quick-start)
 - [Your defaults](#your-defaults)
 - [Commands](#commands)
+- [Batch runs](#batch-runs)
 - [Step 1: build_prompt.py](#step-1-build_promptpy)
 - [Step 2: the reversal-zones-projection skill](#step-2-the-reversal-zones-projection-skill)
 - [Step 3: plot_projection.py](#step-3-plot_projectionpy)
@@ -290,6 +291,7 @@ Error: /home/you/.config/zones/config.toml: unknown setting 'langauge' (did you 
 | `zones show WHAT` | Prints the summary of a run. | `show_run.py` |
 | `zones entries WHAT` | Computes the [trade setups](#ranked-trade-setups) of a run again and checks them. | `trade_entries.py build`, then `check` |
 | `zones backtest TICKER... [options]` | [Backtests the baseline probabilities](#backtest-of-the-baseline) on past dates. Downloads from Yahoo Finance; no Claude call. | `backtest.py` |
+| `zones batch FILE\|TICKER... [options]` | One pipeline run per ticker of a watchlist, a few at a time, with a cost cap and a `summary.csv`. See [Batch runs](#batch-runs). | the pipeline, once per ticker |
 
 ```bash
 zones list                                   # every saved projection
@@ -314,6 +316,62 @@ zones plot --help                            # each command has its own help
 **Where `plot` and `entries` write.** For a run folder they replace the folder's own `chart.png` or `entries.json`: `runs/` is working output and both files follow from the pair. For a saved projection they write `TICKER_FOLDER.png` or `TICKER_FOLDER_entries.json` (for example `PETR4.SA_2026-11-18T1515_1-3m.png`) in the current directory, because the saved history is append-only and nothing is added to it. `-o FILE` chooses the file in either case, and a file inside the saved history is refused. `entries` builds and checks the setups before replacing anything.
 
 `zones list` and `zones runs` show two different things: `projections/` is the record kept for scoring, `runs/` is this command's output in the current directory.
+
+## Batch runs
+
+`zones batch` runs the pipeline once per ticker of a watchlist, for covering many tickers in one go:
+
+```bash
+zones batch watchlist.txt                                  # every ticker in the file
+zones batch watchlist.txt NVDA AAPL --research none --jobs 3 --max-cost 5
+zones batch --retry-failed runs/batch/2026-11-19T153725    # only what failed or was skipped there
+```
+
+```text
+# watchlist.txt: one ticker per line, optionally with a horizon; # starts a comment
+PETR4.SA
+VALE3.SA 1-2w      # this one weekly
+NVDA
+```
+
+**What runs.** Each ticker is an ordinary `zones run TICKER [options]` in a process of its own, so a ticker that fails (no data from Yahoo, a Claude Code timeout, a failed `rz.py check`) never stops the others, and its run folder lands exactly where a single run puts it, under `runs_dir`. Files and tickers come first; a word that names an existing file is a watchlist, any other word is a ticker, and a ticker listed twice with the same horizon runs once. Every option `zones batch` does not declare goes to each run as if typed there (`--horizon`, `--research`, `--model`, `--timeout`, `--no-entries` ...), and the [config files](#your-defaults) apply as they do to one run. A horizon on a watchlist line wins over `--horizon` for that ticker. The options that name one run's files (`--input`, `--projection`, `--out-dir`, `--name`, `--chart`) are refused, and each run gets `--no-open` unless you type `--open`.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--jobs N`, `-j N` | `2` | Runs at the same time. Each run mostly waits on Claude Code, so two roughly halve the wall time; more runs at once mean more Claude Code sessions sharing your usage limits and more Yahoo requests in a burst. |
+| `--max-cost USD` | none | Once the costs Claude Code reported add up to this, start no new run: the ones running finish, the rest are listed as `skipped`. With `--jobs N` the total can pass the cap by what the last N-1 runs cost. |
+| `--retry-failed BATCH_FOLDER` | none | Run again the tickers whose row in that batch's `summary.csv` is not `ok`, each with the horizon its row shows. Options are not remembered: type them again. A new batch folder is made. |
+| `--runs-dir DIR` | `runs_dir` | Where the batch folder goes, and passed on to each run. |
+
+**Progress.** One line per ticker on standard error when it starts and when it ends, with its status, duration and cost; the stage lines of each run go to its log instead. After a minute without a line, one line names the runs still going. The end is a table on standard output:
+
+```text
+Batch of 3 tickers, 3 at a time: runs/batch/2026-11-19T153736
+  [1/3] NODATA1   started
+  [2/3] SLOWX     started
+  [3/3] ITUB4.SA  started
+  [1/3] NODATA1   failed   0:00     $0.00  build_prompt.py failed: No price data found for NODATA1
+  [3/3] ITUB4.SA  ok       0:01     $0.75  runs/ITUB4.SA/2026-11-17T1736_1-3m
+  [2/3] SLOWX     failed   0:04    cost ?  Claude Code did not finish within 4 s (raise it with --timeout).
+ticker    status  price  support (reach/turn)   resistance (reach/turn)  top scenario   conf.  cost   time
+--------  ------  -----  ---------------------  -----------------------  -------------  -----  -----  ----
+NODATA1   failed  -      -                      -                        -              -      $0.00  0:00
+SLOWX     failed  -      -                      -                        -              -      ?      0:04
+ITUB4.SA  ok      44.06  43.2-44.6 (1.00/0.20)  45.3-47.1 (0.69/0.18)    breakdown 0.5  low    $0.75  0:01
+
+NODATA1: failed: build_prompt.py failed: No price data found for NODATA1  (log: runs/batch/2026-11-19T153736/logs/NODATA1.log)
+SLOWX: failed: Claude Code did not finish within 4 s (raise it with --timeout).  (log: runs/batch/2026-11-19T153736/logs/SLOWX.log)
+
+3 tickers: 1 ok, 2 failed, 0 skipped; reported cost $0.75, plus an unknown cost for SLOWX.
+summary:    runs/batch/2026-11-19T153736/summary.csv
+Analysis for study, not investment advice.
+```
+
+**Cost.** The cost of a run is the sum of what Claude Code reported for its calls, as the run printed it (to the cent). A run that made no Claude Code call (it failed at step 1) cost nothing. A call that reported no cost, or never finished (a timeout), makes the run's cost unknown: the table shows `?`, `summary.csv` leaves `cost_usd` empty and says why in `cost_note`, and the cap does not count it. Nothing is estimated.
+
+**The batch folder**, `RUNS_DIR/batch/TIME/`, holds `logs/TICKER.log` (everything one run printed) and `summary.csv`, rewritten after every run so a batch cut short still has one. Its columns: `ticker`, `horizon`, `status` (`ok`, `failed` or `skipped`), `run_folder`, `as_of`, `price`, `currency`; the nearest support and resistance with both edges (the open tails are left out) as `support_from`, `support_to`, `support_reach`, `support_turn` and the same for `resistance_`; `top_scenario` and `top_scenario_p` (the most likely scenario), `confidence`, `cost_usd`, `cost_note`, `duration_s`, `error` (the run's own `Error:` line) and `log`. A run that failed after making its folder still points at it, with whatever its files hold.
+
+**Exit code.** `0` when every ticker succeeded, `1` when any failed or was skipped, `130` after Ctrl-C (the runs going are stopped, and the summary is written all the same). Like a single run, each row is analysis for study, not investment advice.
 
 ## Step 1: build_prompt.py
 
@@ -822,11 +880,12 @@ The simulation knows nothing about chart levels. The skill may therefore move a 
 stock_predict_zones/
 ├── build_prompt.py                 step 1: Yahoo Finance to input JSON
 ├── plot_projection.py              step 3: input + projection to image
-├── run_pipeline.py                 the `zones` command: all steps in one (step 2 through headless Claude Code), and list, runs, score, plot, show, entries
+├── run_pipeline.py                 the `zones` command: all steps in one (step 2 through headless Claude Code), and list, runs, score, plot, show, entries, backtest, batch
 ├── score_projections.py            saved projections against later prices, and the calibration summary
 ├── backtest.py                     the baseline probabilities on past dates: mechanical zones, rz.py sim, rz.outcome
 ├── trade_entries.py                trade setups: computes them, or fills the prompt and checks the reply
 ├── show_run.py                     one run as a text summary in the terminal
+├── batch_runs.py                   `zones batch`: the pipeline over a watchlist, with summary.csv
 ├── .claude/skills/reversal-zones-projection/
 │   ├── SKILL.md                    step 2: the skill
 │   └── scripts/rz.py               its helper: levels, simulation, validation, saving, outcomes
@@ -835,7 +894,7 @@ stock_predict_zones/
 │   ├── trade_entries.md            prompt: three ranked trade setups from one run
 │   └── trade_entries.schema.json   JSON Schema of its reply
 ├── projections/                    every projection made, with its input and provenance (local, not committed)
-├── runs/                           one folder per `zones` run: input, projection, chart, setups, provenance (local, not committed)
+├── runs/                           one folder per `zones` run: input, projection, chart, setups, provenance; runs/batch/ for batches (local, not committed)
 ├── pyproject.toml                  dependencies, Python version and the `zones` command
 ├── uv.lock
 └── README.md
