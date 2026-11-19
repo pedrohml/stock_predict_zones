@@ -140,7 +140,12 @@ def no_real_claude(monkeypatch):
     """No test may start the real Claude Code: a run costs money and minutes. A test that
     forgets to stub a Claude step fails at once with "not found" instead."""
     import run_pipeline
+    import value_test
     monkeypatch.setattr(run_pipeline, "CLAUDE", "claude-must-not-run-in-tests")
+
+    def refuse(*args, **kwargs):   # value_test.py starts step 2 as a subprocess, out of reach of CLAUDE
+        raise AssertionError("value_test.launch must be stubbed in tests")
+    monkeypatch.setattr(value_test, "launch", refuse)
 
 
 @pytest.fixture(autouse=True)

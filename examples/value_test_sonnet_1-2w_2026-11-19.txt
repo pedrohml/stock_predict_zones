@@ -1,0 +1,43 @@
+VALUE TEST: Claude's adjusted probabilities against the baseline, horizon 1-2w
+  model sonnet (ran: claude-sonnet-5-5); training cutoff 2026-06 (https://platform.claude.com/docs/en/about-claude/models/overview); as-of dates after it only
+  88 run(s) of step 2: 88 ok, 0 failed; spent $19.85 of $20.00
+  88 case(s) scored, 12 ticker(s), 16 as-of date(s)
+  20 planned case(s) not run: the budget would have been exceeded
+  The input's now.time is in the past: each case is built as of a past close, and Claude Code also
+    tells the model today's date. No web tool is given (research none, no events).
+  Only as-of dates after the model's training data cutoff are used, so the model cannot have seen
+    what followed. That leaves few dates and few cases: the intervals are wide.
+  Cases of one ticker on nearby dates and the entries of one case share price paths, so the
+    forecasts are not independent. The bootstrap resamples whole cases, which helps but does not
+    remove the dependence between tickers on the same dates.
+  The skill may move at most 0.10 of probability per side, so differences are small by design.
+  Calibration of probabilities only: not a measure of returns, and not advice.
+
+Brier score (lower is better), pooled over forecasts
+  kind          n   claude  baseline  mechanical  (baseline = same zones, unadjusted)
+  reach       625    0.198     0.198       0.206
+  turn        655    0.163     0.163       0.168
+  scenario    352    0.174     0.174       0.176
+
+Claude minus the baseline on the same zones (the adjustment alone): mean per-case Brier difference, 95% bootstrap interval over cases
+  kind      cases      mean               interval  first better  second better
+  reach        88    0.0000       [0.0000, 0.0000]             0              0
+  turn         88    0.0000       [0.0000, 0.0000]             0              0
+  scenario     88    0.0000       [0.0000, 0.0000]             0              0
+
+Claude minus the mechanical zones' baseline (zones and adjustment): mean per-case Brier difference, 95% bootstrap interval over cases
+  kind      cases      mean               interval  first better  second better
+  reach        88   -0.0060      [-0.0183, 0.0073]            46             42
+  turn         88   -0.0022      [-0.0146, 0.0103]            45             43
+  scenario     88   -0.0020      [-0.0196, 0.0163]            49             39
+
+Baseline on Claude's zones minus the mechanical zones' baseline (zones alone): mean per-case Brier difference, 95% bootstrap interval over cases
+  kind      cases      mean               interval  first better  second better
+  reach        88   -0.0060      [-0.0183, 0.0073]            46             42
+  turn         88   -0.0022      [-0.0146, 0.0103]            45             43
+  scenario     88   -0.0020      [-0.0196, 0.0163]            49             39
+
+How much Claude moved the baseline of its own zones
+  cases with any change: 0 of 88; probability moved per side: mean 0.000, max 0.000; scenarios: mean 0.000; largest single change 0.00
+
+A negative difference means the first version scored better. Not advice.

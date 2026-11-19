@@ -22,7 +22,7 @@ build_prompt.py  ──►  reversal-zones-projection  ──►  plot_projectio
 
 *Example output from the files in [`examples/`](examples/), using data as of 18 Nov 2026. It shows what the pipeline produces; it is not a forecast.*
 
-> **Read this first.** The probabilities are internally consistent, but only their unadjusted baseline has been backtested, on a few tickers and mechanically chosen zones (see [Backtest of the baseline](#backtest-of-the-baseline)). The numbers a real projection shows, with Claude's zones and adjustments, have not been checked against outcomes. Treat the output as a structured way to look at a chart, not as a forecast you can rely on. Nothing here is investment advice.
+> **Read this first.** The probabilities are internally consistent, but only their unadjusted baseline has been backtested, on a few tickers and mechanically chosen zones (see [Backtest of the baseline](#backtest-of-the-baseline)). Claude's own numbers were compared with that baseline on 88 past cases ([Does Claude's adjustment help?](#does-claudes-adjustment-help)): without web research it left the baseline unchanged every time, and its zones scored no better than the mechanical ones beyond noise. Runs with research have not been checked against outcomes. Treat the output as a structured way to look at a chart, not as a forecast you can rely on. Nothing here is investment advice.
 
 ## Contents
 
@@ -36,6 +36,7 @@ build_prompt.py  ──►  reversal-zones-projection  ──►  plot_projectio
 - [Step 3: plot_projection.py](#step-3-plot_projectionpy)
 - [Ranked trade setups](#ranked-trade-setups)
 - [Backtest of the baseline](#backtest-of-the-baseline)
+- [Does Claude's adjustment help?](#does-claudes-adjustment-help)
 - [How the probabilities are produced](#how-the-probabilities-are-produced)
 - [Glossary](#glossary)
 - [Known limits](#known-limits)
@@ -822,6 +823,68 @@ Read it with the same care as the scoring of saved projections, and more:
 - Tickers chosen today are survivors, and the prices are on today's split-adjusted scale.
 - It describes calibration. It is not a measure of returns, does not show that the method works, and is not advice.
 
+## Does Claude's adjustment help?
+
+Step 2 costs money (about $0.20 per run with Sonnet, more with Opus or web research), while the baseline it starts from (`rz.py sim`) is free. `value_test.py` measures whether the paid step earns its cost: it runs the real step 2 on past dates and scores Claude's numbers against the baseline on the **same zones**, so the comparison isolates Claude's adjustment.
+
+```bash
+uv run python value_test.py NVDA PETR4.SA SPY --out value_runs/sonnet_1-2w --max-cost 20 --jobs 4
+uv run python value_test.py --out value_runs/sonnet_1-2w --max-cost 25     # resume: more cases, earlier runs not paid again
+uv run python value_test.py --out value_runs/sonnet_1-2w --report-only     # score what is there, start no run
+```
+
+For each ticker and every `--step`-th trading day (default 10, about one `1-2w` horizon) it:
+
+1. builds the input as of that day's close with `backtest.input_as_of()`: nothing after the day, `research: none` and no events, so Claude has no web tool and no later news. The input's `now.time` is in the past; Claude Code also tells the model today's date, and nothing else is said beyond the input;
+2. runs step 2 through the pipeline (`run_pipeline.py --input FILE --no-entries --no-save --model MODEL --out-dir CASE`), which also runs `rz.py check`. Nothing is written to `projections/`;
+3. recomputes the unadjusted baseline (`rz.baseline()`) on the zone edges Claude chose;
+4. runs `backtest.py`'s mechanical zones and their baseline on the same input, which separates the choice of zones from the adjustment;
+5. judges all three with `rz.outcome()` against the candles that followed, exactly as the backtest does.
+
+The report gives the Brier score per kind (`reach`, `turn`, the four scenarios) for each version, the paired difference per case (mean over cases, with a 95% bootstrap interval that resamples whole cases, and how many cases each side won), and how often and how far Claude moved the numbers.
+
+**Look-ahead.** A model has seen prices up to its training cutoff, so an as-of date before it leaks the outcome. `--start` must be after the cutoff (default: the first day after it), taken from Anthropic's [models overview](https://platform.claude.com/docs/en/about-claude/models/overview) ("Training data cutoff"; `TRAINING_CUTOFF` in the script), and a run whose model, as Claude Code reports it in `provenance.json`, has no known cutoff or a later one is not scored. A case is scored only when its horizon has ended.
+
+**Budget.** The cost of each run is Claude Code's own `total_cost_usd` (from the run's provenance; else the cost on its summary line). A run starts only while the total spent in `--out`, plus a reserve for each run in flight and one more, stays within `--max-cost` (default $20); the reserve is the highest cost seen so far ($0.60 before the first). Everything goes into `--out` (`cases/TICKER/DATE/` with the input, projection, provenance, chart, `run.json`, `scores.json`; `data/` with the candles; `summary.json` and `report.txt`), and a case with a `run.json` is never run again, failed or not.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `TICKER ...` | the folder's own | Yahoo symbols. None: resume or report the tickers already in `--out`. |
+| `--out DIR` | required | Where everything goes; resumes there. |
+| `--horizon` | `1-2w` | `1-2w`, `1-3m` or `6-12m`. Longer horizons leave few dates after a recent cutoff. |
+| `--start`, `--end` | the day after the cutoff; today minus the horizon and a week | Range of as-of dates. |
+| `--step N` | `10` | Trading days between two as-of dates. |
+| `--model` | `sonnet` | Model of step 2. |
+| `--cutoff YYYY-MM` | from `TRAINING_CUTOFF` | The model's training data cutoff, for a model not in the table. |
+| `--max-cost USD` | `20` | Total Claude Code cost allowed in `--out`, earlier runs included. |
+| `--jobs N` | `1` | Runs of step 2 at the same time. |
+| `--paths N` | `200000` | Simulated paths of the recomputed baselines. |
+| `--report-only`, `--json`, `--quiet` | off | No new run; JSON output; no progress lines. |
+
+### Result of 19 Nov 2026
+
+Model `sonnet`, which Claude Code resolved to `claude-sonnet-5-5` in every run (training data cutoff June 2026). Horizon `1-2w`, as-of dates every 10 trading days from 1 Jul to 23 Oct 2026, twelve tickers (AAPL, BBDC4.SA, ITUB4.SA, JPM, KO, MSFT, NVDA, PETR4.SA, SPY, VALE3.SA, WEGE3.SA, XOM). 88 runs, all passed `rz.py check` and all were scored; 20 planned cases were left unrun by the budget. **Total cost: $19.85** (about $0.22 and 30-40 seconds per run). The full report is in [`examples/value_test_sonnet_1-2w_2026-11-19.txt`](examples/value_test_sonnet_1-2w_2026-11-19.txt).
+
+Brier score, pooled over forecasts (lower is better):
+
+| Kind | Forecasts | Claude | Baseline, same zones | Mechanical zones |
+|---|---|---|---|---|
+| `reach` | 625 | 0.198 | 0.198 | 0.206 |
+| `turn` | 655 | 0.163 | 0.163 | 0.168 |
+| Scenarios (all four) | 352 | 0.174 | 0.174 | 0.176 |
+
+Paired difference per case (mean over 88 cases, 95% bootstrap interval; negative means the first is better):
+
+| Kind | Claude minus baseline, same zones | Claude's zones minus mechanical zones |
+|---|---|---|
+| `reach` | 0.000 [0.000, 0.000] | -0.006 [-0.018, 0.007], 46 cases better, 42 worse |
+| `turn` | 0.000 [0.000, 0.000] | -0.002 [-0.015, 0.010], 45 better, 43 worse |
+| Scenarios | 0.000 [0.000, 0.000] | -0.002 [-0.020, 0.016], 49 better, 39 worse |
+
+**What it shows.** With no research and no events, Sonnet 5.5 did not adjust the baseline at all: in all 88 cases every `reach`, `turn` and scenario equals the simulation's on its zones, and its `method` says why (the baseline is flat, chart levels predict little, no catalyst). So in this setting the paid step adds nothing to the probabilities beyond the choice of zones, and the adjustment's value cannot be measured because there is none. Claude's zones scored slightly better than the mechanical rule's, but well within the noise: every interval contains zero. Claude also returned fewer zones than requested on one side in 33 of 88 cases. The paid step's other output (evidence strings, strength labels, confidence limits) is not scored here.
+
+Read it with the same care as the backtest: 88 cases over four months, overlapping dates across tickers that move together, survivor tickers, no events. It says nothing about runs with web research (`one_search`, `deep`), where catalysts are what the skill allows it to adjust for; that needs as-of dates after the cutoff and news as of those dates, which `value_test.py` does not provide. It describes calibration, not returns, and is not advice.
+
 ## How the probabilities are produced
 
 The helper simulates the future closes of the main series and counts how often each zone is reached or broken.
@@ -856,7 +919,8 @@ The simulation knows nothing about chart levels. The skill may therefore move a 
 
 ## Known limits
 
-- **Mostly uncalibrated.** `backtest.py` checks the unadjusted baseline on past dates, with mechanically chosen zones, no events and a handful of tickers ([Backtest of the baseline](#backtest-of-the-baseline)). The probabilities of a real projection, with Claude's zones and adjustments, have not been checked against a meaningful number of outcomes: `score_projections.py` can compare saved projections with later prices, but the history is days old. This is the most important gap.
+- **Mostly uncalibrated.** `backtest.py` checks the unadjusted baseline on past dates, with mechanically chosen zones, no events and a handful of tickers ([Backtest of the baseline](#backtest-of-the-baseline)). `value_test.py` scored 88 real step-2 runs (Sonnet 5.5, `1-2w`, research `none`) on dates after the model's training cutoff: Claude never adjusted the baseline, and its zones were not measurably better than the mechanical rule's ([Does Claude's adjustment help?](#does-claudes-adjustment-help)). Projections made with web research, other models and longer horizons have not been checked against a meaningful number of outcomes: `score_projections.py` can compare saved projections with later prices, but the history is days old. This is the most important gap.
+- **Few dates can test a model.** Only as-of dates after a model's training cutoff are fair, so `value_test.py` has a few months of dates for the current models, and almost none for `6-12m`. Its intervals stay wide until time passes.
 - **Scoring a touch on a forming candle.** For `touched_once`, a finished candle does not say whether its high or low came before or after the projection. For the candle that was forming, the scorer counts an extreme only if it is new, otherwise it uses the close, so a touch inside that candle's earlier range can be missed. Everything else is judged exactly as the simulation counts it.
 - **Pre-market and first-of-month projections.** When the newest candle is closed but a new one has not started (a daily projection made before the open, a monthly one before the month's first session), `horizon.first` skips the candle about to begin. The scorer counts it anyway, since it comes after the projection, and notes that there are more closes than scheduled.
 - **Yahoo Finance is unofficial.** Quotes can be delayed about 15 minutes on some exchanges and requests are sometimes rate-limited. One failed request currently ends the run.
@@ -869,10 +933,11 @@ The simulation knows nothing about chart levels. The skill may therefore move a 
 ## Roadmap
 
 1. Extend the backtest (`backtest.py`, which covers the unadjusted baseline): scheduled dividends as `drop` shocks, more tickers and sectors, and scoring the unadjusted simulation next to the skill's adjusted numbers for saved projections.
-2. Add `json` to `--shape`.
-3. Carry event sizes as numbers (dividend amount, implied move) so the skill does not have to search for them.
-4. State `dividend_adjusted` explicitly in the input.
-5. Retry on Yahoo failures and guard against duplicated or malformed rows.
+2. Measure the paid step where it can adjust: `value_test.py` with events or research as of the past date (a news archive cut at the as-of day), and with more dates as they pass the cutoff. Without research Sonnet 5.5 never adjusted, so a cheaper run could skip Claude's probability step and keep only its zone choice.
+3. Add `json` to `--shape`.
+4. Carry event sizes as numbers (dividend amount, implied move) so the skill does not have to search for them.
+5. State `dividend_adjusted` explicitly in the input.
+6. Retry on Yahoo failures and guard against duplicated or malformed rows.
 
 ## Project layout
 
@@ -883,6 +948,7 @@ stock_predict_zones/
 ├── run_pipeline.py                 the `zones` command: all steps in one (step 2 through headless Claude Code), and list, runs, score, plot, show, entries, backtest, batch
 ├── score_projections.py            saved projections against later prices, and the calibration summary
 ├── backtest.py                     the baseline probabilities on past dates: mechanical zones, rz.py sim, rz.outcome
+├── value_test.py                   paid: Claude's step 2 against the baseline on the same zones, after the model's cutoff
 ├── trade_entries.py                trade setups: computes them, or fills the prompt and checks the reply
 ├── show_run.py                     one run as a text summary in the terminal
 ├── batch_runs.py                   `zones batch`: the pipeline over a watchlist, with summary.csv
