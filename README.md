@@ -29,6 +29,7 @@ build_prompt.py  ──►  reversal-zones-projection  ──►  plot_projectio
 - [Setup](#setup)
 - [Quick start](#quick-start)
 - [Your defaults](#your-defaults)
+- [Commands](#commands)
 - [Step 1: build_prompt.py](#step-1-build_promptpy)
 - [Step 2: the reversal-zones-projection skill](#step-2-the-reversal-zones-projection-skill)
 - [Step 3: plot_projection.py](#step-3-plot_projectionpy)
@@ -72,6 +73,8 @@ uv run zones PETR4.SA --open          # plain `zones PETR4.SA --open` after the 
 ```
 
 It runs the three steps below in order, validates the projection with `rz.py check` before plotting, then computes three ranked trade setups (see [Ranked trade setups](#ranked-trade-setups)). It prints where the files are and, with `--open`, shows the chart in your default image viewer. `--horizon` and the other step-1 options work here too (the default horizon is `1-3m`). Step 2 takes about 2 to 6 minutes (longest with `--research deep`) and is the only Claude Code call; the trade-setups step is computed in under a second. Progress goes to standard error. Pass `--no-entries` to stop at the chart. `uv run python run_pipeline.py ...` is the same command. To stop typing the same options on every run, see [Your defaults](#your-defaults).
+
+Afterwards the same command lists, scores, redraws and recomputes what the runs left behind (`zones list`, `zones score`, `zones plot PETR4.SA`, ...): see [Commands](#commands).
 
 Each run gets a new folder under the current directory (or under `runs_dir`, see [Your defaults](#your-defaults)):
 
@@ -136,7 +139,7 @@ uv run zones --input $RUN/input.json --projection $RUN/projection.json       # p
 uv run zones --input $RUN/input.json --projection $RUN/projection.json --chart dark.svg --theme dark
 ```
 
-The first two make a new, complete run folder each (`..._2`, then `..._3`), so the earlier chart stays. The third writes only `dark.svg`: plotting again into a named `--chart` creates no folder.
+The first two make a new, complete run folder each (`..._2`, then `..._3`), so the earlier chart stays. The third writes only `dark.svg`: plotting again into a named `--chart` creates no folder. To redraw the chart of a run in place, without a new folder, use `zones plot PETR4.SA` (see [Commands](#commands)).
 
 Step 2 runs `claude -p` in this repository without bypassing permissions. Claude gets only the skill, the helper script and a throwaway work folder to write in (it can also read files of this repository), plus web search and page fetching when `--research` is not `none`; anything else is denied.
 
@@ -213,6 +216,44 @@ What belongs to one run stays on the command line: the ticker, `--event`, `--inp
 ```text
 Error: /home/you/.config/zones/config.toml: unknown setting 'langauge' (did you mean 'language'?). `zones --show-config` lists them all.
 ```
+
+## Commands
+
+`zones` is one command for the run and for what comes after it. Inside the repository write `uv run zones ...`; after the global install, plain `zones ...` in any directory.
+
+| Command | What it does | Runs |
+|---|---|---|
+| `zones TICKER [options]` | The pipeline of [Quick start](#quick-start). `zones run TICKER` is the same. | all steps |
+| `zones list [TICKER]` | The [saved projections](#saved-projections), newest last, each `open` or `ended`. | `rz.py list` |
+| `zones runs [TICKER]` | The run folders under `runs/` in the current directory, newest last, with the files each one holds. | nothing else |
+| `zones score [TICKER \| FOLDER]` | Scores the saved projections against later prices. Downloads from Yahoo Finance. | `score_projections.py` |
+| `zones plot WHAT [plot options]` | Draws the chart of a run again. | `plot_projection.py` |
+| `zones show WHAT` | Prints the summary of a run. | `show_run.py` |
+| `zones entries WHAT` | Computes the [trade setups](#ranked-trade-setups) of a run again and checks them. | `trade_entries.py build`, then `check` |
+
+```bash
+zones list                                   # every saved projection
+zones score PETR4.SA --json                  # one ticker, as JSON
+zones plot PETR4.SA                          # redraw the latest run's chart.png
+zones plot nvda --theme dark --lang pt -o nvda_dark.png
+zones plot PETR4.SA --horizon 1-2w --open    # the latest 1-2w run, then open the chart
+zones entries runs/PETR4.SA/2026-11-18T1515_1-3m
+zones plot --help                            # each command has its own help
+```
+
+**Command or ticker.** The first argument is a command only when it is exactly one of the lowercase words above. Anything else goes to the pipeline as before, so `zones nvda` still runs the pipeline for NVDA (step 1 upper-cases the ticker), and so do `zones --input FILE` and `zones --help`. For a ticker spelled like a command, write it in capitals (`zones LIST`) or put it after `run` or `--` (`zones run list`, `zones -- list`).
+
+**WHAT** names one run, and comes first, before the options:
+
+- A folder that holds `input.json` and `projection.json`: a run folder or a saved projection. A folder of `--out-dir` files (`petr4_input.json`, `petr4_projection.json`) works too; if it holds several pairs, pick one with `--name STEM`. A folder with run folders inside it, such as `runs/PETR4.SA`, means the latest of them.
+- A ticker, in any letter case: its latest run under `runs/` in the current directory or, when there is none, its latest saved projection (`$RZ_PROJECTIONS_DIR`, else `./projections`). `--horizon H` narrows it to one horizon. "Latest" is read from the folder names (the time, then `_2`, `_3`, ...), and the folder chosen is printed.
+- When nothing matches, the error names both places it looked. An existing folder wins over a ticker of the same name.
+
+**Options are passed on.** Options a command does not declare go to the script it runs: `zones score --json`, `zones plot NVDA --theme dark --dpi 200 --no-check`, `zones show NVDA --lang pt`. The exit code is the script's. Relative paths are taken from the directory you are in.
+
+**Where `plot` and `entries` write.** For a run folder they replace the folder's own `chart.png` or `entries.json`: `runs/` is working output and both files follow from the pair. For a saved projection they write `TICKER_FOLDER.png` or `TICKER_FOLDER_entries.json` (for example `PETR4.SA_2026-11-18T1515_1-3m.png`) in the current directory, because the saved history is append-only and nothing is added to it. `-o FILE` chooses the file in either case, and a file inside the saved history is refused. `entries` builds and checks the setups before replacing anything.
+
+`zones list` and `zones runs` show two different things: `projections/` is the record kept for scoring, `runs/` is this command's output in the current directory.
 
 ## Step 1: build_prompt.py
 
@@ -416,7 +457,7 @@ projections/
 - The timestamp is the projection's `as_of.time`, in the exchange's local time, followed by the horizon.
 - Nothing is overwritten. Projecting the same input again adds a `_2`, `_3`, ... folder.
 - `save` refuses a projection that fails `check`, or whose ticker or time does not match the input.
-- `rz.py list` prints one line per saved projection with its horizon's last date and whether that date has passed (`ended`) or not (`open`). Only `ended` projections can be scored in full.
+- `zones list` (which runs `rz.py list`) prints one line per saved projection with its horizon's last date and whether that date has passed (`ended`) or not (`open`). Only `ended` projections can be scored in full.
 - `run_pipeline.py` (`zones`) saves each projection it makes the same way, once it has passed `check`, and prints the folder. It does not save when `--projection` reuses an existing file or `--no-save` is given. Its own `runs/` folders use the same names but are a different thing: working output that can be deleted, while `projections/` is the record.
 - The folder is `projections/` in the directory the command runs from. Set `RZ_PROJECTIONS_DIR`, or pass a folder as the last argument, to keep them elsewhere. For `zones`, `history_dir` in a [config file](#your-defaults) gives the history one home whatever directory you run it from.
 - `projections/` is in `.gitignore`: the history is local to your machine. Remove that line if you want to commit it.
@@ -426,11 +467,13 @@ projections/
 `score_projections.py` compares every saved projection with what the price did afterwards, then summarises how the forecast probabilities compared with the events.
 
 ```bash
-uv run python score_projections.py                      # everything under projections/
-uv run python score_projections.py --ticker PETR4.SA    # one ticker
-uv run python score_projections.py projections/PETR4.SA/2026-11-18T1515_1-3m   # one saved folder
-uv run python score_projections.py --json               # one JSON object instead of the tables
+uv run zones score                      # everything under projections/
+uv run zones score PETR4.SA             # one ticker
+uv run zones score projections/PETR4.SA/2026-11-18T1515_1-3m   # one saved folder
+uv run zones score --json               # one JSON object instead of the tables
 ```
+
+`zones score` runs the script with the same arguments; called directly it is `uv run python score_projections.py [FOLDER] [--ticker T] [--json]`, from the repository folder.
 
 It downloads the later candles from Yahoo Finance once per ticker (split-adjusted, not dividend-adjusted, like step 1) and judges each projection with the simulation's own definitions (`outcome()` in `rz.py`, which shares its code with `sim`):
 
@@ -465,7 +508,7 @@ Draws the candles, the zones and the probabilities in one figure.
 uv run python plot_projection.py INPUT.json PROJECTION.json [options]
 ```
 
-Both files are needed: the projection does not contain candles.
+Both files are needed: the projection does not contain candles. For a run made by `zones`, `zones plot PETR4.SA [options]` finds the two files and takes the same options (see [Commands](#commands)).
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -522,7 +565,7 @@ The numbers are identical either way: both paths are checked by the same `trade_
 
 When a new projection is saved under `projections/`, the setups are saved next to it as `entries.json`.
 
-The parts also run by hand, for example on the committed example:
+`zones entries PETR4.SA` computes and checks the setups of an existing run again (see [Commands](#commands)). The parts also run by hand, for example on the committed example:
 
 ```bash
 uv run python trade_entries.py build  examples/petr4_input.json examples/petr4_projection.json -o entries.json
@@ -601,7 +644,7 @@ The simulation knows nothing about chart levels. The skill may therefore move a 
 stock_predict_zones/
 ├── build_prompt.py                 step 1: Yahoo Finance to input JSON
 ├── plot_projection.py              step 3: input + projection to image
-├── run_pipeline.py                 all steps in one command, also installed as `zones` (steps 2 and 5 through headless Claude Code)
+├── run_pipeline.py                 the `zones` command: all steps in one (step 2 through headless Claude Code), and list, runs, score, plot, show, entries
 ├── score_projections.py            saved projections against later prices, and the calibration summary
 ├── trade_entries.py                trade setups: computes them, or fills the prompt and checks the reply
 ├── .claude/skills/reversal-zones-projection/
