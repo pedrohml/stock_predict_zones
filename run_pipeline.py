@@ -17,6 +17,7 @@ for each):
     zones plot WHAT [plot options]  draw the chart of a run again
     zones show WHAT                 print the summary of a run
     zones entries WHAT              compute the trade setups of a run again
+    zones batch FILE|TICKER...      one run per ticker of a watchlist, with a summary.csv
 
 WHAT is a folder holding input.json and projection.json, or a ticker, meaning
 its latest run under runs/ here, else its latest saved projection. A first
@@ -1404,8 +1405,18 @@ def entries_again(argv):
     return 0
 
 
+def batch(argv):
+    """zones batch FILE|TICKER... [options]: one pipeline run per ticker (batch_runs.py).
+    In this process, not relayed: Ctrl-C must reach its loop, which then writes the summary."""
+    need(ROOT / "batch_runs.py")
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    import batch_runs
+    return batch_runs.main(argv)
+
+
 COMMANDS = {"list": list_saved, "runs": run_folders, "score": score_saved,
-            "plot": plot_again, "show": show_again, "entries": entries_again}
+            "plot": plot_again, "show": show_again, "entries": entries_again, "batch": batch}
 FORCE_PIPELINE = ("run", "--")
 
 
