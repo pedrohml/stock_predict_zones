@@ -5,17 +5,23 @@
     python build_prompt.py NVDA --horizon 1-3m
     python build_prompt.py PETR4.SA --horizon 1-2w --volume -o petr4.json
     python build_prompt.py NVDA --event "2026-11-17: Q3 earnings, after close"
+    python build_prompt.py PETR4.SA --prices data/petr4.csv     # your own candles, no Yahoo
 
 Prints the JSON to stdout (or writes it with -o). Paste it into the chat as is.
+Yahoo requests go through data_source.py (retries, timeout, shared rate limit, cache of
+finished candles, row checks); --no-cache downloads everything afresh.
 """
 import argparse
 import hashlib
 import json
 import sys
 from datetime import timedelta
+from pathlib import Path
 
 import pandas as pd
 import yfinance as yf
+
+import data_source
 
 # horizon -> the main series the levels are read from, an optional coarser
 # context series that covers only the history BEFORE the main series starts,
@@ -102,12 +108,20 @@ def last_row_state(interval, start, now, session):
     return "unsure"
 
 
-def history(ticker, interval, period, tz):
-    """One Yahoo request -> the candles of `interval` over `period`, indexed in exchange time."""
+def history(ticker, interval, period, tz, symbol=None, cache=True, reports=None):
+    """The candles of `interval` over `period` from Yahoo, checked and indexed in exchange
+    time. data_source.candles() makes the request (retried, rate-limited) and serves finished
+    candles from the cache unless `cache` is false; what it did goes to reports[interval]."""
     # auto_adjust=False keeps prices split-adjusted but not dividend-adjusted,
     # which is what most charting platforms show by default.
-    frame = ticker.history(period=period, interval=interval,
-                           auto_adjust=False, actions=False)
+    symbol = symbol or getattr(ticker, "ticker", "?")
+    try:
+        frame, report = data_source.candles(ticker, symbol, interval, period=period, cache=cache,
+                                            what=f"{symbol.upper()} {interval}")
+    except data_source.DataError as error:
+        raise SystemExit(str(error))
+    if reports is not None:
+        reports[interval] = report
     frame = frame.dropna(subset=["Open", "High", "Low", "Close"])
     if not frame.empty:
         frame = frame.tz_convert(tz) if frame.index.tz is not None else frame.tz_localize(tz)
@@ -178,7 +192,11 @@ def upcoming_events(ticker, now, days, manual):
         notes.append({"date": date, "what": what.strip() or "event"})
     noted_dates = {note["date"] for note in notes}
     try:
-        calendar = ticker.calendar or {}
+        if ticker is None:            # candles from files: no calendar to ask
+            raise LookupError
+        data_source.throttle()        # one more Yahoo request
+        calendar = data_source.call(lambda: ticker.calendar, data_source.env_number(
+            data_source.TIMEOUT_ENV, data_source.DEFAULT_TIMEOUT) or None) or {}
     except Exception:
         calendar = {}
     found = list(notes)
@@ -197,12 +215,19 @@ def upcoming_events(ticker, now, days, manual):
 
 
 def build(args):
-    """The live input: everything from Yahoo, as of now."""
+    """The live input: everything from Yahoo, as of now (or from CSV files with --prices)."""
+    if getattr(args, "prices", None):
+        return build_from_files(args)
     preset = PRESETS[args.horizon]
     ticker = yf.Ticker(args.ticker)
+    cache = not getattr(args, "no_cache", False)
 
-    # The first history call also fills the metadata we need.
-    probe = ticker.history(period="5d", interval="1d", auto_adjust=False, actions=False)
+    # The first history call also fills the metadata we need. Never cached: it is the
+    # newest data there is, and the call that tells an unknown symbol.
+    try:
+        probe = data_source.fetch(ticker, "1d", period="5d", what=f"{args.ticker.upper()} (first request)")
+    except data_source.DataError as error:
+        raise SystemExit(str(error))
     if probe.empty:
         raise SystemExit(f"No data for '{args.ticker}'. Check the Yahoo symbol.")
     meta = ticker.get_history_metadata() or {}
@@ -211,8 +236,10 @@ def build(args):
     session = session_state(meta, now, tz)
     price = meta.get("regularMarketPrice") or float(probe["Close"].iloc[-1])
 
-    series = make_all_series(args, lambda interval, period: history(ticker, interval, period, tz),
-                             now, session, name=ticker.ticker)
+    reports = {}
+    series = make_all_series(
+        args, lambda interval, period: history(ticker, interval, period, tz, args.ticker, cache, reports),
+        now, session, name=ticker.ticker)
     events = upcoming_events(ticker, now, preset["event_days"], args.event)
     prompt = assemble(args, meta, now, session, price, series, events)
     # provenance is stamped here, on the live path only: backtest.py's past inputs come
@@ -221,7 +248,62 @@ def build(args):
     main_request = (interval, period, min(max_rows, args.max_rows or max_rows))
     requested = [preset["context"], main_request] if len(series) == 2 else [main_request]
     version = getattr(yf, "__version__", None)
-    prompt["provenance"] = provenance(prompt, SOURCE, requested, f"yfinance {version}" if version else None)
+    prompt["provenance"] = provenance(prompt, SOURCE, requested, f"yfinance {version}" if version else None,
+                                      details=[series_details(reports.get(r[0])) for r in requested])
+    return prompt
+
+
+def series_details(report, built_from=None):
+    """What data_source did to one series, for its provenance entry: nothing when the candles
+    were downloaded in this run and needed no fixing (then the entry gains no key at all)."""
+    out = {}
+    if built_from:
+        out["built_from"] = built_from
+    for key in ("checks", "cache", "note"):
+        if report and report.get(key):
+            out[key] = report[key]
+    return out
+
+
+def build_from_files(args):
+    """The input from CSV files (--prices): no Yahoo request at all. Periods are counted back
+    from each series' newest candle, the session is "unsure" (files carry no trading hours),
+    the price is the main series' last close, and events are only the --event notes."""
+    try:
+        prices = data_source.load_prices(args.prices, args.ticker)
+        preset = PRESETS[args.horizon]
+        main_interval = preset["main"][0]
+        main_frame = prices.frame(main_interval)
+        if preset["context"]:
+            prices.frame(preset["context"][0])
+    except data_source.DataError as error:
+        raise SystemExit(str(error))
+    tz = prices.meta["timezone"]
+    now = pd.Timestamp.now(tz=tz)
+    session = "unsure"
+
+    def candles_of(interval, period):
+        frame = prices.frame(interval)
+        since = frame.index[-1].normalize() - data_source.period_offset(period)
+        return frame[frame.index >= since]
+
+    series = make_all_series(args, candles_of, now, session, name=args.ticker.upper())
+    newest = main_frame.index[-1]
+    if now - newest > pd.Timedelta(days=7):
+        print(f"Warning: the newest {main_interval} candle in the CSV data starts {newest.date()}, "
+              f"{(now - newest).days} days before now", file=sys.stderr)
+    meta = {"exchangeTimezoneName": tz, "currency": prices.meta["currency"],
+            "fullExchangeName": prices.meta["venue"]}
+    events = upcoming_events(None, now, preset["event_days"], args.event)
+    prompt = assemble(args, meta, now, session, main_frame["Close"].iloc[-1], series, events)
+    interval, period, max_rows = preset["main"]
+    main_request = (interval, period, min(max_rows, args.max_rows or max_rows))
+    requested = [preset["context"], main_request] if len(series) == 2 else [main_request]
+    names = ", ".join(Path(f["path"]).name for f in prices.files if f.get("role") != "metadata")
+    details = [series_details({"checks": prices.checks.get(r[0])}, prices.built.get(r[0]))
+               for r in requested]
+    prompt["provenance"] = provenance(prompt, f"CSV ({names})", requested, details=details,
+                                      auto_adjust=None, files=prices.files)
     return prompt
 
 
@@ -276,18 +358,27 @@ def data_hash(data):
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def provenance(prompt, source, requested=None, library=None, downloaded=None):
+def provenance(prompt, source, requested=None, library=None, downloaded=None, details=None,
+               auto_adjust=False, files=None):
     """Where the candles came from, for the record: the source, when they were downloaded
     (UTC), how prices are adjusted, and per series the rows kept and the dates they span.
-    `requested` is the (interval, period, max rows) asked for, per series in the same order.
-    Read from the finished prompt, so it describes what the file holds."""
+    `requested` is the (interval, period, max rows) asked for, per series in the same order;
+    `details` adds per series what data_source did (row checks, rows served from the cache).
+    With CSV files, `files` lists each one with its sha256, the time is `read_at`, and
+    `auto_adjust` is None: the adjustment is whatever the files hold. Read from the finished
+    prompt, so it describes what the file holds."""
     downloaded = downloaded or pd.Timestamp.now(tz="UTC")
     out = {"source": source}
     if library:
         out["library"] = library
+    if files:
+        out["files"] = files
+    out["read_at" if files else "downloaded_at"] = downloaded.strftime("%Y-%m-%dT%H:%M:%SZ")
+    if auto_adjust is None:
+        out["adjustment"] = "as in the files (expected: split-adjusted, not dividend-adjusted)"
+    else:
+        out["auto_adjust"] = auto_adjust   # False: split-adjusted, not dividend-adjusted (see history())
     out.update({
-        "downloaded_at": downloaded.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "auto_adjust": False,          # split-adjusted, not dividend-adjusted (see history())
         "series": [],
         "data_sha256": data_hash(prompt["data"]),
     })
@@ -297,6 +388,8 @@ def provenance(prompt, source, requested=None, library=None, downloaded=None):
                  "last": one["rows"][-1][0] if one["rows"] else None}
         if requested and index < len(requested) and requested[index]:
             entry.update(zip(("interval", "period", "max_rows"), requested[index]))
+        if details and index < len(details) and details[index]:
+            entry.update(details[index])
         out["series"].append(entry)
     return out
 
@@ -347,6 +440,13 @@ def arguments():
     parser.add_argument("--links", choices=["none", "decisive_only", "all"],
                         default="decisive_only")
     parser.add_argument("--decimals", type=int, default=2)
+    parser.add_argument("--prices", metavar="FILE.csv|DIR",
+                        help="read the candles from CSV files instead of Yahoo Finance: one file, "
+                             "or a folder holding TICKER/, TICKER.csv or 1d.csv, 1wk.csv ... "
+                             "(README: Data sources)")
+    parser.add_argument("--no-cache", action="store_true",
+                        help="download every candle from Yahoo again instead of reusing finished "
+                             "ones from the local candle cache")
     parser.add_argument("-o", "--output", help="write to this file instead of stdout")
     return parser
 

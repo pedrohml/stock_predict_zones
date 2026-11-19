@@ -144,6 +144,19 @@ def no_real_claude(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_real_cache(monkeypatch, tmp_path_factory):
+    """No test may read or write the developer's candle cache (~/.cache/zones) or wait on
+    the shared Yahoo rate limit: each test gets an empty cache folder of its own (child
+    processes inherit the variable), and no spacing between requests. A test about the
+    rate limit sets ZONES_YAHOO_SPACING itself. Retries never really wait in this process
+    (data_source.sleep is a no-op; a test that counts the waits replaces it again)."""
+    import data_source
+    monkeypatch.setenv(data_source.CACHE_ENV, str(tmp_path_factory.mktemp("candle-cache")))
+    monkeypatch.setenv(data_source.SPACING_ENV, "0")
+    monkeypatch.setattr(data_source, "sleep", lambda seconds: None)
+
+
+@pytest.fixture(autouse=True)
 def no_real_config(monkeypatch, tmp_path_factory):
     """No test may read the developer's own defaults (run_pipeline.py's config files), or
     the suite passes on one machine only. The user file is a path that does not exist and

@@ -520,6 +520,10 @@ def main(argv=None):
             wanted += [pair for pair in again if (pair[0].upper(), pair[1]) not in seen]
         if not wanted:
             raise BatchError("The watchlist holds no tickers.")
+        found, prices = rp.typed("--prices", options)
+        if found and prices and Path(prices).is_file() and len({t.upper() for t, _ in wanted}) > 1:
+            raise BatchError(f"--prices {prices} is one ticker's file; for a batch give a folder "
+                             "holding TICKER.csv or TICKER/ for each ticker")
         if not PIPELINE.is_file():
             raise BatchError(f"{PIPELINE} not found: run this from the repository checkout.")
         base = runs_dir(args, options)

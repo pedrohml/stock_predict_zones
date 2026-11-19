@@ -63,16 +63,26 @@ def today_in(tz):
         return date.today()
 
 
-def download(ticker, interval, start, tz):
+CACHE = True   # download() reuses finished candles from data_source's cache; --no-cache turns it off
+
+
+def download(ticker, interval, start, tz, cache=None):
     """Candles from Yahoo since `start` -> (rows, splits). rows are [start, open, high, low,
     close] in exchange time, unrounded; splits are [date, ratio]. Prices are split-adjusted and
-    not dividend-adjusted, as in build_prompt.py. Raises Unscorable with a one-line reason."""
+    not dividend-adjusted, as in build_prompt.py. Raises Unscorable with a one-line reason.
+    The request goes through data_source (retries, timeout, shared rate limit, row checks);
+    finished daily candles come from its cache unless `cache` (None: CACHE) is false. The
+    latest candles are always downloaded, so an open projection is judged on current prices."""
     import pandas as pd
     import yfinance as yf
+    import data_source
     logging.getLogger("yfinance").setLevel(logging.CRITICAL)   # it logs what we report ourselves
     try:
-        frame = yf.Ticker(ticker).history(start=start.isoformat(), interval=interval,
-                                          auto_adjust=False, actions=True)
+        frame, report = data_source.candles(yf.Ticker(ticker), ticker, interval, start=start.isoformat(),
+                                            actions=True, cache=CACHE if cache is None else cache,
+                                            what=f"{ticker} {interval}")
+    except data_source.DataError as error:
+        raise Unscorable(str(error)[:300])
     except Exception as error:
         raise Unscorable(f"could not fetch {ticker} from Yahoo ({type(error).__name__}: {error})"[:200])
     if frame is None or frame.empty:
@@ -82,9 +92,10 @@ def download(ticker, interval, start, tz):
     frame = frame.tz_convert(tz) if frame.index.tz is not None else frame.tz_localize(tz)
     stamp = "%Y-%m-%d" if interval == "1d" else "%Y-%m-%dT%H:%M"
     splits = []
-    if "Stock Splits" in frame:
-        splits = [[when.strftime("%Y-%m-%d"), float(ratio)]
-                  for when, ratio in frame["Stock Splits"].items() if pd.notna(ratio) and ratio != 0]
+    for when, ratio in report["splits"]:     # read before the row checks, cached ones included
+        when = pd.Timestamp(when)
+        when = when.tz_convert(tz) if when.tzinfo is not None else when.tz_localize(tz)
+        splits.append([when.strftime("%Y-%m-%d"), float(ratio)])
     frame = frame.dropna(subset=["Open", "High", "Low", "Close"])
     rows = [[when.strftime(stamp)] + [float(candle[c]) for c in ("Open", "High", "Low", "Close")]
             for when, candle in frame.iterrows()]
@@ -411,7 +422,12 @@ def main(argv=None):
                              "(default: $RZ_PROJECTIONS_DIR, else ./projections)")
     parser.add_argument("--ticker", help="only projections of this ticker, e.g. PETR4.SA")
     parser.add_argument("--json", action="store_true", help="print one JSON object instead of the tables")
+    parser.add_argument("--no-cache", action="store_true",
+                        help="download every candle again instead of reusing finished ones from the "
+                             "local candle cache (README: Data sources)")
     args = parser.parse_args(argv)
+    global CACHE
+    CACHE = not args.no_cache
 
     report = run(args.folder, args.ticker)
     records = report["projections"]

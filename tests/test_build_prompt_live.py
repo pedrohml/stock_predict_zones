@@ -3,14 +3,17 @@
 The expected files in tests/fixtures/build_prompt_live/ were written by the version of
 build_prompt.py before it was split so that backtest.py can build an input from candles it
 already has, then regenerated once to add `schema_version` and `provenance` (insertions
+only), and once more to add the row checks of data_source.py to `provenance.series` (insertions
 only). They pin the live command line byte for byte.
 Regenerate them only for a deliberate change of the output:
 
     uv run python tests/test_build_prompt_live.py
 """
 import io
+import os
 import math
 import sys
+import tempfile
 from contextlib import redirect_stdout
 from pathlib import Path
 
@@ -20,6 +23,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 import build_prompt  # noqa: E402
+import data_source  # noqa: E402
 
 GOLDEN = Path(__file__).resolve().parent / "fixtures" / "build_prompt_live"
 TZ = "America/Sao_Paulo"
@@ -94,18 +98,25 @@ class FrozenPandas:
 
 
 def run_cli(argv, monkeypatch=None):
-    """build_prompt.main() with fake Yahoo and frozen time -> what it printed."""
+    """build_prompt.main() with fake Yahoo and frozen time -> what it printed. Each call gets
+    an empty candle cache of its own, also when run as a script to regenerate the files."""
     fake_yf = type(sys)("yfinance")
     fake_yf.Ticker = FakeYahooTicker
-    saved = build_prompt.yf, build_prompt.pd, sys.argv
+    saved = build_prompt.yf, build_prompt.pd, sys.argv, os.environ.get(data_source.CACHE_ENV)
     build_prompt.yf, build_prompt.pd, sys.argv = fake_yf, FrozenPandas(), ["build_prompt.py", *argv]
     try:
-        out = io.StringIO()
-        with redirect_stdout(out):
-            build_prompt.main()
-        return out.getvalue()
+        with tempfile.TemporaryDirectory(prefix="zones-cache-") as cache:
+            os.environ[data_source.CACHE_ENV] = cache
+            out = io.StringIO()
+            with redirect_stdout(out):
+                build_prompt.main()
+            return out.getvalue()
     finally:
-        build_prompt.yf, build_prompt.pd, sys.argv = saved
+        build_prompt.yf, build_prompt.pd, sys.argv, kept = saved
+        if kept is None:
+            os.environ.pop(data_source.CACHE_ENV, None)
+        else:
+            os.environ[data_source.CACHE_ENV] = kept
 
 
 @pytest.mark.parametrize("name", CASES)

@@ -438,7 +438,9 @@ def test_download_stamps_intraday_candles_in_exchange_time(fake_yfinance, real_d
     (pd.DataFrame(), "1d", "no 1d candles for ZZZZ from Yahoo since 2026-11-01 (unknown symbol or network failure)"),
     (pd.DataFrame(), "15m", "no 15m candles for ZZZZ from Yahoo since 2026-11-01 (unknown symbol or network "
                             "failure; Yahoo keeps intraday candles for about 60 days)"),
-    (ConnectionError("offline"), "1d", "could not fetch ZZZZ from Yahoo (ConnectionError: offline)"),
+    (ValueError("unexpected"), "1d", "could not fetch ZZZZ from Yahoo (ValueError: unexpected)"),
+    (ConnectionError("offline"), "1d", "Yahoo kept failing for ZZZZ 1d (ConnectionError: offline); "
+                                       "gave up after 5 attempt(s) in 0 s"),    # retried first
 ])
 def test_download_failures_become_one_line(fake_yfinance, real_download, result, interval, message):
     fake_yfinance(result)
