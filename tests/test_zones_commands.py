@@ -569,6 +569,7 @@ def test_a_copy_installed_away_from_the_repository_says_so(cwd, make, monkeypatc
 def config(tmp_path, monkeypatch):
     """config(text) -> a user config file that ZONES_CONFIG names."""
     monkeypatch.setattr(run_pipeline, "runs_home", run_pipeline.runs_home)   # restored after the test
+    monkeypatch.setattr(run_pipeline, "chart_config", {})
     path = tmp_path / "conf" / "config.toml"
 
     def write(text):
@@ -608,3 +609,16 @@ def test_a_bad_config_stops_a_command_with_one_line(config, capsys, relayed):
     assert main("runs") == 1
     err = capsys.readouterr().err
     assert err.startswith("Error: ") and "runs_dri" in err and "Traceback" not in err
+
+
+def test_plot_and_show_follow_the_files_chart_settings(make, config, relayed):
+    config('lang = "pt"\ntheme = "dark"\ndpi = 90\n')
+    make(f"runs/{TICKER}/2026-11-18T1515_1-3m")
+    assert main("plot", TICKER) == 0
+    assert relayed[-1][-6:] == ["--theme", "dark", "--lang", "pt", "--dpi", "90"]
+    assert main("plot", TICKER, "--lang", "en") == 0           # typed wins, and is not given twice
+    assert relayed[-1][-6:] == ["--theme", "dark", "--dpi", "90", "--lang", "en"]
+    assert main("show", TICKER) == 0
+    assert relayed[-1][-2:] == ["--lang", "pt"]
+    assert main("show", TICKER, "--lang=en") == 0
+    assert relayed[-1].count("--lang") == 0 and relayed[-1][-1] == "--lang=en"

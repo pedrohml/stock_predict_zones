@@ -1100,20 +1100,33 @@ def need(*scripts):
                                 "checkout: install it with `uv tool install --editable PATH`.")
 
 
-runs_home = Path(RUNS)   # the commands' runs folder: config_folders() sets it from runs_dir
+runs_home = Path(RUNS)   # the commands' runs folder: command_config() sets it from runs_dir
+chart_config = {}        # the chart settings a config file gave: command_config() fills it
 
 
-def config_folders():
-    """The commands after a run use the same two folders as a run: `runs_dir` from the
-    config files, and `history_dir` exported as RZ_PROJECTIONS_DIR the way `configured()`
-    exports it (never over a variable the user set). Returns the runs folder."""
+def command_config():
+    """The commands after a run follow the same config files as a run: `runs_dir`,
+    `history_dir` (exported as RZ_PROJECTIONS_DIR the way `configured()` exports it,
+    never over a variable the user set) and the chart settings for `plot` and `show`."""
+    global runs_home, chart_config
     loaded = [(path, values) for _, path in config_files()
               if (values := read_config(path)) is not None]
     settled = settle({}, loaded)
     history, source = settled["history_dir"]
     if from_file(source):
         os.environ[HISTORY_ENV] = str(Path(history).absolute())
-    return Path(settled["runs_dir"][0])
+    runs_home = Path(settled["runs_dir"][0])
+    chart_config = {key: value for key, (value, source) in settled.items()
+                    if SETTINGS[key].group == "chart" and from_file(source)}
+
+
+def configured_options(keys, rest):
+    """`--key value` for each config value in `keys` not typed in `rest`: first, so typed wins."""
+    extra = []
+    for key in keys:
+        if key in chart_config and not typed(SETTINGS[key].flag, rest)[0]:
+            extra += [SETTINGS[key].flag, str(chart_config[key])]
+    return extra
 
 
 def history():
@@ -1334,10 +1347,11 @@ def plot_again(argv):
     need(PLOT)
     found = resolve(args.what, args.horizon, args.name)
     chart = target(found, args.output, found["chart"], ".png")
+    rest = configured_options(("theme", "lang", "candles", "dpi"), rest) + rest
     code = relay([sys.executable, PLOT, found["input"], found["projection"], "-o", chart, *rest])
     if code == 0:
         print(f"chart:      {chart}")
-        if args.open:
+        if args.open or chart_config.get("open"):
             open_chart(chart)
     return code
 
@@ -1352,7 +1366,7 @@ def show_again(argv):
         raise PipelineError(f"The summary script is not available ({script} not found).")
     found = resolve(args.what, args.horizon, args.name)
     files = [found["input"], found["projection"]] + ([found["entries"]] if found["entries"].is_file() else [])
-    return relay([sys.executable, script, *files, *rest])
+    return relay([sys.executable, script, *files, *configured_options(("lang",), rest), *rest])
 
 
 def entries_again(argv):
@@ -1410,9 +1424,8 @@ def dispatch(argv=None):
         return None, argv[1:]
     if not argv or argv[0] not in COMMANDS:
         return None, argv
-    global runs_home
     try:
-        runs_home = config_folders()
+        command_config()
         return COMMANDS[argv[0]](argv[1:]), argv
     except PipelineError as error:
         say(f"Error: {error}")
