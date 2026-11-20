@@ -49,7 +49,31 @@ SPREAD = 0.65
 # optimistic ordering, on the first two years of as-of dates of the setup backtest (README,
 # "Backtest of the trade setups"), rounded up to 0.01. An edge inside the band cannot be told from
 # zero: `marginal`. A horizon the backtest does not cover (today) gets the widest band.
-EDGE_BAND = {"1-2w": 0.35, "1-3m": 0.09, "6-12m": 0.32}
+EDGE_BAND = {"1-2w": 0.26, "1-3m": 0.09, "6-12m": 0.02}
+# The correction of the path odds (rules 5). The paths know nothing of the zones, and the long
+# setup backtest (README, "An empirical correction of the odds, per horizon, side and kind")
+# found errors that keep their sign across years and regimes: continuations overstated, reversals
+# understated. Per horizon, side and kind, three shifts were fitted on the fit part of that run
+# (76 tickers, as-of dates 2005-2026 outside the held-out years), over every valid setup of every
+# case, not only the picked ones, under the pessimistic ordering: `fill` and `win` move the path
+# shares in log-odds so that their mean equals the observed fill and win rates of the group,
+# `edge` adds the mean observed minus stated R per fill. Each is shrunk toward zero by
+# n / (n + 100), n the cases in the group (all over 10,000, so barely), and rounded to 0.01. A
+# market order's fill stays 1. A horizon without entries (today: no backtest) is not corrected.
+CORRECTION = {   # (horizon, side, kind): log-odds shifts of fill and win, R added to edge.if_filled
+    ("1-2w", "long", "reversal"): {"fill": 0.16, "win": 0.26, "edge": 0.18},
+    ("1-2w", "long", "continuation"): {"fill": 0.23, "win": -0.06, "edge": -0.09},
+    ("1-2w", "short", "reversal"): {"fill": 0.22, "win": 0.22, "edge": 0.17},
+    ("1-2w", "short", "continuation"): {"fill": 0.15, "win": -0.15, "edge": -0.15},
+    ("1-3m", "long", "reversal"): {"fill": 0.01, "win": 0.11, "edge": 0.07},
+    ("1-3m", "long", "continuation"): {"fill": 0.24, "win": -0.13, "edge": -0.11},
+    ("1-3m", "short", "reversal"): {"fill": 0.23, "win": -0.01, "edge": 0.02},
+    ("1-3m", "short", "continuation"): {"fill": -0.01, "win": -0.24, "edge": -0.19},
+    ("6-12m", "long", "reversal"): {"fill": -0.04, "win": 0.08, "edge": 0.06},
+    ("6-12m", "long", "continuation"): {"fill": 0.18, "win": 0.02, "edge": -0.01},
+    ("6-12m", "short", "reversal"): {"fill": 0.19, "win": -0.09, "edge": -0.02},
+    ("6-12m", "short", "continuation"): {"fill": -0.06, "win": -0.03, "edge": -0.07},
+}
 MIN_FILL = 0.05      # a setup whose order fills on fewer paths says nothing (its edge rounds to zero and would rank first)
 TOLERANCE = 0.011        # one hundredth, for a rounding that fell the other way
 RANK_TOLERANCE = 0.021   # two setups this close in edge.per_order may swap places
@@ -301,6 +325,30 @@ def odds(sim, side, order, entry, stop, target, ratio):
             "if_filled": float(r[filled].mean()) if count else 0.0}
 
 
+def logit(p):
+    p = min(max(p, 1e-6), 1 - 1e-6)
+    return math.log(p / (1 - p))
+
+
+def corrected(source, side, kind, order, result):
+    """odds()' result with the CORRECTION of the input's horizon, side and kind applied (unchanged
+    when there is none): fill and win moved in log-odds (a market order's fill stays 1), the stop
+    and still-open shares scaled to fill what the win leaves, the edge per fill shifted."""
+    horizon = source.get("horizon") if isinstance(source, dict) else None
+    shift = CORRECTION.get((horizon, side, kind))
+    if not shift:
+        return result
+    out = dict(result)
+    if order != "market":
+        out["fill"] = 1 / (1 + math.exp(-(logit(result["fill"]) + shift["fill"])))
+    out["win"] = 1 / (1 + math.exp(-(logit(result["win"]) + shift["win"])))
+    rest = result["loss"] + result["open"]
+    out["loss"] = (1 - out["win"]) * (result["loss"] / rest if rest else 1.0)
+    out["open"] = (1 - out["win"]) * (result["open"] / rest if rest else 0.0)
+    out["if_filled"] = result["if_filled"] + shift["edge"]
+    return out
+
+
 def band(source):
     """The quality band for the input's horizon (EDGE_BAND, the widest when the horizon has none)."""
     horizon = source.get("horizon") if isinstance(source, dict) else None
@@ -338,9 +386,10 @@ def setups(source, proj, sim=None):
             played["sim"] = paths(source)
         sim_now = played["sim"]
         result = odds(sim_now, side, order, entry, stop, target, ratio)
-        fill_p, win, if_filled = half_up(result["fill"]), half_up(result["win"]), half_up(result["if_filled"])
-        if fill_p < MIN_FILL:
+        if half_up(result["fill"]) < MIN_FILL:   # judged on the paths' own count, before the correction
             return
+        result = corrected(source, side, kind, order, result)
+        fill_p, win, if_filled = half_up(result["fill"]), half_up(result["win"]), half_up(result["if_filled"])
         found.append({
             "id": f"{side}-{zone_id}-{kind}", "side": side, "setup": kind, "order": order,
             "entry": entry, "stop": stop, "target": target,

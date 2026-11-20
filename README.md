@@ -1239,6 +1239,8 @@ The long run shows errors that keep their sign across years, regimes and parts: 
 
 A horizon that fails any of them keeps rules 3 (its correction is zero); another horizon may still adopt. If no horizon passes, the rules stay version 3 and the candidate is written up as not adopted.
 
+**The candidate, fixed on the fit part before the held-out part was evaluated:** per horizon, side and kind, a log-odds shift of `fill` and of `win_if_filled` and an additive shift of `edge.if_filled` (`CORRECTION` in `trade_entries.py`), with the quality bands re-measured under it on the fit part: `1-2w` 0.26, `1-3m` 0.09, `6-12m` 0.02.
+
 ### Result of 19 Nov 2026, rules version 1
 
 Twelve tickers (AAPL, BBDC4.SA, ITUB4.SA, JPM, KO, MSFT, NVDA, PETR4.SA, SPY, VALE3.SA, WEGE3.SA, XOM), the default three-year ranges and steps, sim method 2, pessimistic ordering: **3,146 cases, 9,438 setups**, none skipped. The full report is in [`examples/backtest_entries_2026-11-19.txt`](examples/backtest_entries_2026-11-19.txt), kept for comparison; the numbers below are for rules version 1, which these results led to replace. "st/obs" is the stated mean, then the observed value; "R/order (optimistic)" is the same mean with the other ordering.
