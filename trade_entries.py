@@ -193,6 +193,70 @@ def paths(source):
     return {"high": high, "low": low, "last": np.exp(end[:, -1]), "steps": end.shape[1], "method": method}
 
 
+# ---- a path model that was evaluated and not adopted --------------------------------------
+# Rules 4 was to play the setups on paths with volatility clustering and fat tails. Fitted on the
+# fit years and judged on the held-out year of the setup backtest, it was not better out of sample
+# (README, "Rules version 4: clustering and fat tails, not adopted"), so setups() never calls
+# garch_paths(). It is kept, with the parameters it was run with, so the evaluation can be repeated.
+GARCH = {"alpha": 0.08, "beta": 0.90, "nu": 5}   # pooled GARCH(1,1)-t fit, daily returns of the 12 tickers, 2012 to 11 Nov 2024
+GARCH_SPREAD = 0.70   # the SPREAD the fit years chose under this model (0.65 under paths())
+GARCH_SEED = 8        # a generator of its own: walk()'s seed 7 and its draws stay untouched
+
+
+def unit_t(rng, nu, shape):
+    """Student-t draws scaled to unit variance; nu None: standard normal."""
+    if nu is None:
+        return rng.standard_normal(shape)
+    return rng.standard_t(nu, shape) / math.sqrt(nu / (nu - 2))
+
+
+def garch_paths(source, model=None, spread=None, count=PATHS):
+    """Simulated days with volatility clustering and fat tails, in the shape paths() returns:
+    {"high", "low", "last", "steps", "method"}. Not used by the rules (see above).
+
+    1. The schedule of the projection's simulation, as paths() reads it: the closes' dates and the
+       forming candle's share, the volatility per candle (rz.vol()'s `assumed`, from the first
+       number to the second, as walk() spreads it) and the drift of the default sim method.
+    2. Trading days (DAYS per candle, the forming candle its share), each with the log return
+       sigma x sqrt(h) x z + drift - h x sigma^2 / 2: sigma and drift the day's share of the
+       candle's, z a unit-variance Student-t with `nu` degrees of freedom (fat tails), h a
+       GARCH(1,1) variance factor per path, h' = (1 - alpha - beta) + (alpha x z^2 + beta) x h,
+       starting at 1 (clustering: a large move raises the next days' volatility, fading by beta a
+       day). The mean of h stays 1 on every day, so the mean variance of the paths is the
+       projection's own; only how it is spread over paths and days changes.
+    3. Each day's high and low: Brownian-bridge extremes between its two points, as in paths(),
+       with `spread` x that day's own volatility.
+    walk() is called with one path, for its schedule only; every draw comes from GARCH_SEED."""
+    model, spread = model or GARCH, GARCH_SPREAD if spread is None else spread
+    lib = rz()
+    d, main, t, h, l, c = lib.unpack(source)
+    method = lib.sim_method(None)
+    drift = lib.drift_of(main, method)
+    _, dates, frac, v, sub = lib.walk(d, main, t, c, {}, 1)   # one path: only walk()'s schedule is used
+    n, start_price = len(dates), math.log(d["now"]["price"])
+    sigma = np.repeat(np.linspace(v["assumed"][0], v["assumed"][1], n), sub) / np.sqrt(sub)   # as walk()
+    sigma[:sub] *= np.sqrt(frac)
+    mu = lib.drift_steps(drift, n, sub, frac)
+    per = DAYS.get(main["candles"], 1) / sub
+    counts = [max(1, round(per * (frac if i < sub else 1.0))) for i in range(n * sub)]
+    day_sigma = np.concatenate([np.full(m, sigma[i] / math.sqrt(m)) for i, m in enumerate(counts)])
+    day_mu = np.concatenate([np.full(m, mu[i] / m) for i, m in enumerate(counts)])
+    alpha, beta = model["alpha"], model["beta"]
+    rng = np.random.default_rng(GARCH_SEED)
+    z = unit_t(rng, model["nu"], (count, len(day_sigma)))
+    factor, vol = np.ones(count), np.empty(z.shape)
+    for k in range(z.shape[1]):
+        vol[:, k] = day_sigma[k] * np.sqrt(factor)
+        factor = (1 - alpha - beta) + (alpha * z[:, k] ** 2 + beta) * factor
+    end = start_price + np.cumsum(vol * z - 0.5 * vol ** 2 + day_mu, axis=1)
+    start = np.concatenate([np.full((count, 1), start_price), end[:, :-1]], axis=1)
+    twice = 2 * (spread * vol) ** 2
+    middle, gap = start + end, (end - start) ** 2
+    high = (middle + np.sqrt(gap - twice * np.log(rng.random(end.shape)))) / 2
+    low = (middle - np.sqrt(gap - twice * np.log(rng.random(end.shape)))) / 2
+    return {"high": high, "low": low, "last": np.exp(end[:, -1]), "steps": end.shape[1], "method": method}
+
+
 def first(mask, steps):
     """Index of the first True of each row, or `steps` when there is none."""
     return np.where(mask.any(axis=1), mask.argmax(axis=1), steps)
