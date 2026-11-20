@@ -1227,6 +1227,18 @@ What it shows:
 
 The verdict stands. The candidate is slightly better at `1-3m` (both Brier scores closer to zero relative to the constant, on fit and held-out years) and slightly better for `win_if_filled` everywhere. It is worse for `fill` at `1-2w`, and at `6-12m` on the held-out years its `fill` Brier is worse than the constant forecast (0.204 against 0.201), where rules 3 beat it. The R-per-order gap at `1-3m` barely narrows (0.08 to 0.07), the continuation fill under-statement widens there (66%/68% to 69%/73%), and the short continuation loss at `1-3m` is unchanged. Again the remaining errors are directional, not a matter of the shape of volatility.
 
+### An empirical correction of the odds, per horizon, side and kind
+
+The long run shows errors that keep their sign across years, regimes and parts: short continuations lose everywhere (`1-3m` stated +0.02 R per order, observed -0.09), long continuations are overstated at `1-3m` and `1-2w`, reversals are about calibrated or understated, and the `1-3m` stated edge is too high in 21 of 22 years. The zone-blind paths seem to under-represent what happens at zones, and a different path shape did not help ([rules 4](#rules-version-4-clustering-and-fat-tails-not-adopted)). The hypothesis tested here: a small correction of the stated odds, measured on past outcomes per horizon, side and kind, makes them better calibrated out of sample.
+
+**Adoption criterion, written down before the held-out part was evaluated, and not changed afterwards.** The candidate (the correction and the quality bands re-measured under it) is fitted on the fit part of the long universe only. It is then run once on `--part held-out` of the same long run (76 tickers, the same as-of grid), and compared, per horizon, with rules 3 on the same held-out cases; the picked setups, pessimistic ordering. The correction is adopted at a horizon only if all three hold there:
+
+1. **The R gap shrinks:** |mean stated `edge.per_order` − mean observed R per order| is smaller than rules 3's.
+2. **Brier no worse:** for `fill` and for `win_if_filled` separately, the candidate's Brier score minus the Brier score of the constant forecast (always the group's own observed rate) is no more than 0.002 above the same difference for rules 3. Both raw scores and both constants are reported.
+3. **The original twelve are not made worse on the R gap:** on the held-out cases of the original twelve tickers alone, the candidate's gap is no larger than rules 3's.
+
+A horizon that fails any of them keeps rules 3 (its correction is zero); another horizon may still adopt. If no horizon passes, the rules stay version 3 and the candidate is written up as not adopted.
+
 ### Result of 19 Nov 2026, rules version 1
 
 Twelve tickers (AAPL, BBDC4.SA, ITUB4.SA, JPM, KO, MSFT, NVDA, PETR4.SA, SPY, VALE3.SA, WEGE3.SA, XOM), the default three-year ranges and steps, sim method 2, pessimistic ordering: **3,146 cases, 9,438 setups**, none skipped. The full report is in [`examples/backtest_entries_2026-11-19.txt`](examples/backtest_entries_2026-11-19.txt), kept for comparison; the numbers below are for rules version 1, which these results led to replace. "st/obs" is the stated mean, then the observed value; "R/order (optimistic)" is the same mean with the other ordering.
