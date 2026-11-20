@@ -872,7 +872,7 @@ def main(argv=None):
     parser.add_argument("--by-year", action="store_true", help="add a table per year of the as-of date")
     parser.add_argument("--by-regime", action="store_true",
                         help="add tables by market regime (downloads ^GSPC and ^BVSP): the index's trailing "
-                             f"12-month return (+/-{REGIME_BAND:.0%}) and its move over the horizon")
+                             f"12-month return (+/-{REGIME_BAND:.0%}%) and its move over the horizon")
     parser.add_argument("--by-part", action="store_true",
                         help="add a table by part of the fixed fit / held-out split (held-out years "
                              + ", ".join(map(str, HELD_OUT_YEARS)) + ")")
