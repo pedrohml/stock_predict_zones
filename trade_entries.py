@@ -48,12 +48,13 @@ DAYS = {"1D": 1, "1W": 5, "1M": 21}   # trading days per candle of the close bas
 SPREAD = 0.65
 # quality: edge.if_filled against the model's measured error at the horizon. Each band is the larger
 # of |stated - observed| mean R per fill of the picked setups, under the pessimistic and the
-# optimistic ordering, rounded up to 0.01: at 1-2w and 1-3m under rules 5 (with CORRECTION), on the
+# optimistic ordering, rounded up to 0.01: at 1-2w and 1-3m under rules 5 (with CORRECTION, market orders
+# left as counted), on the
 # fit part of the long setup backtest (README, "An empirical correction of the odds, per horizon,
 # side and kind"); at 6-12m, not corrected, the rules 3 band from the first two years of the
 # three-year backtest (README, "Backtest of the trade setups"). An edge inside the band cannot be
 # told from zero: `marginal`. A horizon the backtest does not cover (today) gets the widest band.
-EDGE_BAND = {"1-2w": 0.26, "1-3m": 0.09, "6-12m": 0.32}
+EDGE_BAND = {"1-2w": 0.29, "1-3m": 0.09, "6-12m": 0.32}
 # The correction of the path odds (rules 5). The paths know nothing of the zones, and the long
 # setup backtest (README, "An empirical correction of the odds, per horizon, side and kind")
 # found errors that keep their sign across years and regimes: continuations overstated, reversals
@@ -335,15 +336,16 @@ def logit(p):
 
 def corrected(source, side, kind, order, result):
     """odds()' result with the CORRECTION of the input's horizon, side and kind applied (unchanged
-    when there is none): fill and win moved in log-odds (a market order's fill stays 1), the stop
-    and still-open shares scaled to fill what the win leaves, the edge per fill shifted."""
+    when there is none, and for a market order): fill and win moved in log-odds, the stop and
+    still-open shares scaled to fill what the win leaves, the edge per fill shifted. A market order
+    is left as counted: the reversal shifts were fitted on limit orders (97% of the reversals), and
+    applied to market orders they overstated them (README, "Market orders are not corrected")."""
     horizon = source.get("horizon") if isinstance(source, dict) else None
     shift = CORRECTION.get((horizon, side, kind))
-    if not shift:
+    if not shift or order == "market":
         return result
     out = dict(result)
-    if order != "market":
-        out["fill"] = 1 / (1 + math.exp(-(logit(result["fill"]) + shift["fill"])))
+    out["fill"] = 1 / (1 + math.exp(-(logit(result["fill"]) + shift["fill"])))
     out["win"] = 1 / (1 + math.exp(-(logit(result["win"]) + shift["win"])))
     rest = result["loss"] + result["open"]
     out["loss"] = (1 - out["win"]) * (result["loss"] / rest if rest else 1.0)

@@ -284,7 +284,7 @@ def test_an_entries_file_of_the_earlier_rules_is_named_as_such(input_data, proje
 # ---- quality: the edge against the model's measured error at the horizon -----------
 
 def test_the_quality_band_follows_the_horizon():
-    assert trade_entries.band({"horizon": "1-2w"}) == 0.26
+    assert trade_entries.band({"horizon": "1-2w"}) == 0.29
     assert trade_entries.band({"horizon": "1-3m"}) == 0.09
     assert trade_entries.band({"horizon": "6-12m"}) == 0.32
     widest = max(trade_entries.EDGE_BAND.values())
@@ -540,8 +540,8 @@ def test_corrected_moves_fill_and_win_in_log_odds_and_shifts_the_edge():
     assert out["win"] + out["loss"] + out["open"] == pytest.approx(1)
     assert out["loss"] / out["open"] == pytest.approx(3)       # stop and open keep their proportion
     assert raw == {"fill": 0.5, "win": 0.4, "loss": 0.45, "open": 0.15, "if_filled": -0.1}   # not changed in place
-    market = trade_entries.corrected({"horizon": "1-3m"}, "long", "reversal", "market", {**raw, "fill": 1.0})
-    assert market["fill"] == 1.0
+    market = {**raw, "fill": 1.0}
+    assert trade_entries.corrected({"horizon": "1-3m"}, "long", "reversal", "market", market) is market
     for horizon in ("6-12m", "today", None):
         assert trade_entries.corrected({"horizon": horizon}, "short", "continuation", "stop", raw) is raw
 

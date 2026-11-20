@@ -124,7 +124,7 @@
             "per_order": { "type": "number", "description": "fill x if_filled: the same, counting orders that never fill as zero. The ranking key." }
           }
         },
-        "quality": { "enum": ["favourable", "marginal", "unfavourable"], "description": "edge.if_filled against the model's measured error at the input's horizon (rules 5: ±0.26 at 1-2w, ±0.09 at 1-3m, ±0.32 at 6-12m, ±0.32 otherwise; rules 3: ±0.35, ±0.09, ±0.32, ±0.35; rules 2: ±0.05 everywhere). favourable at or above the band, unfavourable at or below minus the band, marginal inside it: an edge that cannot be told from zero. Not a recommendation." },
+        "quality": { "enum": ["favourable", "marginal", "unfavourable"], "description": "edge.if_filled against the model's measured error at the input's horizon (rules 5: ±0.29 at 1-2w, ±0.09 at 1-3m, ±0.32 at 6-12m, ±0.32 otherwise; rules 3: ±0.35, ±0.09, ±0.32, ±0.35; rules 2: ±0.05 everywhere). favourable at or above the band, unfavourable at or below minus the band, marginal inside it: an edge that cannot be told from zero. Not a recommendation." },
         "why": { "type": "string", "minLength": 1 },
         "watch": { "type": "array", "items": { "type": "string" }, "description": "Zones in the way and events that can hurt the setup. May be empty." }
       }
