@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "trade_entries.schema.json",
   "title": "Ranked trade setups",
-  "description": "Reply to prompts/trade_entries.md: up to three trade setups derived from one reversal-zones input and projection, prices from zone edges and odds counted on simulated paths, ranked by edge per order. A failed precondition, or no valid setup, is reported as {task, error} instead.",
+  "description": "Reply to prompts/trade_entries.md: up to three trade setups derived from one reversal-zones input and projection, prices from zone edges and odds counted on simulated paths (corrected by the backtest at 1-2w and 1-3m), ranked by edge per order. A failed precondition, or no valid setup, is reported as {task, error} instead.",
   "oneOf": [{ "$ref": "#/$defs/result" }, { "$ref": "#/$defs/failure" }],
 
   "$defs": {
@@ -12,7 +12,7 @@
       "required": ["task", "rules", "asset", "as_of", "valid_until", "probability", "units", "entries", "confidence", "method", "note"],
       "properties": {
         "task": { "const": "trade_entries" },
-        "rules": { "const": 3, "description": "Version of the setup rules. 3: odds counted on simulated paths, the best three kept whatever their side, quality against a band per horizon (the model's measured error). 2 (19 Nov 2026) swapped the third for the best setup of the other side when all three shared one, and labelled quality with one band of ±0.05 R. Files without it were written by version 1 (odds from reach and turn by formulas). Earlier versions are not checked against the current one." },
+        "rules": { "const": 5, "description": "Version of the setup rules. 5: odds counted on simulated paths, then at 1-2w and 1-3m corrected per side and kind by the error the long setup backtest measured (log-odds shifts of fill and win, a shift of the edge), the best three kept whatever their side, quality against a band per horizon (the model's measured error). 4 (GARCH paths) was evaluated and never shipped. 3 (until 20 Nov 2026) stated the uncorrected path counts. 2 (19 Nov 2026) swapped the third for the best setup of the other side when all three shared one, and labelled quality with one band of ±0.05 R. Files without it were written by version 1 (odds from reach and turn by formulas). Earlier versions are not checked against the current one." },
         "asset": {
           "type": "object",
           "additionalProperties": false,
@@ -110,9 +110,9 @@
           "additionalProperties": false,
           "required": ["fill", "win_if_filled", "basis"],
           "properties": {
-            "fill": { "$ref": "#/$defs/probability", "description": "Share of the simulated paths on which the entry order fills by valid_until." },
-            "win_if_filled": { "$ref": "#/$defs/probability", "description": "Share of the filled paths that reach the target before the stop (a day reaching both counts as the stop)." },
-            "basis": { "type": "string", "minLength": 1, "description": "Where the odds come from: the simulated paths, and the shares that end at the target, at the stop, or still open." }
+            "fill": { "$ref": "#/$defs/probability", "description": "Share of the simulated paths on which the entry order fills by valid_until; at 1-2w and 1-3m corrected by the backtest (rules 5)." },
+            "win_if_filled": { "$ref": "#/$defs/probability", "description": "Share of the filled paths that reach the target before the stop (a day reaching both counts as the stop); at 1-2w and 1-3m corrected by the backtest (rules 5)." },
+            "basis": { "type": "string", "minLength": 1, "description": "Where the odds come from: the simulated paths (and the backtest correction, when applied), and the shares that end at the target, at the stop, or still open." }
           }
         },
         "edge": {
@@ -120,11 +120,11 @@
           "additionalProperties": false,
           "required": ["if_filled", "per_order"],
           "properties": {
-            "if_filled": { "type": "number", "description": "Mean result of the filled simulated paths, in units of risk: -1 at the stop, +ratio at the target, the last close against the entry when still open." },
+            "if_filled": { "type": "number", "description": "Mean result of the filled simulated paths, in units of risk: -1 at the stop, +ratio at the target, the last close against the entry when still open; at 1-2w and 1-3m shifted by the backtest correction (rules 5)." },
             "per_order": { "type": "number", "description": "fill x if_filled: the same, counting orders that never fill as zero. The ranking key." }
           }
         },
-        "quality": { "enum": ["favourable", "marginal", "unfavourable"], "description": "edge.if_filled against the model's measured error at the input's horizon (rules 3: ±0.35 at 1-2w, ±0.09 at 1-3m, ±0.32 at 6-12m, ±0.35 otherwise; rules 2: ±0.05 everywhere). favourable at or above the band, unfavourable at or below minus the band, marginal inside it: an edge that cannot be told from zero. Not a recommendation." },
+        "quality": { "enum": ["favourable", "marginal", "unfavourable"], "description": "edge.if_filled against the model's measured error at the input's horizon (rules 5: ±0.26 at 1-2w, ±0.09 at 1-3m, ±0.32 at 6-12m, ±0.32 otherwise; rules 3: ±0.35, ±0.09, ±0.32, ±0.35; rules 2: ±0.05 everywhere). favourable at or above the band, unfavourable at or below minus the band, marginal inside it: an edge that cannot be told from zero. Not a recommendation." },
         "why": { "type": "string", "minLength": 1 },
         "watch": { "type": "array", "items": { "type": "string" }, "description": "Zones in the way and events that can hurt the setup. May be empty." }
       }

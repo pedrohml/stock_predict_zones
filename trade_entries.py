@@ -31,9 +31,11 @@ ROOT = Path(__file__).resolve().parent
 TEMPLATE = ROOT / "prompts" / "trade_entries.md"
 SCHEMA = ROOT / "prompts" / "trade_entries.schema.json"
 RZ_PATH = ROOT / ".claude" / "skills" / "reversal-zones-projection" / "scripts" / "rz.py"
-RULES = 3   # version of the rules; 1 (until 19 Nov 2026) took fill and win from reach and turn by formulas,
+RULES = 5   # version of the rules; 1 (until 19 Nov 2026) took fill and win from reach and turn by formulas,
             # 2 (19 Nov 2026) also swapped the third setup for the other side when all three shared one
-            # and labelled quality with one band of ±0.05 R at every horizon
+            # and labelled quality with one band of ±0.05 R at every horizon, 3 (until 20 Nov 2026) stated
+            # the path counts uncorrected (no CORRECTION), with bands 0.35 / 0.09 / 0.32; 4 (GARCH paths,
+            # garch_paths()) was evaluated and never shipped
 
 # The path estimate (paths(), odds()). A change to any of these is a new RULES number: an
 # entries file is checked by recomputing it.
@@ -46,10 +48,12 @@ DAYS = {"1D": 1, "1W": 5, "1M": 21}   # trading days per candle of the close bas
 SPREAD = 0.65
 # quality: edge.if_filled against the model's measured error at the horizon. Each band is the larger
 # of |stated - observed| mean R per fill of the picked setups, under the pessimistic and the
-# optimistic ordering, on the first two years of as-of dates of the setup backtest (README,
-# "Backtest of the trade setups"), rounded up to 0.01. An edge inside the band cannot be told from
-# zero: `marginal`. A horizon the backtest does not cover (today) gets the widest band.
-EDGE_BAND = {"1-2w": 0.26, "1-3m": 0.09, "6-12m": 0.02}
+# optimistic ordering, rounded up to 0.01: at 1-2w and 1-3m under rules 5 (with CORRECTION), on the
+# fit part of the long setup backtest (README, "An empirical correction of the odds, per horizon,
+# side and kind"); at 6-12m, not corrected, the rules 3 band from the first two years of the
+# three-year backtest (README, "Backtest of the trade setups"). An edge inside the band cannot be
+# told from zero: `marginal`. A horizon the backtest does not cover (today) gets the widest band.
+EDGE_BAND = {"1-2w": 0.26, "1-3m": 0.09, "6-12m": 0.32}
 # The correction of the path odds (rules 5). The paths know nothing of the zones, and the long
 # setup backtest (README, "An empirical correction of the odds, per horizon, side and kind")
 # found errors that keep their sign across years and regimes: continuations overstated, reversals
@@ -58,8 +62,11 @@ EDGE_BAND = {"1-2w": 0.26, "1-3m": 0.09, "6-12m": 0.02}
 # case, not only the picked ones, under the pessimistic ordering: `fill` and `win` move the path
 # shares in log-odds so that their mean equals the observed fill and win rates of the group,
 # `edge` adds the mean observed minus stated R per fill. Each is shrunk toward zero by
-# n / (n + 100), n the cases in the group (all over 10,000, so barely), and rounded to 0.01. A
-# market order's fill stays 1. A horizon without entries (today: no backtest) is not corrected.
+# n / (n + 100), n the cases in the group (all over 26,000, so barely), and rounded to 0.01. A
+# market order's fill stays 1. Each horizon was then judged once on the held-out part by a
+# criterion fixed beforehand: 1-2w and 1-3m passed; 6-12m did not (its fitted shifts are in the
+# README) and, like a horizon without a backtest (today), is not corrected. Part of the rules:
+# changing a number means a new RULES number.
 CORRECTION = {   # (horizon, side, kind): log-odds shifts of fill and win, R added to edge.if_filled
     ("1-2w", "long", "reversal"): {"fill": 0.16, "win": 0.26, "edge": 0.18},
     ("1-2w", "long", "continuation"): {"fill": 0.23, "win": -0.06, "edge": -0.09},
@@ -69,10 +76,6 @@ CORRECTION = {   # (horizon, side, kind): log-odds shifts of fill and win, R add
     ("1-3m", "long", "continuation"): {"fill": 0.24, "win": -0.13, "edge": -0.11},
     ("1-3m", "short", "reversal"): {"fill": 0.23, "win": -0.01, "edge": 0.02},
     ("1-3m", "short", "continuation"): {"fill": -0.01, "win": -0.24, "edge": -0.19},
-    ("6-12m", "long", "reversal"): {"fill": -0.04, "win": 0.08, "edge": 0.06},
-    ("6-12m", "long", "continuation"): {"fill": 0.18, "win": 0.02, "edge": -0.01},
-    ("6-12m", "short", "reversal"): {"fill": 0.19, "win": -0.09, "edge": -0.02},
-    ("6-12m", "short", "continuation"): {"fill": -0.06, "win": -0.03, "edge": -0.07},
 }
 MIN_FILL = 0.05      # a setup whose order fills on fewer paths says nothing (its edge rounds to zero and would rank first)
 TOLERANCE = 0.011        # one hundredth, for a rounding that fell the other way
@@ -388,7 +391,7 @@ def setups(source, proj, sim=None):
         result = odds(sim_now, side, order, entry, stop, target, ratio)
         if half_up(result["fill"]) < MIN_FILL:   # judged on the paths' own count, before the correction
             return
-        result = corrected(source, side, kind, order, result)
+        shifted = result is not (result := corrected(source, side, kind, order, result))
         fill_p, win, if_filled = half_up(result["fill"]), half_up(result["win"]), half_up(result["if_filled"])
         found.append({
             "id": f"{side}-{zone_id}-{kind}", "side": side, "setup": kind, "order": order,
@@ -396,7 +399,7 @@ def setups(source, proj, sim=None):
             "risk": risk, "reward": reward, "ratio": ratio, "fill": fill_p, "win_if_filled": win,
             "if_filled": if_filled, "per_order": half_up(fill_p * if_filled), "quality": quality(if_filled, width),
             "detail": dict(detail, zone=zone_id, buffer=buffer, loss=result["loss"], open=result["open"],
-                           paths=PATHS, method=sim_now["method"])})
+                           corrected=shifted, paths=PATHS, method=sim_now["method"])})
 
     for listed, opposite, support in ((proj["supports"], proj["resistances"], True),
                                       (proj["resistances"], proj["supports"], False)):
@@ -448,10 +451,11 @@ TEXT = {
         "near": "{zone} near edge", "far": "{zone} far edge", "price": "current price, inside {zone}",
         "plus": "{zone} {which} edge {edge} + buffer {buffer}", "minus": "{zone} {which} edge {edge} − buffer {buffer}",
         "which": {"near": "near", "far": "far"},
-        "basis": "{paths} simulated paths: the order fills in {fill}; of the fills, {win} reach the target first, {loss} the stop, {open} are still open at valid_until",
-        "basis_market": "{paths} simulated paths: a market order inside {zone} fills at once; {win} reach the target first, {loss} the stop, {open} are still open at valid_until",
-        "why_reversal": "If {zone} holds and the price turns back to {target_zone}, the reward is {ratio} times the risk; on the simulated paths the target comes before the stop in {win} of the fills.",
-        "why_continuation": "If {zone} breaks and the price carries on to {next}, the reward is {ratio} times the risk; on the simulated paths the target comes before the stop in {win} of the fills.",
+        "counted": "{paths} simulated paths", "counted_corrected": "{paths} simulated paths, corrected by the backtest's measured error for this horizon, side and kind",
+        "basis": "{counted}: the order fills in {fill}; of the fills, {win} reach the target first, {loss} the stop, {open} are still open at valid_until",
+        "basis_market": "{counted}: a market order inside {zone} fills at once; {win} reach the target first, {loss} the stop, {open} are still open at valid_until",
+        "why_reversal": "If {zone} holds and the price turns back to {target_zone}, the reward is {ratio} times the risk; by the stated odds the target comes before the stop in {win} of the fills.",
+        "why_continuation": "If {zone} breaks and the price carries on to {next}, the reward is {ratio} times the risk; by the stated odds the target comes before the stop in {win} of the fills.",
         "between": "{zone} {low}–{high} lies between entry and target",
         "dividend": {"long": "{date} {what}: the drop works against a long and can jump the stop",
                      "short": "{date} {what}: a short pays the dividend, and the drop can fill the order on a gap"},
@@ -460,21 +464,24 @@ TEXT = {
         "touch": "fills, stops and targets are judged on simulated daily highs and lows, and a day that reaches both the stop and the target counts as the stop; the projection's own reach and turn are for {basis} closes",
         "calibration": "a backtest of these rules on the mechanical engine compared the odds with outcomes on average over many past dates, before costs, not for this setup; the projection's own confidence is {level}",
         "quality": "quality compares edge.if_filled with the model's measured error at this horizon, ±{band} R: marginal means the edge cannot be told from zero, favourable or unfavourable only that it lies outside that error; none of the three is a recommendation",
-        "no_edge": "no setup has a positive edge per order on the simulated paths: each of them loses on average, before costs",
+        "correction": "at this horizon fill, win_if_filled and the edge are the path counts corrected by the average error a backtest of these rules measured per side and kind on past dates; the correction is an average over many past setups, not knowledge of this one, and it carries that backtest's limits: survivor tickers, no costs, a pessimistic order of events inside a day",
+        "no_edge": "no setup has a positive edge per order by the stated odds: each of them loses on average, before costs",
         "fewer": "only {n} setup(s) pass the rules for this projection",
-        "one_side": "every setup kept is on the {side} side, because these ranked highest by edge per order on the simulated paths; the list is not balanced by side, and a one-sided list is not a forecast of direction or a recommendation",
+        "one_side": "every setup kept is on the {side} side, because these ranked highest by the stated edge per order; the list is not balanced by side, and a one-sided list is not a forecast of direction or a recommendation",
         "sides": {"long": "long", "short": "short"},
-        "method": "Prices from zone edges only; fill, win and edge counted on {paths} simulated paths of the projection's simulation (sim method {sim}), refined to daily highs and lows; ranked by edge per order. {valid} setups were valid, {kept} kept. Written by trade_entries.py, without a language model.",
+        "method_corrected": ", then corrected by the backtest's measured error per side and kind",
+        "method": "Prices from zone edges only; fill, win and edge counted on {paths} simulated paths of the projection's simulation (sim method {sim}), refined to daily highs and lows{corrected}; ranked by edge per order. {valid} setups were valid, {kept} kept. Written by trade_entries.py, without a language model.",
         "note": "Hypothetical setups for study, derived mechanically from a price simulation. Not a recommendation to buy or sell.",
     },
     "pt": {
         "near": "borda próxima de {zone}", "far": "borda distante de {zone}", "price": "preço atual, dentro de {zone}",
         "plus": "borda {which} de {zone} {edge} + margem {buffer}", "minus": "borda {which} de {zone} {edge} − margem {buffer}",
         "which": {"near": "próxima", "far": "distante"},
-        "basis": "{paths} caminhos simulados: a ordem é executada em {fill}; das execuções, {win} chegam antes ao alvo, {loss} ao stop, {open} seguem abertas em valid_until",
-        "basis_market": "{paths} caminhos simulados: uma ordem a mercado dentro de {zone} é executada na hora; {win} chegam antes ao alvo, {loss} ao stop, {open} seguem abertas em valid_until",
-        "why_reversal": "Se {zone} segurar e o preço voltar até {target_zone}, o ganho é {ratio} vezes o risco; nos caminhos simulados o alvo vem antes do stop em {win} das execuções.",
-        "why_continuation": "Se {zone} romper e o preço seguir até {next}, o ganho é {ratio} vezes o risco; nos caminhos simulados o alvo vem antes do stop em {win} das execuções.",
+        "counted": "{paths} caminhos simulados", "counted_corrected": "{paths} caminhos simulados, corrigidos pelo erro medido no backtest para este horizonte, lado e tipo",
+        "basis": "{counted}: a ordem é executada em {fill}; das execuções, {win} chegam antes ao alvo, {loss} ao stop, {open} seguem abertas em valid_until",
+        "basis_market": "{counted}: uma ordem a mercado dentro de {zone} é executada na hora; {win} chegam antes ao alvo, {loss} ao stop, {open} seguem abertas em valid_until",
+        "why_reversal": "Se {zone} segurar e o preço voltar até {target_zone}, o ganho é {ratio} vezes o risco; pelas chances informadas o alvo vem antes do stop em {win} das execuções.",
+        "why_continuation": "Se {zone} romper e o preço seguir até {next}, o ganho é {ratio} vezes o risco; pelas chances informadas o alvo vem antes do stop em {win} das execuções.",
         "between": "{zone} {low}–{high} fica entre a entrada e o alvo",
         "dividend": {"long": "{date} {what}: a queda joga contra uma posição comprada e pode pular o stop",
                      "short": "{date} {what}: a posição vendida paga o dividendo, e a queda pode executar a ordem num gap"},
@@ -483,11 +490,13 @@ TEXT = {
         "touch": "execuções, stops e alvos são julgados nas máximas e mínimas diárias simuladas, e um dia que alcança o stop e o alvo conta como stop; o reach e o turn da própria projeção valem para fechamentos de {basis}",
         "calibration": "um backtest destas regras no motor mecânico comparou as chances com os resultados em média, em muitas datas passadas e antes de custos, não para este setup; a confiança da própria projeção é {level}",
         "quality": "quality compara edge.if_filled com o erro medido do modelo neste horizonte, ±{band} R: marginal significa que o edge não se distingue de zero, favourable ou unfavourable apenas que ele fica fora desse erro; nenhum dos três é recomendação",
-        "no_edge": "nenhum setup tem edge por ordem positivo nos caminhos simulados: em média, todos perdem, antes de custos",
+        "correction": "neste horizonte, fill, win_if_filled e o edge são as contagens dos caminhos corrigidas pelo erro médio que um backtest destas regras mediu por lado e tipo em datas passadas; a correção é uma média de muitos setups passados, não conhecimento deste, e carrega os limites desse backtest: tickers sobreviventes, sem custos, uma ordem pessimista dos eventos dentro do dia",
+        "no_edge": "nenhum setup tem edge por ordem positivo pelas chances informadas: em média, todos perdem, antes de custos",
         "fewer": "apenas {n} setup(s) passam nas regras para esta projeção",
-        "one_side": "todos os setups mantidos são do lado {side}, porque foram os de maior edge por ordem nos caminhos simulados; a lista não é equilibrada por lado, e uma lista de um lado só não é previsão de direção nem recomendação",
+        "one_side": "todos os setups mantidos são do lado {side}, porque foram os de maior edge por ordem informado; a lista não é equilibrada por lado, e uma lista de um lado só não é previsão de direção nem recomendação",
         "sides": {"long": "comprado", "short": "vendido"},
-        "method": "Preços só de bordas de zonas; fill, win e edge contados em {paths} caminhos simulados da simulação da projeção (sim method {sim}), refinados para máximas e mínimas diárias; ordenados pelo edge por ordem. {valid} setups válidos, {kept} mantidos. Escrito por trade_entries.py, sem modelo de linguagem.",
+        "method_corrected": ", depois corrigidos pelo erro medido no backtest por lado e tipo",
+        "method": "Preços só de bordas de zonas; fill, win e edge contados em {paths} caminhos simulados da simulação da projeção (sim method {sim}), refinados para máximas e mínimas diárias{corrected}; ordenados pelo edge por ordem. {valid} setups válidos, {kept} mantidos. Escrito por trade_entries.py, sem modelo de linguagem.",
         "note": "Setups hipotéticos para estudo, derivados mecanicamente de uma simulação de preços. Não é recomendação de compra ou venda.",
     },
 }
@@ -515,7 +524,8 @@ def entry_of(rank, item, proj, t, digits=MIN_PLACES):
     decimals, probabilities and ratios with two."""
     d, long, zone = item["detail"], item["side"] == "long", item["detail"]["zone"]
     away = t["minus"] if long else t["plus"]          # the stop sits beyond an edge, away from the entry
-    counted = {"paths": f"{d['paths']:,}", "fill": share(item["fill"]), "win": share(item["win_if_filled"]),
+    counted = {"counted": t["counted_corrected" if d.get("corrected") else "counted"].format(paths=f"{d['paths']:,}"),
+               "fill": share(item["fill"]), "win": share(item["win_if_filled"]),
                "loss": share(d["loss"]), "open": share(d["open"]), "zone": zone}
     if item["setup"] == "reversal":
         market = item["order"] == "market"
@@ -571,6 +581,8 @@ def build(source, proj, found=None):
     level = proj["confidence"]["level"]
     limits = [t["paths"], t["touch"].format(basis=proj["horizon"]["close_basis"]),
               t["calibration"].format(level=level), t["quality"].format(band=money(band(source)))]
+    if any(item["detail"].get("corrected") for item in kept):
+        limits.append(t["correction"])
     if all(item["per_order"] <= 0 for item in found):
         limits.append(t["no_edge"])
     if len(kept) < 3:
@@ -585,6 +597,7 @@ def build(source, proj, found=None):
         "entries": [entry_of(rank, item, proj, t, digits) for rank, item in enumerate(kept, 1)],
         "confidence": {"level": level, "limits": limits},
         "method": t["method"].format(paths=f"{PATHS:,}", sim=found[0]["detail"]["method"],
+                                     corrected=t["method_corrected"] if any(i["detail"].get("corrected") for i in found) else "",
                                      valid=len(found), kept=len(kept)),
         "note": t["note"]}
 
@@ -601,7 +614,10 @@ def schema_problems(reply):
 
 EARLIER = {1: "its odds came from reach and turn by formulas, not from simulated paths",
            2: "its third setup may have been swapped for the best one of the other side, and its quality "
-              "used one band of ±0.05 R at every horizon"}
+              "used one band of ±0.05 R at every horizon",
+           3: "its odds were the uncorrected path counts (rules 5 corrects fill, win and edge at 1-2w and 1-3m "
+              "by the error the backtest measured per side and kind, and narrows the 1-2w band)",
+           4: "rules 4 (GARCH paths) was evaluated and never shipped"}
 PRICES = {"entry", "stop", "target", "risk", "reward"}   # checked to the rows' precision, the rest to 0.011
 
 

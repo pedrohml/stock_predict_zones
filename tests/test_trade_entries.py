@@ -133,7 +133,8 @@ def test_the_one_side_line_in_portuguese(example, shorts_worse):
     assert set(trade_entries.TEXT["pt"]["sides"]) == set(trade_entries.TEXT["en"]["sides"]) == {"long", "short"}
 
 
-def test_both_sides_kept_add_no_one_side_line(example):
+def test_both_sides_kept_add_no_one_side_line(example, monkeypatch):
+    monkeypatch.setattr(trade_entries, "CORRECTION", {})   # uncorrected, the example keeps a short
     limits = trade_entries.build(*example)["confidence"]["limits"]
     assert not any(line.startswith("every setup kept is on the") for line in limits)
 
@@ -142,7 +143,15 @@ def test_an_entries_file_of_rules_2_is_named_as_such(input_data, projection_data
     old = copy.deepcopy(entries_data)
     old["rules"] = 2
     bad = trade_entries.problems(input_data, projection_data, old)
-    assert len(bad) == 1 and "earlier version of the rules (rules 2, now 3)" in bad[0] and "other side" in bad[0]
+    assert len(bad) == 1 and "earlier version of the rules (rules 2, now 5)" in bad[0] and "other side" in bad[0]
+
+
+@pytest.mark.parametrize("version, why", [(3, "uncorrected path counts"), (4, "never shipped")])
+def test_an_entries_file_of_rules_3_or_4_is_named_as_such(input_data, projection_data, entries_data, version, why):
+    old = copy.deepcopy(entries_data)
+    old["rules"] = version
+    bad = trade_entries.problems(input_data, projection_data, old)
+    assert len(bad) == 1 and f"(rules {version}, now 5)" in bad[0] and why in bad[0]
 
 
 def test_half_up_rounding_of_the_buffer(example):
@@ -232,10 +241,10 @@ def test_build_reproduces_the_prompt_example(example):
     reply = trade_entries.build(source, proj)
     first = reply["entries"][0]
     assert (first["id"], first["entry"]["anchor"], first["stop"]["anchor"], first["target"]["anchor"]) == (
-        "long-R1-continuation", "R1 far edge", "R1 near edge 43.23 − buffer 0.70", "R2 far edge")
+        "long-S3-reversal", "S3 near edge", "S3 far edge 35.04 − buffer 0.70", "R1 near edge")
     assert first["odds"]["basis"] == template_example()["entries"][0]["odds"]["basis"]
-    second = reply["entries"][1]
-    assert second["stop"]["anchor"] == "S1 near edge 42.52 + buffer 0.70"
+    third = reply["entries"][2]
+    assert third["stop"]["anchor"] == "R1 near edge 43.23 − buffer 0.70"
     assert all(any("2026-12-21" in line for line in entry["watch"]) for entry in reply["entries"])
     assert "8 setups were valid, 3 kept" in reply["method"] and "20,000 simulated paths" in reply["method"]
     for got, shown in zip(reply["entries"], template_example()["entries"]):
@@ -275,7 +284,7 @@ def test_an_entries_file_of_the_earlier_rules_is_named_as_such(input_data, proje
 # ---- quality: the edge against the model's measured error at the horizon -----------
 
 def test_the_quality_band_follows_the_horizon():
-    assert trade_entries.band({"horizon": "1-2w"}) == 0.35
+    assert trade_entries.band({"horizon": "1-2w"}) == 0.26
     assert trade_entries.band({"horizon": "1-3m"}) == 0.09
     assert trade_entries.band({"horizon": "6-12m"}) == 0.32
     widest = max(trade_entries.EDGE_BAND.values())
@@ -292,14 +301,15 @@ def test_the_label_is_recomputed_for_the_horizon(example, monkeypatch):
     """The same edges get other labels under another band, and check recomputes them."""
     source, proj = example
     reply = trade_entries.build(source, proj)
-    assert [e["quality"] for e in reply["entries"]] == ["favourable", "marginal", "marginal"]   # band 0.09
+    assert [e["quality"] for e in reply["entries"]] == ["marginal", "marginal", "marginal"]   # band 0.09
     assert "±0.09 R" in " ".join(reply["confidence"]["limits"])
-    monkeypatch.setitem(trade_entries.EDGE_BAND, "1-3m", 0.35)
+    monkeypatch.setitem(trade_entries.EDGE_BAND, "1-3m", 0.04)
     assert trade_entries.problems(source, proj, reply) == [
-        "long-R1-continuation.quality: favourable, expected marginal"]
+        "long-S3-reversal.quality: marginal, expected favourable"]
     again = trade_entries.build(source, proj)
-    assert {e["quality"] for e in again["entries"]} == {"marginal"} and trade_entries.problems(source, proj, again) == []
-    assert "±0.35 R" in " ".join(again["confidence"]["limits"])
+    assert [e["quality"] for e in again["entries"]] == ["favourable", "marginal", "marginal"]
+    assert trade_entries.problems(source, proj, again) == []
+    assert "±0.04 R" in " ".join(again["confidence"]["limits"])
 
 
 def test_every_language_explains_the_band_without_advice():
@@ -360,7 +370,7 @@ def test_a_price_around_four_cents_builds_and_checks(example):
     for small, large in zip(reply["entries"], big["entries"]):
         assert small["payoff"]["ratio"] == large["payoff"]["ratio"]
         assert small["stop"]["price"] == pytest.approx(large["stop"]["price"] / 1000, abs=1e-9)
-    assert reply["entries"][0]["stop"]["anchor"] == "R1 near edge 0.04323 − buffer 0.00070"
+    assert reply["entries"][0]["stop"]["anchor"] == "S3 far edge 0.03504 − buffer 0.00070"
 
 
 def test_the_checker_is_as_strict_on_small_prices(example):
@@ -509,3 +519,72 @@ def test_an_order_that_almost_never_fills_is_no_setup(input_data, projection_dat
     reply = trade_entries.build(input_data, projection_data)
     assert reply == {"task": "trade_entries", "error": trade_entries.NO_SETUP}
     assert trade_entries.problems(input_data, projection_data, reply) == []
+
+
+# ---- the backtest correction (rules 5) ------------------------------------------------
+
+def test_the_correction_covers_the_adopted_horizons_only():
+    groups = {(h, side, kind) for h in ("1-2w", "1-3m") for side in ("long", "short")
+              for kind in ("reversal", "continuation")}
+    assert set(trade_entries.CORRECTION) == groups          # 6-12m failed the held-out test; today has no backtest
+    assert all(set(shift) == {"fill", "win", "edge"} for shift in trade_entries.CORRECTION.values())
+
+
+def test_corrected_moves_fill_and_win_in_log_odds_and_shifts_the_edge():
+    raw = {"fill": 0.5, "win": 0.4, "loss": 0.45, "open": 0.15, "if_filled": -0.1}
+    shift = trade_entries.CORRECTION[("1-3m", "short", "continuation")]
+    out = trade_entries.corrected({"horizon": "1-3m"}, "short", "continuation", "stop", raw)
+    assert out["fill"] == pytest.approx(1 / (1 + math.exp(-shift["fill"])))
+    assert out["win"] == pytest.approx(1 / (1 + math.exp(-(math.log(0.4 / 0.6) + shift["win"]))))
+    assert out["if_filled"] == pytest.approx(-0.1 + shift["edge"])
+    assert out["win"] + out["loss"] + out["open"] == pytest.approx(1)
+    assert out["loss"] / out["open"] == pytest.approx(3)       # stop and open keep their proportion
+    assert raw == {"fill": 0.5, "win": 0.4, "loss": 0.45, "open": 0.15, "if_filled": -0.1}   # not changed in place
+    market = trade_entries.corrected({"horizon": "1-3m"}, "long", "reversal", "market", {**raw, "fill": 1.0})
+    assert market["fill"] == 1.0
+    for horizon in ("6-12m", "today", None):
+        assert trade_entries.corrected({"horizon": horizon}, "short", "continuation", "stop", raw) is raw
+
+
+def test_setups_rank_by_the_corrected_numbers(example, monkeypatch):
+    source, proj = example
+    found = trade_entries.setups(source, proj)
+    assert all(item["detail"]["corrected"] for item in found)
+    monkeypatch.setattr(trade_entries, "CORRECTION", {})
+    raw = {item["id"]: item for item in trade_entries.setups(source, proj)}
+    assert not any(item["detail"]["corrected"] for item in raw.values())
+    shorts = [item for item in found if item["id"] == "short-S1-continuation"][0]
+    assert shorts["if_filled"] < raw["short-S1-continuation"]["if_filled"]     # continuations corrected down
+    assert [i["id"] for i in trade_entries.pick(found)] != [i["id"] for i in trade_entries.pick(list(raw.values()))]
+
+
+def test_the_min_fill_is_judged_before_the_correction(example, monkeypatch):
+    """A setup whose order fills on 4% of the paths stays out, however much the correction raises its fill."""
+    real = trade_entries.odds
+    monkeypatch.setattr(trade_entries, "odds", lambda *args: {**real(*args), "fill": 0.04})
+    monkeypatch.setitem(trade_entries.CORRECTION, ("1-3m", "long", "reversal"), {"fill": 3.0, "win": 0.0, "edge": 0.0})
+    assert trade_entries.setups(*example) == []
+    monkeypatch.setattr(trade_entries, "odds", lambda *args: {**real(*args), "fill": 0.05})
+    assert {item["id"] for item in trade_entries.setups(*example) if item["setup"] == "reversal" and item["side"] == "long"}
+
+
+@pytest.mark.parametrize("lang", ["en", "pt"])
+def test_a_corrected_reply_says_so(example, lang):
+    source, proj = copy.deepcopy(example)
+    source.setdefault("reply", {})["language"] = lang
+    reply = trade_entries.build(source, proj)
+    t = trade_entries.TEXT[lang]
+    assert t["correction"] in reply["confidence"]["limits"]
+    assert all(e["odds"]["basis"].startswith(t["counted_corrected"].format(paths="20,000")) for e in reply["entries"])
+    assert t["method_corrected"] in reply["method"]
+    assert trade_entries.problems(source, proj, reply) == []
+    assert "not knowledge of this one" in trade_entries.TEXT["en"]["correction"]
+
+
+def test_an_uncorrected_horizon_says_nothing_of_a_correction(example):
+    source, proj = copy.deepcopy(example)
+    source["horizon"] = "6-12m"
+    reply = trade_entries.build(source, proj)
+    t = trade_entries.TEXT["en"]
+    assert t["correction"] not in reply["confidence"]["limits"] and t["method_corrected"] not in reply["method"]
+    assert all(e["odds"]["basis"].startswith("20,000 simulated paths:") for e in reply["entries"])
