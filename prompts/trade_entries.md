@@ -66,7 +66,7 @@ Odds, counted on 20,000 simulated price paths of the projection's own simulation
 - `win_if_filled`: the share of the filled paths that reach the target before the stop. A day that reaches both counts as the stop, and on the fill day a stop touched that day counts against the setup.
 - `edge.if_filled`: the mean result of the filled paths in units of risk: −1 at the stop, `+ratio` at the target, the last close against the entry when the setup is still open at `valid_until`.
 - `edge.per_order = fill × edge.if_filled`: the same, counting the orders that never fill as zero.
-- `quality`: `favourable` when `edge.if_filled` is +0.05 or more, `unfavourable` at −0.05 or less, `marginal` between.
+- `quality`: `edge.if_filled` against the model's measured error at the input's `horizon`, a band of ±0.35 at `1-2w`, ±0.06 at `1-3m`, ±0.13 at `6-12m` and ±0.35 at any other horizon. `favourable` when the edge is at or above the band, `unfavourable` at or below minus the band, `marginal` inside it: an edge that cannot be told from zero. The band is how far the stated mean edge missed the observed one in a backtest; it is not a measure of how good a setup is.
 - `detail.loss` and `detail.open` are the shares of the filled paths that end at the stop and still open; `win_if_filled + loss + open = 1`.
 
 The paths are random: they know the projection's volatility and drift, and nothing about whether a zone holds. The odds therefore measure the distances of a setup (how far the entry, the stop and the target are), not an effect of the zones.
@@ -84,19 +84,20 @@ State these limits in `confidence.limits`; do not soften them.
 - The odds come from random paths that know nothing of the zones (see above).
 - Fills, stops and targets are judged on simulated daily highs and lows, with a day that reaches both the stop and the target counted as the stop; the projection's own `reach` and `turn` are for closes of `horizon.close_basis`. Copy `input.want.probability` into `probability`.
 - A backtest of these rules on the mechanical engine compared the odds with outcomes on average, over many past dates and before costs; it says nothing about this particular setup. Carry `projection.confidence.level` over unchanged, and never raise it.
+- `quality` compares `edge.if_filled` with the band of this horizon (name it): `marginal` means the edge cannot be told from zero, `favourable` or `unfavourable` only that it lies outside the band. None of the three is a recommendation.
 - For each event in `projection.events` dated on or before `valid_until`, add a `watch` line to every setup it can hurt: a price gap can jump a stop, and an ex-dividend drop works against a long. The simulation does not include events.
 
 No position size, leverage, or instruction to buy or sell. `why` describes the setup's logic in one sentence; it does not recommend it.
 
 ## Output
 
-Reply with one JSON object and nothing else: no prose before or after, no code fence. Keys, ids, enum values and their order stay exactly as below; `rules` is 2. Free-text values (`anchor`, `basis`, `why`, `watch`, `limits`, `method`, `note`) are written in the language named by `input.reply.language`. Prices keep the precision of the candle rows; probabilities, `ratio` and `edge` have two decimals.
+Reply with one JSON object and nothing else: no prose before or after, no code fence. Keys, ids, enum values and their order stay exactly as below; `rules` is 3. Free-text values (`anchor`, `basis`, `why`, `watch`, `limits`, `method`, `note`) are written in the language named by `input.reply.language`. Prices keep the precision of the candle rows; probabilities, `ratio` and `edge` have two decimals.
 
 The example shows the shape, computed from a real run. Your numbers come from `<setups>`.
 
 {
   "task": "trade_entries",
-  "rules": 2,
+  "rules": 3,
   "asset": { "ticker": "PETR4.SA", "currency": "BRL" },
   "as_of": { "time": "2026-11-18T15:15-03:00", "price": 42.77 },
   "valid_until": "2027-02-12",
@@ -157,6 +158,7 @@ The example shows the shape, computed from a real run. Your numbers come from `<
       "the odds are counted on random price paths with the projection's volatility and drift; the paths know nothing of the zones, so the odds describe the setups' distances, not an effect of a zone holding or breaking",
       "fills, stops and targets are judged on simulated daily highs and lows, a day reaching both the stop and the target counted as the stop; the projection's own reach and turn are for weekly closes",
       "a backtest of these rules on the mechanical engine compared the odds with outcomes on average, before costs, not for this setup; the projection's own confidence is low",
+      "quality compares edge.if_filled with the model's measured error at 1-3m, ±0.06 R: marginal means the edge cannot be told from zero, favourable or unfavourable only that it lies outside that error; none of the three is a recommendation",
       "the 2026-12-21 ex-dividend drop is not in the simulation"
     ]
   },

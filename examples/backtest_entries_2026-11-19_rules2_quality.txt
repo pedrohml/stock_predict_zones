@@ -1,0 +1,263 @@
+BACKTEST of the trade setups (mechanical engine, trade_entries.py), hypothetical, for calibration
+  AAPL, BBDC4.SA, ITUB4.SA, JPM, KO, MSFT, NVDA, PETR4.SA, SPY, VALE3.SA, WEGE3.SA, XOM; horizons 1-2w; sim method 2; ordering inside a candle: pessimistic; setup rules 3
+  1-2w: as-of dates 2025-10-29 to 2026-10-29, every 5 trading day(s)
+  607 case(s), 1821 setups
+  Rules:
+  - The setups are made after the as-of day's close; the walk starts with the next daily candle
+    (that day's own candle is never used) and ends with the candle of valid_until, the horizon's
+    last close. Daily candles are used whatever the horizon's close basis.
+  - Fill: a limit order fills when the candle reaches its entry (a long's low at or below it, a
+    short's high at or above it); a stop order fills when the candle reaches its entry in the
+    order's direction (a long's high at or above it, a short's low at or below it). A touch is
+    enough. When the open is already past the entry, the order fills at the open (better than the
+    entry for a limit, worse for a stop). A market order fills at the next candle's open, not at the
+    as-of close it was priced at. An unfilled order stays in place until valid_until, even if the
+    price runs to the target first.
+  - After the fill: the stop or the target closes the setup at its price; an open past the stop or
+    the target closes it at that open (a gap through the stop can lose more than 1R). Still open
+    after the last candle: closed at that candle's close (expiry).
+  - Ordering inside a candle is unknown. On the fill candle, a level the price must have crossed
+    after the entry (the entry lies between the open and the level) is hit after the fill; any other
+    level the candle reaches may have come before it. When the candle allows more than one result
+    (stop or target, stop or still open, target or still open), the default is the pessimistic one
+    (stop first, target not yet); --optimistic takes the other. Each setup is played both ways, and
+    'ambiguous' counts those whose result differs.
+  - R = (exit - fill price) / risk for a long, (fill price - exit) / risk for a short, where risk is
+    the setup's own entry-to-stop distance. An order that never fills is 0R. A win is an exit at the
+    target.
+  Caveats:
+  - Mechanical zones and unadjusted probabilities (mechanical.py), as a live `--engine mechanical`
+    run makes them: not Claude's zones or adjustments. The inputs carry no events.
+  - No commissions, spread, slippage, borrowing costs or dividends; prices are split-adjusted and
+    not dividend-adjusted, so a short does not pay the dividend and a long does not receive it.
+  - The ordering inside a daily candle is unknown and counted pessimistically by default
+    (--optimistic gives the other bound). Touch fills are generous for limit orders.
+  - Tickers chosen today are survivors, in what was mostly a rising market for them.
+  - Cases overlap whenever the step is shorter than the horizon, the three setups of a case share
+    one price path, and tickers move together; the bootstrap resamples whole cases and still
+    understates the uncertainty.
+  - This checks the calibration of the stated odds of hypothetical setups. It is not a strategy, not
+    a claim about returns, and not advice.
+
+HORIZON 1-2w: 607 case(s), 1821 setups, 911 filled; exits: 254 target, 551 stop, 106 expiry, 910 unfilled
+  st = stated by the setup (mean), obs = observed. win is among filled setups; R/fill is the mean result of filled setups, R/order counts unfilled ones as 0R.
+    group                  setups  fill st/obs   win st/obs  R/fill st/obs  R/order st/obs  ambig
+    all                      1821      45%/50%      23%/28%    -0.16/+0.02     -0.07/+0.01     6%
+    by side:
+      long                   1154      47%/51%      25%/31%    -0.14/+0.05     -0.07/+0.03     8%
+      short                   667      42%/48%      20%/23%    -0.18/-0.04     -0.07/-0.02     3%
+    by kind:
+      continuation             60      64%/60%      30%/22%    -0.16/-0.37     -0.10/-0.22     7%
+      reversal               1761      45%/50%      23%/28%    -0.16/+0.04     -0.07/+0.02     6%
+    by side and kind:
+      long reversal          1110      46%/50%      25%/31%    -0.14/+0.08     -0.06/+0.04     8%
+      long continuation        44      74%/68%      32%/23%    -0.14/-0.37     -0.10/-0.25     9%
+      short reversal          651      42%/49%      20%/23%    -0.18/-0.03     -0.07/-0.01     3%
+      short continuation       16      37%/38%      23%/17%    -0.25/-0.38     -0.08/-0.14     0%
+    by order:
+      limit                  1673      42%/47%      20%/25%    -0.17/+0.03     -0.07/+0.01     6%
+      market                   88    100%/100%      53%/57%    -0.03/+0.13     -0.03/+0.13     5%
+      stop                     60      64%/60%      30%/22%    -0.16/-0.37     -0.10/-0.22     7%
+    by quality:
+      marginal               1813      45%/50%      23%/28%    -0.15/+0.02     -0.07/+0.01     6%
+      unfavourable              8      13%/25%       11%/0%    -0.45/-1.20     -0.06/-0.30     0%
+    by rank:
+      1                       607      39%/43%      21%/32%    -0.11/+0.18     -0.04/+0.08     3%
+      2                       607      43%/46%      21%/26%    -0.17/+0.01     -0.07/+0.01     4%
+      3                       607      54%/61%      27%/27%    -0.18/-0.08     -0.10/-0.05    11%
+    by ticker:
+      AAPL                    153      44%/48%      24%/35%    -0.16/+0.17     -0.07/+0.08    10%
+      BBDC4.SA                150      47%/53%      24%/34%    -0.15/+0.18     -0.07/+0.10     7%
+      ITUB4.SA                150      44%/41%      22%/26%    -0.15/-0.23     -0.07/-0.09     1%
+      JPM                     153      47%/52%      25%/35%    -0.15/+0.16     -0.07/+0.08     8%
+      KO                      153      44%/44%      22%/38%    -0.16/+0.25     -0.07/+0.11     5%
+      MSFT                    153      47%/47%      25%/25%    -0.15/+0.06     -0.07/+0.03     5%
+      NVDA                    153      48%/58%      24%/23%    -0.17/-0.08     -0.08/-0.05     7%
+      PETR4.SA                150      41%/49%      21%/23%    -0.15/+0.08     -0.06/+0.04     3%
+      SPY                     153      47%/52%      25%/25%    -0.14/-0.02     -0.07/-0.01     6%
+      VALE3.SA                150      41%/50%      20%/24%    -0.16/-0.06     -0.06/-0.03     3%
+      WEGE3.SA                150      46%/51%      25%/23%    -0.16/-0.11     -0.07/-0.06    11%
+      XOM                     153      47%/55%      24%/24%    -0.16/-0.13     -0.07/-0.07     6%
+  Brier, fill: 0.218 (always the observed rate 0.250); win: 0.190 (always the observed rate 0.201). 0 is perfect.
+  Bootstrap over cases, 90%: fill 48%-52%, win 25%-30%, R/fill -0.06 to +0.10, R/order -0.03 to +0.05
+  Per ticker, R/order: lowest -0.09, median +0.01, highest +0.11; positive in 6 of 12 tickers.
+  Ambiguous candles changed 6% of the setups; with the optimistic ordering R/order would be +0.11.
+  Reliability, fill:  0-10%: n 26, 0.07->0.19  10-20%: n 118, 0.15->0.21  20-30%: n 268, 0.25->0.34  30-40%: n 402, 0.35->0.40  40-50%: n 367, 0.45->0.47  50-60%: n 237, 0.54->0.62  60-70%: n 180, 0.64->0.67  70-80%: n 119, 0.73->0.73  80-90%: n 3, 0.83->1.00  90-100%: n 101, 1.00->0.99
+  Reliability, win if filled:  0-10%: n 182, 0.06->0.14  10-20%: n 253, 0.14->0.21  20-30%: n 173, 0.24->0.28  30-40%: n 167, 0.34->0.34  40-50%: n 69, 0.43->0.46  50-60%: n 53, 0.55->0.58  60-70%: n 14, 0.62->0.43
+
+
+BACKTEST of the trade setups (mechanical engine, trade_entries.py), hypothetical, for calibration
+  AAPL, BBDC4.SA, ITUB4.SA, JPM, KO, MSFT, NVDA, PETR4.SA, SPY, VALE3.SA, WEGE3.SA, XOM; horizons 1-3m; sim method 2; ordering inside a candle: pessimistic; setup rules 3
+  1-3m: as-of dates 2025-08-13 to 2026-08-13, every 10 trading day(s)
+  312 case(s), 936 setups
+  Rules:
+  - The setups are made after the as-of day's close; the walk starts with the next daily candle
+    (that day's own candle is never used) and ends with the candle of valid_until, the horizon's
+    last close. Daily candles are used whatever the horizon's close basis.
+  - Fill: a limit order fills when the candle reaches its entry (a long's low at or below it, a
+    short's high at or above it); a stop order fills when the candle reaches its entry in the
+    order's direction (a long's high at or above it, a short's low at or below it). A touch is
+    enough. When the open is already past the entry, the order fills at the open (better than the
+    entry for a limit, worse for a stop). A market order fills at the next candle's open, not at the
+    as-of close it was priced at. An unfilled order stays in place until valid_until, even if the
+    price runs to the target first.
+  - After the fill: the stop or the target closes the setup at its price; an open past the stop or
+    the target closes it at that open (a gap through the stop can lose more than 1R). Still open
+    after the last candle: closed at that candle's close (expiry).
+  - Ordering inside a candle is unknown. On the fill candle, a level the price must have crossed
+    after the entry (the entry lies between the open and the level) is hit after the fill; any other
+    level the candle reaches may have come before it. When the candle allows more than one result
+    (stop or target, stop or still open, target or still open), the default is the pessimistic one
+    (stop first, target not yet); --optimistic takes the other. Each setup is played both ways, and
+    'ambiguous' counts those whose result differs.
+  - R = (exit - fill price) / risk for a long, (fill price - exit) / risk for a short, where risk is
+    the setup's own entry-to-stop distance. An order that never fills is 0R. A win is an exit at the
+    target.
+  Caveats:
+  - Mechanical zones and unadjusted probabilities (mechanical.py), as a live `--engine mechanical`
+    run makes them: not Claude's zones or adjustments. The inputs carry no events.
+  - No commissions, spread, slippage, borrowing costs or dividends; prices are split-adjusted and
+    not dividend-adjusted, so a short does not pay the dividend and a long does not receive it.
+  - The ordering inside a daily candle is unknown and counted pessimistically by default
+    (--optimistic gives the other bound). Touch fills are generous for limit orders.
+  - Tickers chosen today are survivors, in what was mostly a rising market for them.
+  - Cases overlap whenever the step is shorter than the horizon, the three setups of a case share
+    one price path, and tickers move together; the bootstrap resamples whole cases and still
+    understates the uncertainty.
+  - This checks the calibration of the stated odds of hypothetical setups. It is not a strategy, not
+    a claim about returns, and not advice.
+
+HORIZON 1-3m: 312 case(s), 936 setups, 685 filled; exits: 290 target, 371 stop, 24 expiry, 251 unfilled
+  st = stated by the setup (mean), obs = observed. win is among filled setups; R/fill is the mean result of filled setups, R/order counts unfilled ones as 0R.
+    group                  setups  fill st/obs   win st/obs  R/fill st/obs  R/order st/obs  ambig
+    all                       936      65%/73%      43%/42%    +0.06/-0.06     +0.04/-0.04     3%
+    by side:
+      long                    612      68%/83%      44%/47%    +0.08/+0.05     +0.05/+0.05     3%
+      short                   324      59%/55%      41%/29%    +0.01/-0.38     +0.01/-0.21     3%
+    by kind:
+      continuation            910      65%/73%      43%/42%    +0.06/-0.07     +0.04/-0.05     3%
+      reversal                 26      73%/73%      38%/42%    +0.03/+0.27     +0.02/+0.20     0%
+    by side and kind:
+      long reversal            26      73%/73%      38%/42%    +0.03/+0.27     +0.02/+0.20     0%
+      long continuation       586      68%/83%      44%/47%    +0.08/+0.05     +0.05/+0.04     3%
+      short continuation      324      59%/55%      41%/29%    +0.01/-0.38     +0.01/-0.21     3%
+    by order:
+      limit                    18      61%/61%      30%/36%    +0.02/+0.45     +0.01/+0.27     0%
+      market                    8    100%/100%      49%/50%    +0.05/+0.04     +0.05/+0.04     0%
+      stop                    910      65%/73%      43%/42%    +0.06/-0.07     +0.04/-0.05     3%
+    by quality:
+      favourable              396      65%/79%      40%/41%    +0.10/+0.01     +0.07/+0.01     3%
+      marginal                532      65%/69%      46%/44%    +0.02/-0.11     +0.01/-0.08     3%
+      unfavourable              8      55%/62%      34%/20%    -0.07/-0.65     -0.04/-0.41     0%
+    by rank:
+      1                       312      74%/88%      41%/48%    +0.09/+0.13     +0.07/+0.12     3%
+      2                       312      63%/73%      47%/43%    +0.06/-0.08     +0.03/-0.06     3%
+      3                       312      58%/58%      42%/32%    +0.01/-0.33     +0.00/-0.19     4%
+    by ticker:
+      AAPL                     78      66%/74%      45%/41%    +0.05/-0.03     +0.03/-0.02     3%
+      BBDC4.SA                 78      64%/79%      43%/50%    +0.06/+0.16     +0.04/+0.13     4%
+      ITUB4.SA                 78      64%/77%      43%/52%    +0.08/+0.15     +0.04/+0.12     0%
+      JPM                      78      66%/67%      44%/38%    +0.04/-0.20     +0.03/-0.13     1%
+      KO                       78      62%/74%      46%/36%    +0.08/-0.22     +0.04/-0.16     5%
+      MSFT                     78      62%/73%      43%/42%    +0.05/-0.24     +0.04/-0.18     4%
+      NVDA                     78      69%/76%      40%/24%    +0.02/-0.43     +0.02/-0.33     3%
+      PETR4.SA                 78      67%/72%      44%/48%    +0.06/+0.05     +0.04/+0.04     3%
+      SPY                      78      67%/69%      41%/33%    +0.06/-0.11     +0.04/-0.08     3%
+      VALE3.SA                 78      63%/67%      39%/44%    +0.08/+0.06     +0.05/+0.04    10%
+      WEGE3.SA                 78      68%/77%      45%/52%    +0.05/+0.14     +0.03/+0.11     1%
+      XOM                      78      65%/73%      44%/46%    +0.06/-0.05     +0.04/-0.03     1%
+  Brier, fill: 0.181 (always the observed rate 0.196); win: 0.228 (always the observed rate 0.244). 0 is perfect.
+  Bootstrap over cases, 90%: fill 71%-75%, win 39%-46%, R/fill -0.13 to +0.02, R/order -0.10 to +0.01
+  Per ticker, R/order: lowest -0.33, median -0.03, highest +0.13; positive in 5 of 12 tickers.
+  Ambiguous candles changed 3% of the setups; with the optimistic ordering R/order would be +0.03.
+  Reliability, fill:  10-20%: n 4, 0.15->0.50  20-30%: n 16, 0.25->0.25  30-40%: n 41, 0.35->0.54  40-50%: n 100, 0.45->0.50  50-60%: n 200, 0.55->0.65  60-70%: n 174, 0.64->0.74  70-80%: n 153, 0.76->0.80  80-90%: n 223, 0.83->0.91  90-100%: n 25, 0.94->0.96
+  Reliability, win if filled:  0-10%: n 4, 0.09->0.00  10-20%: n 19, 0.16->0.05  20-30%: n 48, 0.25->0.29  30-40%: n 130, 0.36->0.28  40-50%: n 274, 0.44->0.45  50-60%: n 206, 0.55->0.55  60-70%: n 4, 0.60->0.75
+
+
+BACKTEST of the trade setups (mechanical engine, trade_entries.py), hypothetical, for calibration
+  AAPL, BBDC4.SA, ITUB4.SA, JPM, KO, MSFT, NVDA, PETR4.SA, SPY, VALE3.SA, WEGE3.SA, XOM; horizons 6-12m; sim method 2; ordering inside a candle: pessimistic; setup rules 3
+  6-12m: as-of dates 2024-11-12 to 2025-11-12, every 21 trading day(s)
+  144 case(s), 432 setups
+  Rules:
+  - The setups are made after the as-of day's close; the walk starts with the next daily candle
+    (that day's own candle is never used) and ends with the candle of valid_until, the horizon's
+    last close. Daily candles are used whatever the horizon's close basis.
+  - Fill: a limit order fills when the candle reaches its entry (a long's low at or below it, a
+    short's high at or above it); a stop order fills when the candle reaches its entry in the
+    order's direction (a long's high at or above it, a short's low at or below it). A touch is
+    enough. When the open is already past the entry, the order fills at the open (better than the
+    entry for a limit, worse for a stop). A market order fills at the next candle's open, not at the
+    as-of close it was priced at. An unfilled order stays in place until valid_until, even if the
+    price runs to the target first.
+  - After the fill: the stop or the target closes the setup at its price; an open past the stop or
+    the target closes it at that open (a gap through the stop can lose more than 1R). Still open
+    after the last candle: closed at that candle's close (expiry).
+  - Ordering inside a candle is unknown. On the fill candle, a level the price must have crossed
+    after the entry (the entry lies between the open and the level) is hit after the fill; any other
+    level the candle reaches may have come before it. When the candle allows more than one result
+    (stop or target, stop or still open, target or still open), the default is the pessimistic one
+    (stop first, target not yet); --optimistic takes the other. Each setup is played both ways, and
+    'ambiguous' counts those whose result differs.
+  - R = (exit - fill price) / risk for a long, (fill price - exit) / risk for a short, where risk is
+    the setup's own entry-to-stop distance. An order that never fills is 0R. A win is an exit at the
+    target.
+  Caveats:
+  - Mechanical zones and unadjusted probabilities (mechanical.py), as a live `--engine mechanical`
+    run makes them: not Claude's zones or adjustments. The inputs carry no events.
+  - No commissions, spread, slippage, borrowing costs or dividends; prices are split-adjusted and
+    not dividend-adjusted, so a short does not pay the dividend and a long does not receive it.
+  - The ordering inside a daily candle is unknown and counted pessimistically by default
+    (--optimistic gives the other bound). Touch fills are generous for limit orders.
+  - Tickers chosen today are survivors, in what was mostly a rising market for them.
+  - Cases overlap whenever the step is shorter than the horizon, the three setups of a case share
+    one price path, and tickers move together; the bootstrap resamples whole cases and still
+    understates the uncertainty.
+  - This checks the calibration of the stated odds of hypothetical setups. It is not a strategy, not
+    a claim about returns, and not advice.
+
+HORIZON 6-12m: 144 case(s), 432 setups, 316 filled; exits: 182 target, 128 stop, 6 expiry, 116 unfilled
+  st = stated by the setup (mean), obs = observed. win is among filled setups; R/fill is the mean result of filled setups, R/order counts unfilled ones as 0R.
+    group                  setups  fill st/obs   win st/obs  R/fill st/obs  R/order st/obs  ambig
+    all                       432      67%/73%      47%/58%    +0.09/+0.33     +0.05/+0.24     0%
+    by side:
+      long                    288      74%/90%      47%/61%    +0.12/+0.44     +0.09/+0.39     0%
+      short                   144      54%/40%      44%/41%    -0.03/-0.17     -0.02/-0.07     0%
+    by kind:
+      continuation            406      67%/74%      47%/57%    +0.09/+0.30     +0.05/+0.22     0%
+      reversal                 26      74%/65%      45%/71%    +0.09/+0.80     +0.07/+0.52     0%
+    by side and kind:
+      long reversal            25      73%/64%      44%/75%    +0.10/+0.90     +0.07/+0.58     0%
+      long continuation       263      74%/92%      48%/60%    +0.12/+0.41     +0.09/+0.37     0%
+      short reversal            1    100%/100%       62%/0%    -0.06/-0.84     -0.06/-0.84     0%
+      short continuation      143      53%/40%      43%/42%    -0.03/-0.16     -0.02/-0.06     0%
+    by order:
+      limit                    23      71%/61%      43%/71%    +0.10/+0.88     +0.07/+0.54     0%
+      market                    3    100%/100%      56%/67%    +0.03/+0.42     +0.03/+0.42     0%
+      stop                    406      67%/74%      47%/57%    +0.09/+0.30     +0.05/+0.22     0%
+    by quality:
+      favourable              116      70%/90%      43%/59%    +0.17/+0.60     +0.12/+0.54     0%
+      marginal                315      67%/67%      49%/57%    +0.05/+0.19     +0.03/+0.13     0%
+      unfavourable              1       45%/0%          -/-            -/-     -0.07/+0.00     0%
+    by rank:
+      1                       144      78%/90%      45%/60%    +0.13/+0.51     +0.10/+0.46     0%
+      2                       144      71%/90%      50%/63%    +0.11/+0.36     +0.07/+0.33     0%
+      3                       144      54%/40%      44%/41%    -0.03/-0.17     -0.02/-0.07     0%
+    by ticker:
+      AAPL                     36      65%/81%      43%/69%    +0.11/+0.85     +0.06/+0.68     0%
+      BBDC4.SA                 36      64%/72%      51%/73%    +0.07/+0.45     +0.03/+0.32     0%
+      ITUB4.SA                 36      68%/72%      49%/62%    +0.10/+0.33     +0.05/+0.24     0%
+      JPM                      36      68%/81%      46%/38%    +0.10/-0.09     +0.06/-0.07     0%
+      KO                       36      63%/64%      48%/65%    +0.15/+0.55     +0.07/+0.35     0%
+      MSFT                     36      64%/81%      45%/59%    +0.07/+0.28     +0.06/+0.23     0%
+      NVDA                     36      66%/78%      44%/50%    +0.07/+0.15     +0.04/+0.11     0%
+      PETR4.SA                 36      72%/67%      47%/54%    +0.07/+0.32     +0.04/+0.21     0%
+      SPY                      36      68%/75%      47%/63%    +0.15/+0.58     +0.09/+0.43     0%
+      VALE3.SA                 36      75%/86%      49%/61%    +0.07/+0.40     +0.05/+0.35     0%
+      WEGE3.SA                 36      65%/64%      43%/48%    +0.08/+0.08     +0.05/+0.05     0%
+      XOM                      36      71%/58%      50%/48%    +0.08/-0.09     +0.05/-0.05     0%
+  Brier, fill: 0.164 (always the observed rate 0.196); win: 0.250 (always the observed rate 0.244). 0 is perfect.
+  Bootstrap over cases, 90%: fill 70%-76%, win 53%-62%, R/fill +0.22 to +0.44, R/order +0.16 to +0.32
+  Per ticker, R/order: lowest -0.07, median +0.23, highest +0.68; positive in 10 of 12 tickers.
+  Ambiguous candles changed 0% of the setups; with the optimistic ordering R/order would be +0.24.
+  Reliability, fill:  0-10%: n 1, 0.05->0.00  10-20%: n 4, 0.14->0.00  20-30%: n 2, 0.28->0.00  30-40%: n 8, 0.34->0.50  40-50%: n 44, 0.46->0.39  50-60%: n 82, 0.55->0.60  60-70%: n 88, 0.64->0.73  70-80%: n 80, 0.74->0.85  80-90%: n 95, 0.85->0.93  90-100%: n 28, 0.92->0.93
+  Reliability, win if filled:  10-20%: n 5, 0.14->0.00  20-30%: n 6, 0.23->0.33  30-40%: n 32, 0.37->0.53  40-50%: n 166, 0.45->0.56  50-60%: n 85, 0.54->0.65  60-70%: n 22, 0.61->0.68

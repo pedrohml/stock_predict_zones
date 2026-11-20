@@ -31,7 +31,8 @@ ROOT = Path(__file__).resolve().parent
 TEMPLATE = ROOT / "prompts" / "trade_entries.md"
 SCHEMA = ROOT / "prompts" / "trade_entries.schema.json"
 RZ_PATH = ROOT / ".claude" / "skills" / "reversal-zones-projection" / "scripts" / "rz.py"
-RULES = 2   # version of the rules; 1 (until 19 Nov 2026) took fill and win from reach and turn by formulas
+RULES = 3   # version of the rules; 1 (until 19 Nov 2026) took fill and win from reach and turn by formulas,
+            # 2 labelled quality with one band of ±0.05 R at every horizon (EDGE_BAND_2)
 
 # The path estimate (paths(), odds()). A change to any of these is a new RULES number: an
 # entries file is checked by recomputing it.
@@ -42,7 +43,13 @@ DAYS = {"1D": 1, "1W": 5, "1M": 21}   # trading days per candle of the close bas
 # 1 would be the simulation's own volatility; 0.65 was chosen on the first two years of as-of
 # dates of the setup backtest (README, "Backtest of the trade setups").
 SPREAD = 0.65
-EDGE_BAND = 0.05     # quality: favourable from +0.05 R per fill, unfavourable from -0.05 down
+# quality: edge.if_filled against the model's measured error at the horizon. Each band is the larger
+# of |stated - observed| mean R per fill of the picked setups, under the pessimistic and the
+# optimistic ordering, on the first two years of as-of dates of the setup backtest (README,
+# "Backtest of the trade setups"), rounded up to 0.01. An edge inside the band cannot be told from
+# zero: `marginal`. A horizon the backtest does not cover (today) gets the widest band.
+EDGE_BAND = {"1-2w": 0.35, "1-3m": 0.06, "6-12m": 0.13}
+EDGE_BAND_2 = 0.05   # rules 2: one band at every horizon; files written by it are checked with it
 MIN_FILL = 0.05      # a setup whose order fills on fewer paths says nothing (its edge rounds to zero and would rank first)
 TOLERANCE = 0.011        # one hundredth, for a rounding that fell the other way
 RANK_TOLERANCE = 0.021   # two setups this close in edge.per_order may swap places
@@ -230,9 +237,19 @@ def odds(sim, side, order, entry, stop, target, ratio):
             "if_filled": float(r[filled].mean()) if count else 0.0}
 
 
-def quality(if_filled):
-    """favourable, marginal or unfavourable, from the edge per fill and EDGE_BAND."""
-    return "favourable" if if_filled >= EDGE_BAND else "unfavourable" if if_filled <= -EDGE_BAND else "marginal"
+def band(source, rules=RULES):
+    """The quality band for the input's horizon (EDGE_BAND, the widest when the horizon has none),
+    or EDGE_BAND_2 for a file written by rules 2."""
+    if rules == 2:
+        return EDGE_BAND_2
+    horizon = source.get("horizon") if isinstance(source, dict) else None
+    return EDGE_BAND.get(horizon, max(EDGE_BAND.values()))
+
+
+def quality(if_filled, width):
+    """favourable when the edge per fill is at least `width` (band()) above zero, unfavourable
+    when at least `width` below, marginal between: an edge the model's error cannot tell from zero."""
+    return "favourable" if if_filled >= width else "unfavourable" if if_filled <= -width else "marginal"
 
 
 def setups(source, proj, sim=None):
@@ -241,7 +258,7 @@ def setups(source, proj, sim=None):
     odds from the simulated paths of the input (paths(), computed here unless `sim` is given)."""
     digits = places(source)
     price, unit = proj["as_of"]["price"], units(proj, digits)
-    buffer, found, played = unit["buffer"], [], {"sim": sim}
+    buffer, found, played, width = unit["buffer"], [], {"sim": sim}, band(source)
 
     def add(side, kind, zone_id, order, entry, stop, target, detail):
         ordered = stop < entry < target if side == "long" else target < entry < stop
@@ -265,7 +282,7 @@ def setups(source, proj, sim=None):
             "id": f"{side}-{zone_id}-{kind}", "side": side, "setup": kind, "order": order,
             "entry": entry, "stop": stop, "target": target,
             "risk": risk, "reward": reward, "ratio": ratio, "fill": fill_p, "win_if_filled": win,
-            "if_filled": if_filled, "per_order": half_up(fill_p * if_filled), "quality": quality(if_filled),
+            "if_filled": if_filled, "per_order": half_up(fill_p * if_filled), "quality": quality(if_filled, width),
             "detail": dict(detail, zone=zone_id, buffer=buffer, loss=result["loss"], open=result["open"],
                            paths=PATHS, method=sim_now["method"])})
 
@@ -333,6 +350,7 @@ TEXT = {
         "paths": "fill, win_if_filled and the edge are counted on random price paths with the projection's volatility and drift; the paths know nothing of the zones, so the odds describe the setup's distances, not an effect of a zone holding or breaking",
         "touch": "fills, stops and targets are judged on simulated daily highs and lows, and a day that reaches both the stop and the target counts as the stop; the projection's own reach and turn are for {basis} closes",
         "calibration": "a backtest of these rules on the mechanical engine compared the odds with outcomes on average over many past dates, before costs, not for this setup; the projection's own confidence is {level}",
+        "quality": "quality compares edge.if_filled with the model's measured error at this horizon, ±{band} R: marginal means the edge cannot be told from zero, favourable or unfavourable only that it lies outside that error; none of the three is a recommendation",
         "no_edge": "no setup has a positive edge per order on the simulated paths: each of them loses on average, before costs",
         "fewer": "only {n} setup(s) pass the rules for this projection",
         "method": "Prices from zone edges only; fill, win and edge counted on {paths} simulated paths of the projection's simulation (sim method {sim}), refined to daily highs and lows; ranked by edge per order. {valid} setups were valid, {kept} kept. Written by trade_entries.py, without a language model.",
@@ -353,6 +371,7 @@ TEXT = {
         "paths": "fill, win_if_filled e o edge são contados em caminhos aleatórios de preço com a volatilidade e o drift da projeção; os caminhos não sabem nada das zonas, então as chances descrevem as distâncias do setup, não um efeito de a zona segurar ou romper",
         "touch": "execuções, stops e alvos são julgados nas máximas e mínimas diárias simuladas, e um dia que alcança o stop e o alvo conta como stop; o reach e o turn da própria projeção valem para fechamentos de {basis}",
         "calibration": "um backtest destas regras no motor mecânico comparou as chances com os resultados em média, em muitas datas passadas e antes de custos, não para este setup; a confiança da própria projeção é {level}",
+        "quality": "quality compara edge.if_filled com o erro medido do modelo neste horizonte, ±{band} R: marginal significa que o edge não se distingue de zero, favourable ou unfavourable apenas que ele fica fora desse erro; nenhum dos três é recomendação",
         "no_edge": "nenhum setup tem edge por ordem positivo nos caminhos simulados: em média, todos perdem, antes de custos",
         "fewer": "apenas {n} setup(s) passam nas regras para esta projeção",
         "method": "Preços só de bordas de zonas; fill, win e edge contados em {paths} caminhos simulados da simulação da projeção (sim method {sim}), refinados para máximas e mínimas diárias; ordenados pelo edge por ordem. {valid} setups válidos, {kept} mantidos. Escrito por trade_entries.py, sem modelo de linguagem.",
@@ -438,7 +457,7 @@ def build(source, proj, found=None):
         return {"task": "trade_entries", "error": NO_SETUP}
     level = proj["confidence"]["level"]
     limits = [t["paths"], t["touch"].format(basis=proj["horizon"]["close_basis"]),
-              t["calibration"].format(level=level)]
+              t["calibration"].format(level=level), t["quality"].format(band=money(band(source)))]
     if all(item["per_order"] <= 0 for item in found):
         limits.append(t["no_edge"])
     if len(kept) < 3:
@@ -477,7 +496,7 @@ def problems(source, proj, reply):
         return [f"the reply reports an error but the files are usable: {reply['error']}"]
     if reason:
         return [f"no setup can be built ({reason}), but the reply holds entries"]
-    if isinstance(reply, dict) and "entries" in reply and reply.get("rules") != RULES:
+    if isinstance(reply, dict) and "entries" in reply and reply.get("rules") not in (2, RULES):
         return [f"written by an earlier version of the rules (rules {reply.get('rules', 1)}, now {RULES}): its odds "
                 "came from reach and turn by formulas, not from simulated paths; compute the setups again "
                 "(`zones entries` or `trade_entries.py build`)"]
@@ -500,7 +519,9 @@ def problems(source, proj, reply):
             bad.append(f"units.{name}: {reply['units'][name]}, expected {value}")
 
     found = setups(source, proj)
-    by_id, wanted, got = {item["id"]: item for item in found}, pick(found), reply["entries"]
+    if reply["rules"] != RULES:   # rules 2 differs only in the quality band: its labels are checked by its own
+        found = [dict(item, quality=quality(item["if_filled"], band(source, reply["rules"]))) for item in found]
+    by_id, wanted, got ={item["id"]: item for item in found}, pick(found), reply["entries"]
     numbers = (("entry.price", lambda e: e["entry"]["price"], "entry"), ("stop.price", lambda e: e["stop"]["price"], "stop"),
                ("target.price", lambda e: e["target"]["price"], "target"), ("payoff.risk", lambda e: e["payoff"]["risk"], "risk"),
                ("payoff.reward", lambda e: e["payoff"]["reward"], "reward"), ("payoff.ratio", lambda e: e["payoff"]["ratio"], "ratio"),

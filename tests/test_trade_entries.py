@@ -65,7 +65,7 @@ def test_setups_follow_the_rules(example):
             assert item["target"] < item["entry"] < item["stop"]
         assert item["ratio"] >= 0.5 and 0 <= item["win_if_filled"] <= 1 and 0 <= item["fill"] <= 1
         assert item["per_order"] == trade_entries.half_up(item["fill"] * item["if_filled"])
-        assert item["quality"] == trade_entries.quality(item["if_filled"])
+        assert item["quality"] == trade_entries.quality(item["if_filled"], trade_entries.band(example[0]))
         d = item["detail"]
         assert item["win_if_filled"] + d["loss"] + d["open"] == pytest.approx(1, abs=0.006)
     # continuation never starts from the last zone on a side
@@ -210,6 +210,62 @@ def test_an_entries_file_of_the_earlier_rules_is_named_as_such(input_data, proje
     del old["rules"]
     bad = trade_entries.problems(input_data, projection_data, old)
     assert len(bad) == 1 and "earlier version of the rules (rules 1" in bad[0] and "zones entries" in bad[0]
+
+
+# ---- quality: the edge against the model's measured error at the horizon -----------
+
+def test_the_quality_band_follows_the_horizon():
+    assert trade_entries.band({"horizon": "1-2w"}) == 0.35
+    assert trade_entries.band({"horizon": "1-3m"}) == 0.06
+    assert trade_entries.band({"horizon": "6-12m"}) == 0.13
+    widest = max(trade_entries.EDGE_BAND.values())
+    assert trade_entries.band({"horizon": "today"}) == widest and trade_entries.band({}) == widest
+    assert trade_entries.band({"horizon": "1-2w"}, rules=2) == trade_entries.EDGE_BAND_2 == 0.05
+
+
+@pytest.mark.parametrize("edge, label", [(0.13, "favourable"), (0.12, "marginal"), (0.0, "marginal"),
+                                         (-0.12, "marginal"), (-0.13, "unfavourable"), (-0.5, "unfavourable")])
+def test_an_edge_inside_the_band_cannot_be_told_from_zero(edge, label):
+    assert trade_entries.quality(edge, 0.13) == label
+
+
+def test_the_label_is_recomputed_for_the_horizon(example, monkeypatch):
+    """The same edges get other labels under another band, and check recomputes them."""
+    source, proj = example
+    reply = trade_entries.build(source, proj)
+    assert [e["quality"] for e in reply["entries"]] == ["favourable", "marginal", "favourable"]   # band 0.06
+    assert "±0.06 R" in " ".join(reply["confidence"]["limits"])
+    monkeypatch.setitem(trade_entries.EDGE_BAND, "1-3m", 0.35)
+    assert trade_entries.problems(source, proj, reply) == [
+        "long-R1-continuation.quality: favourable, expected marginal",
+        "long-R2-continuation.quality: favourable, expected marginal"]
+    again = trade_entries.build(source, proj)
+    assert {e["quality"] for e in again["entries"]} == {"marginal"} and trade_entries.problems(source, proj, again) == []
+    assert "±0.35 R" in " ".join(again["confidence"]["limits"])
+
+
+def test_a_rules_2_file_is_checked_with_its_own_band(example, monkeypatch):
+    """Rules 2 differs from 3 only in the quality band, so its files still check, label included."""
+    source, proj = example
+    monkeypatch.setitem(trade_entries.EDGE_BAND, "1-3m", 0.10)   # so that the two bands disagree here
+    old = trade_entries.build(source, proj)
+    old["rules"] = 2
+    for entry in old["entries"]:
+        entry["quality"] = trade_entries.quality(entry["edge"]["if_filled"], 0.05)
+    assert [e["quality"] for e in old["entries"]] == ["favourable", "marginal", "favourable"]
+    assert trade_entries.problems(source, proj, old) == []
+    old["rules"] = 3
+    assert any(".quality: favourable, expected marginal" in line for line in trade_entries.problems(source, proj, old))
+    old["rules"] = 4
+    assert trade_entries.problems(source, proj, old)
+
+
+def test_every_language_explains_the_band_without_advice():
+    for text in trade_entries.TEXT.values():
+        line = text["quality"].format(band="0.13")
+        assert "±0.13 R" in line and "marginal" in line
+    assert "none of the three is a recommendation" in trade_entries.TEXT["en"]["quality"]
+    assert "nenhum dos três é recomendação" in trade_entries.TEXT["pt"]["quality"]
 
 
 def test_build_reports_why_nothing_can_be_built(input_data, projection_data):
