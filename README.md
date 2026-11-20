@@ -990,7 +990,7 @@ uv run python backtest_entries.py --universe backtest_universe.txt --horizon 1-2
 | `--jobs N` | `1` | Run the cases in N processes. Downloads stay in the main process (the cache and the shared rate limit apply as always) and the results come back in serial order, so the output is byte for byte that of `--jobs 1`. |
 | `--json`, `--csv FILE`, `--quiet`, `--no-cache` | off | As in `backtest.py`. The CSV has one row per setup: its stated numbers, fill, exit, R, and the other ordering's exit and R, plus the case's part and, with `--by-regime`, its regime and index moves. |
 
-**History.** A date is skipped ("less history than a live run requests") when the ticker's daily candles start after the first day of the longest series a live run of that horizon asks Yahoo for: 2 years before the as-of date at `1-2w`, 5 years at `1-3m`, 10 years at `6-12m`. The presets assume a mature listing; with less history `input_as_of()` would build shorter series than any live run of an established name sees. So the as-of dates of a young listing start later, and at `6-12m` most B3 names (Yahoo's B3 history starts around 2000) only from about 2010.
+**History.** A date is skipped ("less history than a live run requests") when the ticker's daily candles start after the first day of the longest series a live run of that horizon asks Yahoo for: 2 years before the as-of date at `1-2w`, 5 years at `1-3m`, 10 years at `6-12m`. The presets assume a mature listing; with less history `input_as_of()` would build shorter series than any live run of an established name sees. So the as-of dates of a young listing start later, and at `6-12m` most B3 names (Yahoo's B3 history starts around 2000) only from about 2010. A B3 date whose series would start on a day Brazil's daylight saving time began (no local midnight that day, until 2018) is skipped too, with its own reason: `backtest.input_as_of()` cannot build it.
 
 **What it does, per ticker, horizon and as-of date** (after that day's close):
 
@@ -1094,6 +1094,72 @@ Held-out year, then all three years, version 2 before / version 3 after (R per o
 | | **3** | +0.07 / +0.21 | +0.04 / +0.12 | +0.07 / +0.21 | +0.01 / +0.00 (2) | 430 |
 
 On the held-out year rank 3 improved at every horizon (-0.09 to -0.07, -0.15 to -0.04, -0.09 to +0.05 R per order observed), and so did the mean of all three. What it costs: at `6-12m` nearly every list is now all long (430 of 432 cases), and at `1-3m` 28%. That follows from the ranking, not from a view of the market: the simulation's 5% a year drift gives longs the higher edge on the paths, the more so the longer the horizon. That is why a one-sided list says so in its limits. Short setups that are still kept did no better than before (`1-3m` -0.15 observed on the held-out year). The same caveats apply as to the whole backtest: survivor tickers in a mostly rising market, overlapping cases, no costs; the held-out `6-12m` year was a strong rise, which flatters any rule that keeps more longs.
+
+### The long run: 2005-2026, 76 tickers, rules version 3 unchanged
+
+The sections above rest on three years of as-of dates (2022-2026) for twelve tickers that are still listed and mostly rose. To see whether the remaining errors (long setups at `6-12m` stated +0.08 R per order and observed +0.25; short continuations at `1-3m` stated +0.01 and observed -0.14) belong to the rules or to that market, the same code was run on twenty years of as-of dates and a broader universe, with no rule changed:
+
+```bash
+uv run python backtest_entries.py --universe backtest_universe.txt --horizon 1-2w 1-3m 6-12m --start 2005-01-03 \
+    --by-year --by-regime --by-part --subset original --jobs 12
+```
+
+Report: [`examples/backtest_entries_2026-11-19_rules3_long.txt`](examples/backtest_entries_2026-11-19_rules3_long.txt) (universe version 1, sim method 2, pessimistic ordering, the default steps; as-of dates from 3 Jan 2005 to 30 Oct 2026 at `1-2w`, 14 Aug 2026 at `1-3m`, 13 Nov 2025 at `6-12m`). **122,540 cases, 367,610 setups.** It took 42 minutes with `--jobs 12` on a 15-core laptop (7.8 hours of CPU, so about 8 hours serially; the candles came from the cache); the three-year, twelve-ticker report takes 2 minutes with `--jobs 10` against 8 serially, and came out byte for byte identical to the committed one either way.
+
+#### The universe file
+
+[`backtest_universe.txt`](backtest_universe.txt) (version 1) lists 76 Yahoo symbols in named groups, each with its reason: `original` (the twelve tickers of every earlier report), `us-large` (12 US large caps across sectors), `us-fell-hard` (16 US large and mid caps with crashes or long declines: GE, C, AIG, INTC, BA, T, F, XRX, LUMN, KSS, M, VFC, CCL, SLB, CLF, AAL), `us-collapsed` (FNMA, FMCC, MBI, GNW: down 90% or more in 2008, still quoted), `us-delisted` (FRCB and BIGGQ, failed and still served up to their failure), `br-large` (12 B3 large caps) and `br-fell-hard` (18 B3 names that fell hard or for years, from steel and retail to Americanas, IRB, PDG, Light, Rossi). A line `TICKER@FIRST..LAST` restricts a symbol to its usable rows. Raise its `version:` with any change and name it with any result.
+
+**Survivor bias is smaller, not gone.** Yahoo serves no history for most delisted, acquired or renamed-away symbols: of the failures and takeovers tried (Lehman, Washington Mutual, old GM, AMR, J.C. Penney, Rite Aid, Yellow, Sears, SVB, Bed Bath & Beyond, Credit Suisse, Chesapeake, Walgreens, US Steel, Nordstrom, Foot Locker, Hanesbrands, DISH, Activision, Twitter; on B3 OGX, MMX, Gol, Azul, Cielo, Natura &Co, BRF, JBS, Marfrig, Saraiva) none is served. So the losers here are the ones still quoted; listings that ended at zero are mostly missing, and every name was chosen in 2026 knowing how it did. Some large B3 losers (Gafisa, Oi, Braskem, GPA) were left out because Yahoo's rows for them are broken (unadjusted splits, adjusted prices thousands of times today's), which adds to the bias. The file lists every symbol tried and every cut.
+
+**Data checks.** Every day-over-day close ratio beyond x1.6 or /1.6 since 1995 was looked at, and the long blocks of stale B3 quotes (one price repeated for weeks or years) were found by counting candles with no range. Real moves are kept (the 2008 collapses, FRCB's last weeks, the Ibovespa's -14% day of 26 Oct 2026); broken stretches are cut with `@` (for example SUZB3 before 2018, flat for ten years, and WEGE3 before mid-2005, which leaves the earlier twelve-ticker reports untouched). In addition the backtest skips any case with more than 20% candles without range in the 60 days before the as-of date or in its walk (`stale quotes`: 852, 263 and 35 cases at the three horizons). Two further skip reasons are failures of the live code, counted rather than hidden: a B3 date whose series would start at a local midnight that did not exist (Brazil's daylight saving time, 100 cases; `backtest.input_as_of()` cannot build it), and `trade_entries.build()` raising `ValueError: math domain error` (10, 72 and 256 cases), which happens on sub-real prices where a short's target zone reaches zero and `odds()` takes its logarithm. That last one is a bug in `trade_entries.py` that a live run on such a ticker would hit too; it was left for the rules' owner, and the cases are skipped.
+
+#### The fit / held-out split
+
+For any later change to the drift, the volatility or the setup rules, the long run is split once and for all (`HELD_OUT_YEARS` in `backtest_entries.py`): **held-out = cases whose whole window, as-of date to `valid_until`, lies in 2008-2009 or 2014-2016; fit = cases whose window touches none of those years; embargo = the rest, used by neither.** The held-out years hold a crash (2008), a rally (2009), a long Brazilian bear market and a commodity crash (2014-2015) and a recovery (2016), and all lie before Nov 2017, the earliest as-of date any earlier tuning (the sim drift, `SPREAD`, `EDGE_BAND`, the quality bands, the side quota) looked at. The fit part still contains the 2011, 2018, 2020 and 2022 sell-offs. The years were fixed before any long-run result was seen. Fit a parameter with `--part fit`, then run `--part held-out` once; `--by-part` shows both. The cases per part: `1-2w` 57,328 fit / 16,327 held-out / 434 embargo, `1-3m` 26,469 / 6,930 / 1,438, `6-12m` 9,903 / 1,763 / 1,948. The held-out numbers below were looked at for this description only; nothing was fitted on them.
+
+#### What the current rules look like on it
+
+Stated / observed, pessimistic ordering; R is per order (unfilled orders count 0R); "opt." the observed R per order under the optimistic ordering; Brier of the stated odds, then of always forecasting the group's own observed rate.
+
+| Horizon | Tickers, setups | Fill st/obs | Win st/obs | R/order st/obs (opt.) | Brier fill | Brier win | R/order > 0 in |
+|---|---|---|---|---|---|---|---|
+| `1-2w` | all 76, 222,263 | 45% / 49% | 24% / 28% | -0.07 / -0.01 (+0.12) | 0.208 (0.250) | 0.186 (0.201) | 27 of 76 |
+| | original 12, 37,908 | 46% / 48% | 24% / 29% | -0.07 / -0.00 | 0.207 (0.250) | 0.190 (0.204) | 5 of 12 |
+| `1-3m` | all 76, 104,506 | 66% / 68% | 43% / 39% | +0.03 / -0.05 (+0.03) | 0.197 (0.218) | 0.230 (0.238) | 13 of 76 |
+| | original 12, 18,372 | 65% / 69% | 43% / 42% | +0.03 / -0.00 | 0.192 (0.215) | 0.234 (0.244) | 3 of 12 |
+| `6-12m` | all 74, 40,841 | 70% / 72% | 46% / 46% | +0.06 / +0.05 (+0.07) | 0.186 (0.204) | 0.238 (0.248) | 49 of 74 |
+| | original 12, 7,422 | 70% / 74% | 46% / 51% | +0.07 / +0.15 | 0.177 (0.194) | 0.243 (0.250) | 11 of 12 |
+
+By side and kind (R per order stated / observed, setups in brackets; "orig." is the original twelve over the same twenty years):
+
+| Horizon | Long reversal | Long continuation | Short reversal | Short continuation |
+|---|---|---|---|---|
+| `1-2w` | -0.07 / +0.01 (133,484) | -0.09 / -0.22 (5,846) | -0.08 / -0.02 (78,384) | -0.07 / -0.19 (4,549) |
+| `1-3m` | +0.01 / +0.01 (9,642) | +0.05 / -0.04 (59,957); orig. +0.05 / +0.03 | -0.03 / -0.11 (368) | +0.02 / -0.09 (34,539); orig. +0.02 / -0.13 |
+| `6-12m` | +0.04 / +0.07 (13,152) | +0.08 / +0.05 (26,409); orig. +0.09 / +0.16 | -0.01 / +0.11 (71) | +0.01 / -0.08 (1,209) |
+
+By regime and part, all 76 tickers (R per order observed: all / long / short continuation; continuation fill stated / observed):
+
+| Horizon | Bull (index +10% or more over the past year) | Bear (-10% or less) | Index rose over the horizon | Index fell over the horizon | Fit | Held-out |
+|---|---|---|---|---|---|---|
+| `1-2w` | -0.01 / -0.00 / -0.20; 59% / 63% | -0.01 / +0.01 / -0.12; 53% / 53% | +0.02 / +0.10 / -0.20 | -0.06 / -0.14 / -0.18 | -0.01 / +0.00 / -0.21 | -0.01 / -0.01 / -0.15 |
+| `1-3m` | -0.05 / -0.03 / -0.11; 68% / 69% | -0.08 / -0.04 / -0.12; 64% / 67% | -0.03 / +0.04 / -0.15 | -0.11 / -0.18 / +0.01 | -0.05 / -0.02 / -0.10 | -0.07 / -0.07 / -0.06 |
+| `6-12m` | +0.06 / +0.07 / -0.05; 71% / 72% | +0.04 / +0.05 / -0.24; 67% / 76% | +0.09 / +0.10 / -0.12 | -0.09 / -0.10 / +0.13 | +0.07 / +0.07 / -0.06 | -0.09 / -0.09 / -0.11 |
+
+Long setups at `6-12m` by year of the as-of date (observed R per order; stated +0.05 to +0.09 every year): 2005 +0.02, 2006 +0.32, 2007 -0.05, **2008 -0.26**, 2009 +0.21, 2010 +0.11, 2011 -0.03, 2012 +0.10, 2013 +0.09, 2014 +0.04, **2015 -0.12**, 2016 +0.21, 2017 +0.22, 2018 -0.05, 2019 +0.02, 2020 +0.09, 2021 -0.02, 2022 -0.05, 2023 +0.13, 2024 +0.04, 2025 +0.18.
+
+What it shows:
+
+- **The `6-12m` long excess was the sample, not the rules.** Over 76 tickers and twenty years the long setups at `6-12m` are calibrated on average (stated +0.06, observed +0.06; the long continuations +0.08 / +0.05). The original twelve over the same twenty years still observe +0.15 (+0.24 for their as-of dates from 2023): it is a property of those surviving names, most of all in 2023-2025. Around the mean, the result swings with the market path: -0.26 R per order for as-of dates in 2008, -0.12 in 2015, +0.32 in 2006, and -0.09 on the held-out part against +0.07 on the fit part. A 5% a year drift is right on average and says nothing about which year it is. The trailing regime known at the as-of date barely separates the outcomes (bull +0.07, bear +0.05); the index's move afterwards does (+0.10 against -0.10). Nothing in the rules can use that.
+- **The short continuation loss holds in every regime.** At `1-3m` short continuations were stated +0.02 and observed -0.09 over all 76 tickers (-0.13 for the original twelve): -0.10 for as-of dates up to 2022 and -0.07 from 2023, -0.11 in bull regimes, -0.06 flat and -0.12 in bear regimes, and -0.06 on the held-out part. Only when the index actually fell over the horizon did they break even (+0.01). At `1-2w` they observed -0.19 (stated -0.07) and at `6-12m` -0.08 (stated +0.01, few cases), in bull and bear regimes alike. So this is a bias of the setups against the drift-free part of the path, not of the 2023-2026 rise: it survives bear markets, falling indices at the as-of date and the losers. The long continuations at `1-2w` lose as much (-0.22 against -0.09): breakout stops one daily move away are hit more than the paths say, on both sides.
+- **The continuation fill under-statement is small and regime-independent, except in bear markets at `6-12m`.** Continuation stop orders filled 2-4 points more often than stated over the whole universe (`1-2w` 58% / 61%, `1-3m` 66% / 68%, `6-12m` 71% / 73%), the same in bull and flat regimes; the larger gap of the earlier report (61-64% stated against 71-78% at rules 1) belongs to the original twelve, whose continuations still fill 4-8 points more often than stated. In bear regimes the `1-2w` gap vanishes (53% / 53%) and the `6-12m` one grows (67% / 76%).
+- **`1-3m` is the one horizon whose stated edge is too high everywhere.** Stated +0.03, observed -0.05 R per order, in all three regimes, in 21 of 22 years (not 2010) and on both parts; under the optimistic ordering +0.03. Its `win_if_filled` is stated 43% and observed 39%. Only 13 of 76 tickers had a positive mean R per order there.
+- **`1-2w` stated edges are too low, as in the three-year report** (stated -0.07, observed -0.01 pessimistic and +0.12 optimistic), stable from year to year.
+- **The stated odds still beat the constant forecast everywhere it matters.** Brier of `fill` is better than always forecasting the observed rate at every horizon and in every year of the `1-2w` and `1-3m` tables; `win_if_filled` beats it at all three horizons over the whole sample, but not in every year: at `6-12m` it was worse for as-of dates in 2006, 2007, 2008 and 2015, at `1-3m` in 2008.
+- **The universe changes the conclusions, the years less so.** Comparing the original twelve with the whole universe over the same twenty years moves the `6-12m` long result from +0.15 to +0.06 and the `1-3m` result from -0.00 to -0.05; comparing 2005-2022 with 2023-2026 within one universe moves it much less, except for the original twelve at `6-12m`. By group, R per order at `1-3m` / `6-12m`: original -0.00 / +0.14, US large caps -0.01 / +0.08, US fell hard -0.06 / +0.03, US collapsed -0.09 / -0.09, B3 large caps -0.13 / +0.06, B3 fell hard -0.06 / -0.03.
+
+The same caveats as the whole backtest apply, more strongly: the cases overlap heavily (a `6-12m` case every month for a year-long horizon), the three setups of a case share one path, the tickers move together, so the bootstrap intervals in the report are far too narrow; no costs, borrowing or dividends; mechanical zones and unadjusted probabilities. It checks the calibration of the stated odds of hypothetical setups and is not a strategy, a claim about returns or advice.
 
 ### Result of 19 Nov 2026, rules version 1
 

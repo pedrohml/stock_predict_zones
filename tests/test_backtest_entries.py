@@ -306,7 +306,9 @@ def test_the_repositorys_universe_file():
     assert 40 <= len(u["tickers"]) <= 80
     assert all(g["reason"] for g in u["groups"].values())
     assert any(t.endswith(".SA") for t in u["tickers"]) and any("." not in t for t in u["tickers"])
-    assert not set(u["spans"]) & set(u["groups"]["original"]["tickers"])   # the twelve stay uncut
+    for ticker in set(u["spans"]) & set(u["groups"]["original"]["tickers"]):
+        first, last = u["spans"][ticker]   # a cut of the twelve may not reach the earlier reports' rows (2012 on)
+        assert last is None and first < date(2012, 1, 1)
 
 
 def test_history_start_is_the_longest_series_a_live_run_requests():
@@ -510,3 +512,26 @@ def test_cli_unknown_group_and_bad_file(tmp_path, capsys):
     assert "--subset must name a group" in capsys.readouterr().err
     assert be.main(["--universe", str(tmp_path / "missing.txt")]) == 1
     assert "cannot read" in capsys.readouterr().err
+
+
+def test_a_date_whose_series_would_start_at_a_missing_local_midnight_is_skipped():
+    # Sao Paulo skipped from 00:00 to 01:00 on 18 Oct 2015; the 2y series of 18 Oct 2017 starts that day
+    sao_paulo = {**DATA, "tz": "America/Sao_Paulo"}
+    assert "DST" in be.run_case("AAA.SA", "1-2w", sao_paulo, date(2017, 10, 18), TODAY)["skipped"]
+    assert "skipped" not in be.run_case("AAA.SA", "1-2w", sao_paulo, date(2017, 10, 19), TODAY)
+
+
+def test_stale_quotes():
+    flat_row = ["2026-01-05", 10.0, 10.0, 10.0, 10.0]
+    moving = ["2026-01-06", 10.0, 10.5, 9.8, 10.2]
+    assert not be.stale([]) and not be.stale([moving] * 8 + [flat_row] * 2)
+    assert be.stale([moving] * 7 + [flat_row] * 3)
+
+
+def test_cases_on_stale_quotes_are_skipped():
+    day = date(2025, 3, 12)
+    before = [r if r[0] < "2025-02-01" or r[0] > day.isoformat() else [r[0], r[4], r[4], r[4], r[4]] for r in ROWS]
+    assert be.run_case("AAA", "1-2w", {**DATA, "rows": before}, day, TODAY)["skipped"] == be.STALE_REASON
+    after = [r if not ("2025-03-13" <= r[0] <= "2025-03-24") else [r[0], r[4], r[4], r[4], r[4]] for r in ROWS]
+    assert be.run_case("AAA", "1-2w", {**DATA, "rows": after}, day, TODAY)["skipped"] == be.STALE_REASON
+    assert "skipped" not in be.run_case("AAA", "1-2w", DATA, day, TODAY)

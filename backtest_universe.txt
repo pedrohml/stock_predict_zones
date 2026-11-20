@@ -26,20 +26,30 @@
 # wrong spin-off adjustments), RAPT4 (a recent unadjusted jump), NATU3 (a five-year gap), PARA (history
 # from 2021 only, broken prices), AZUL3 (2026 only), KODK (from 2013 only). Their exclusion is about the
 # data, not the outcome, but some (GFSA3, OIBR3, BRKM5, PCAR3) were large losers, so it adds to the
-# survivor bias. Cut with @: SUZB3 (flat 0.80 then 16.00 in May 2007), RADL3 (a x4.7 day in 2000 and
-# x1.7 in 2006), BHIA3 (x0.23 and x2.5 in 2003), COGN3 (x1.8 in 2012), CYRE3 (x1.7 in 2007), B3SA3 (x0.34
-# in May 2011), AMER3 (x0.42 and x2.8 around its 2024 reverse split; the 2023 collapse is kept), FRCB and
-# BIGGQ (sub-penny quotes after their failures; the collapses are kept), PDGR3 (eleven split-like jumps
-# from Oct 2021). Kept as real moves: AAPL Sep 2000, the 2008-2009 days of C, AIG, FNMA, FMCC, GNW, MBI's
+# survivor bias. Kept as real moves: AAPL Sep 2000, the 2008-2009 days of C, AIG, FNMA, FMCC, GNW, MBI's
 # Dec 2023 special dividend (prices are not dividend-adjusted), LUMN Aug 2024, the Ibovespa's -14% day of
 # 26 Oct 2026 and the B3 names that fell with it, XRX Oct 2026. BBDC4 has an unexplained x0.57 day on
-# 29 May 2009; it is kept, uncut, because it is one of the original twelve.
+# 29 May 2009 and is kept uncut (it is one of the original twelve).
+#
+# Stale quotes: some old B3 rows repeat one price for weeks or years (high = low = open = close).
+# backtest_entries.py skips any case with more than 20% such candles in the 60 days before the as-of
+# date or in its walk; the long blocks are also cut away here so they never enter a long series.
+#
+# Cut with @ (dates are the first or last row used): WEGE3 from 2005-07 (flat 2003 to mid-2005; the
+# earlier reports used 2012 and later rows only, so they are unchanged), ABEV3 from 2007-09 (flat
+# 2003-2007), SUZB3 from 2018 (0.80 then 16.00 in May 2007, then flat until Nov 2017), RADL3 from
+# 2007-05 (a x4.7 day in 2000, x1.7 in 2006, flat early 2007), BHIA3 from 2006-05 (x0.23 and x2.5 in
+# 2003, flat 2004-2006), LIGT3 from 2008 (flat 2003-2007), COGN3 from 2013 (x1.8 in 2012), CYRE3 from
+# 2008 (x1.7 in 2007), B3SA3 from 2011-06 (x0.34 in May 2011), RSID3 until 2026-01-21 (flat since),
+# AMER3 until 2024-08-14 (x0.42 and x2.8 around its 2024 reverse split; the 2023 collapse is kept), FRCB
+# and BIGGQ until their failures (sub-penny quotes after; the collapses are kept), PDGR3 until Oct 2021
+# (eleven split-like jumps after).
 
 version: 1
 
 [original] The twelve tickers of every earlier setup report (rules 1-3), kept so old and new results compare.
 AAPL MSFT NVDA SPY JPM XOM KO
-PETR4.SA VALE3.SA ITUB4.SA BBDC4.SA WEGE3.SA
+PETR4.SA VALE3.SA ITUB4.SA BBDC4.SA WEGE3.SA@2005-07-01..
 
 [us-large] US large caps across sectors (health, staples, retail, energy, industrials, media, tech, telecom, banks) with ordinary long records.
 JNJ PG WMT HD CVX CAT PFE DIS IBM VZ MCD BAC
@@ -54,8 +64,8 @@ FNMA FMCC MBI GNW
 FRCB@..2023-04-28 BIGGQ@..2024-12-12
 
 [br-large] B3 large caps across sectors (beverages, banks, exchange, holding, pulp, aircraft, pharmacies, telecom, utilities, rental).
-ABEV3.SA BBAS3.SA B3SA3.SA@2011-06-01.. ITSA4.SA SUZB3.SA@2007-06-01.. EMBJ3.SA RADL3.SA@2007-01-01.. VIVT3.SA SBSP3.SA EGIE3.SA RENT3.SA AXIA3.SA
+ABEV3.SA@2007-09-01.. BBAS3.SA B3SA3.SA@2011-06-01.. ITSA4.SA SUZB3.SA@2018-01-01.. EMBJ3.SA RADL3.SA@2007-05-04.. VIVT3.SA SBSP3.SA EGIE3.SA RENT3.SA AXIA3.SA
 
 [br-fell-hard] B3 large, mid and small caps that fell hard or for years: steel, retail, education, travel, meat, homebuilders, Americanas, Light, IRB, PDG.
-USIM5.SA CSNA3.SA MGLU3.SA COGN3.SA@2013-01-01.. IRBR3.SA MRVE3.SA CYRE3.SA@2008-01-01.. BHIA3.SA@2004-01-01.. CVCB3.SA BEEF3.SA
-HBOR3.SA RSID3.SA AMAR3.SA AMER3.SA@..2024-08-14 LIGT3.SA TCSA3.SA PDGR3.SA@..2021-10-14 ECOR3.SA
+USIM5.SA CSNA3.SA MGLU3.SA COGN3.SA@2013-01-01.. IRBR3.SA MRVE3.SA CYRE3.SA@2008-01-01.. BHIA3.SA@2006-05-01.. CVCB3.SA BEEF3.SA
+HBOR3.SA RSID3.SA@..2026-01-21 AMAR3.SA AMER3.SA@..2024-08-14 LIGT3.SA@2008-01-01.. TCSA3.SA PDGR3.SA@..2021-10-14 ECOR3.SA

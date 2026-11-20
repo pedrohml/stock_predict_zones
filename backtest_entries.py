@@ -213,6 +213,24 @@ def walk(s, candles, optimistic=False):
 
 # ---- one case and the whole run ----------------------------------------------------------
 
+STALE_DAYS = 60          # daily candles up to the as-of date that stale() looks at
+STALE_SHARE = 0.2        # more flat candles than this share: stale quotes, the case is skipped
+STALE_REASON = "stale quotes (over 20% of the daily candles have no range)"
+
+
+def stale(rows):
+    """True when more than STALE_SHARE of the daily `rows` have high == low: Yahoo repeats the
+    last price on days without trades in some old B3 rows, and a case built or walked on them
+    says nothing. Checked on the STALE_DAYS candles up to the as-of date and on the walk's."""
+    return bool(rows) and sum(1 for row in rows if row[2] == row[3]) > STALE_SHARE * len(rows)
+
+
+def failure(where, error):
+    """The skip reason of a case the live code could not make: a reason the report counts and
+    prints, so the failure is visible instead of ending a long run."""
+    return f"{where} failed ({type(error).__name__}: {error})"
+
+
 def longest_period(horizon):
     """The longest series a live run of `horizon` asks Yahoo for, as Yahoo names it ("10y")."""
     preset = build_prompt.PRESETS[horizon]
@@ -233,7 +251,17 @@ def run_case(ticker, horizon, data, day, today, method=None, optimistic=False):
     if not data["rows"] or data["rows"][0][0] > history_start(horizon, day).isoformat():
         return {**record, "skipped": f"less history than a live run requests ({longest_period(horizon)} "
                                      "of candles before the as-of date)"}
-    d = backtest.input_as_of(ticker, horizon, data, day)
+    at = bisect.bisect_right([row[0] for row in data["rows"]], day.isoformat())
+    if stale(data["rows"][max(0, at - STALE_DAYS):at]):
+        return {**record, "skipped": STALE_REASON}
+    try:
+        d = backtest.input_as_of(ticker, horizon, data, day)
+    except ValueError as error:
+        if "nonexistent time" not in str(error):
+            raise
+        # input_as_of() starts a series at local midnight, which did not exist on the days
+        # Brazil's daylight saving time began (until 2018); such a date is skipped
+        return {**record, "skipped": "a series would start at a local midnight that did not exist (DST)"}
     main = rz.unpack(d)[1]
     keep = build_prompt.PRESETS[horizon]["main"][2]
     if len(main["rows"]) < keep:
@@ -242,7 +270,15 @@ def run_case(ticker, horizon, data, day, today, method=None, optimistic=False):
         proj = mechanical.build(d, method=method)
     except mechanical.MechanicalError as reason:
         return {**record, "skipped": str(reason).split(":")[0]}
-    reply = trade_entries.build(d, proj)
+    except (ArithmeticError, ValueError) as error:
+        # e.g. rz.facts() divides by the dominant swing's range, zero when every candle of the
+        # main series has one price; counted under its own reason, never silently
+        return {**record, "skipped": failure("mechanical.build()", error)}
+    try:
+        reply = trade_entries.build(d, proj)
+    except (ArithmeticError, ValueError) as error:
+        # e.g. a short whose target zone reaches zero on a sub-penny price: math.log(0)
+        return {**record, "skipped": failure("trade_entries.build()", error)}
     if "error" in reply:
         return {**record, "skipped": reply["error"]}
     valid_until = reply["valid_until"]
@@ -253,6 +289,8 @@ def run_case(ticker, horizon, data, day, today, method=None, optimistic=False):
                if day.isoformat() < row[0] <= valid_until]
     if not candles:
         return {**record, "skipped": "no daily candle after the as-of day"}
+    if stale([row for row in data["rows"] if day.isoformat() < row[0] <= valid_until]):
+        return {**record, "skipped": STALE_REASON}
     setups = []
     for entry in reply["entries"]:
         s = setup_of(entry)
