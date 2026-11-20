@@ -19,7 +19,7 @@ import run_pipeline
 from test_run_pipeline import PNG_MAGIC, store  # noqa: F401  (autouse: RZ_PROJECTIONS_DIR in a temp folder)
 
 TICKER = "PETR4.SA"     # the ticker of tests/fixtures
-NAMES = ["list", "runs", "score", "plot", "show", "entries", "backtest", "backtest-entries", "batch", "cache"]
+NAMES = ["list", "runs", "score", "score-entries", "plot", "show", "entries", "backtest", "backtest-entries", "batch", "cache"]
 
 
 @pytest.fixture(autouse=True)
@@ -351,6 +351,34 @@ def test_score_takes_a_folder_as_a_folder(relayed, make):
 def test_score_relays_the_exit_code(relayed):
     relayed.code = 1
     assert main("score") == 1
+
+
+# ---- score-entries ------------------------------------------------------------
+
+SCORE_ENTRIES = str(run_pipeline.ROOT / "score_entries.py")
+
+
+@pytest.mark.parametrize("argv, passed", [
+    ([], []),
+    (["petr4.sa"], ["--ticker", "petr4.sa"]),
+    (["NVDA", "--runs", "--optimistic"], ["--ticker", "NVDA", "--runs", "--optimistic"]),
+    (["--json", "--no-cache"], ["--json", "--no-cache"]),
+])
+def test_score_entries_is_score_entries_py(relayed, argv, passed):
+    assert main("score-entries", *argv) == 0
+    assert relayed == [[sys.executable, SCORE_ENTRIES, *passed]]
+
+
+def test_score_entries_takes_a_folder_as_a_folder(relayed, make):
+    make(f"kept/{TICKER}/2026-11-18T1515_1-3m")
+    assert main("score-entries", f"kept/{TICKER}/2026-11-18T1515_1-3m") == 0
+    assert relayed == [[sys.executable, SCORE_ENTRIES, f"kept/{TICKER}/2026-11-18T1515_1-3m"]]
+
+
+def test_score_entries_runs_the_real_script_on_an_empty_history(store, capfd):
+    """Offline: nothing is saved, so the script says so without any download."""
+    assert main("score-entries") == 1
+    assert "No trade setups to score" in capfd.readouterr().err
 
 
 # ---- plot ---------------------------------------------------------------------

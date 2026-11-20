@@ -14,6 +14,7 @@ for each):
     zones list [TICKER]             the saved projections, newest last, open or ended
     zones runs [TICKER]             the run folders under runs/ here, newest last
     zones score [TICKER | FOLDER]   saved projections against later prices (hits Yahoo)
+    zones score-entries [TICKER | FOLDER]  saved trade setups against later prices (hits Yahoo)
     zones plot WHAT [plot options]  draw the chart of a run again
     zones show WHAT                 print the summary of a run
     zones entries WHAT              compute the trade setups of a run again
@@ -1559,6 +1560,25 @@ def score_saved(argv):
     return relay([sys.executable, script, *first, *rest])
 
 
+def score_entries(argv):
+    """zones score-entries [TICKER | FOLDER] [score_entries.py options]: like `zones score`."""
+    parser = command_parser("score-entries", "[TICKER | FOLDER] [score_entries.py options]", "Score the saved "
+                            "trade setups (entries.json) against what the price did later (score_entries.py; "
+                            "downloads prices from Yahoo Finance). Other options, such as --runs, "
+                            "--optimistic or --json, go to score_entries.py.", what=False)
+    parser.add_argument("target", nargs="?", metavar="TICKER | FOLDER",
+                        help="a ticker: only its setups; or a folder of saved projections or one saved "
+                             "projection (default: all of $RZ_PROJECTIONS_DIR, else ./projections)")
+    if argv[:1] in (["-h"], ["--help"]):
+        parser.parse_args(argv)
+    first, rest = (argv[:1], argv[1:]) if argv and not argv[0].startswith("-") else ([], argv)
+    script = ROOT / "score_entries.py"
+    need(script, RZ)
+    if first and not Path(first[0]).is_dir():
+        first = ["--ticker", first[0]]
+    return relay([sys.executable, script, *first, *rest])
+
+
 def plot_again(argv):
     """zones plot WHAT [-o FILE] [--open] [plot_projection.py options]."""
     parser = command_parser("plot", "WHAT [-o FILE] [--open] [--horizon H] [plot_projection.py options]", "Draw the chart of a run again (plot_projection.py). Other "
@@ -1679,7 +1699,7 @@ def batch(argv):
     return batch_runs.main(argv)
 
 
-COMMANDS = {"list": list_saved, "runs": run_folders, "score": score_saved,
+COMMANDS = {"list": list_saved, "runs": run_folders, "score": score_saved, "score-entries": score_entries,
             "plot": plot_again, "show": show_again, "entries": entries_again,
             "backtest": backtest, "backtest-entries": backtest_entries, "batch": batch, "cache": cache}
 FORCE_PIPELINE = ("run", "--")

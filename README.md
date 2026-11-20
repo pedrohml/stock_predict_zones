@@ -38,6 +38,7 @@ build_prompt.py  ──►  reversal-zones-projection  ──►  plot_projectio
 - [Ranked trade setups](#ranked-trade-setups)
 - [Backtest of the baseline](#backtest-of-the-baseline)
 - [Backtest of the trade setups](#backtest-of-the-trade-setups)
+- [Scoring the saved setups](#scoring-the-saved-setups)
 - [Does Claude's adjustment help?](#does-claudes-adjustment-help)
 - [Engines: claude or mechanical](#engines-claude-or-mechanical)
 - [How the probabilities are produced](#how-the-probabilities-are-produced)
@@ -309,6 +310,7 @@ Error: /home/you/.config/zones/config.toml: unknown setting 'langauge' (did you 
 | `zones list [TICKER]` | The [saved projections](#saved-projections), newest last, each `open` or `ended`. | `rz.py list` |
 | `zones runs [TICKER]` | The run folders under `runs/` in the current directory, newest last, with the files each one holds. | nothing else |
 | `zones score [TICKER \| FOLDER]` | Scores the saved projections against later prices. Downloads from Yahoo Finance. | `score_projections.py` |
+| `zones score-entries [TICKER \| FOLDER] [options]` | [Scores the saved trade setups](#scoring-the-saved-setups) (`entries.json`) against later prices: stated odds against what happened. Downloads from Yahoo Finance. | `score_entries.py` |
 | `zones plot WHAT [plot options]` | Draws the chart of a run again. | `plot_projection.py` |
 | `zones show WHAT` | Prints the summary of a run. | `show_run.py` |
 | `zones entries WHAT` | Computes the [trade setups](#ranked-trade-setups) of a run again and checks them. | `trade_entries.py build`, then `check` |
@@ -320,6 +322,7 @@ Error: /home/you/.config/zones/config.toml: unknown setting 'langauge' (did you 
 ```bash
 zones list                                   # every saved projection
 zones score PETR4.SA --json                  # one ticker, as JSON
+zones score-entries --runs                   # the saved setups, and those of runs/ here
 zones plot PETR4.SA                          # redraw the latest run's chart.png
 zones plot nvda --theme dark --lang pt -o nvda_dark.png
 zones plot PETR4.SA --horizon 1-2w --open    # the latest 1-2w run, then open the chart
@@ -1068,6 +1071,40 @@ Brier scores (0 is perfect; then always forecasting the observed rate): fill 0.2
 
 To repeat it: `uv run python backtest_entries.py AAPL BBDC4.SA ITUB4.SA JPM KO MSFT NVDA PETR4.SA SPY VALE3.SA WEGE3.SA XOM --horizon 1-2w 1-3m 6-12m` (Yahoo's history may have been revised since, and the default ranges move with today's date; pass `--start`/`--end` for the dates above).
 
+## Scoring the saved setups
+
+The [setup backtest](#backtest-of-the-trade-setups) replays today's rules on past dates. `score_entries.py` checks the setups that real runs actually wrote, before the prices existed: the forward, out-of-sample check. Every run keeps its `entries.json` in the run folder and, next to the saved projection, in `projections/`.
+
+```bash
+uv run zones score-entries                      # every entries.json under projections/
+uv run zones score-entries PETR4.SA             # one ticker
+uv run zones score-entries projections/PETR4.SA/2026-11-18T1515_1-3m   # one saved folder
+uv run zones score-entries --runs               # also the run folders under ./runs (--runs DIR for another)
+uv run zones score-entries --optimistic         # the other bound of the ordering inside a candle
+uv run zones score-entries --json               # one JSON object instead of the tables
+```
+
+Called directly it is `uv run python score_entries.py [FOLDER] [--ticker T] [--runs [DIR]] [--optimistic] [--json] [--no-cache]`. It is a command of its own rather than a mode of `zones score` because it scores another file with other rules and options (`--optimistic`, `--runs`) and reports per setup, not per probability.
+
+- **The walk is the backtest's.** Each setup is played on the daily candles after its as-of day, up to its `valid_until`, by `backtest_entries.walk()` itself: touch fills, gaps at the open, market orders at the next open, the stop or target at its price, expiry at the last close, and the pessimistic ordering inside a candle unless `--optimistic`. Every setup is played both ways, and the other result is shown when a candle allowed two. The as-of day's own candle is never used, so a run made during a session leaves the rest of that session out.
+- **Candles.** Daily candles once per ticker through `data_source.py` (the same download as `zones score`: retries, shared rate limit, cache of finished candles, `--no-cache` to skip it), rounded to the input's precision. A split after the as-of day, or prices that no longer match the input's last closed candle, mark the run as not scored.
+- **Open and ended.** A setup is ended once its `valid_until` is past at the exchange. Before that it is shown as `OPEN ... PROVISIONAL`: a stop or target already hit is final, a filled setup still running has exit `open` and its R at the latest close, and an unfilled order may still fill. Only ended setups enter the summary. A `today` horizon cannot be scored this way (it ends on its as-of day).
+- **Per setup.** Rank, side, kind, order, entry, stop and target; the stated `fill`, `win_if_filled` and `edge.per_order`; then the fill day, the exit (`target`, `stop`, `expiry`, `open` or none) and the result in R.
+- **Summary, per rules version.** Files without a `rules` key are rules version 1 (odds from `reach` and `turn` by formulas), `"rules": 2` counts them on simulated paths; their odds mean different things and are never pooled. For each version: stated against observed fill, win and R per fill and per order, Brier scores of `fill` and `win_if_filled` next to the constant forecast at the observed rate, reliability buckets, a bootstrap over runs, and splits by horizon, side, kind, order, quality, rank, ticker and author. The author comes from the `entries` block of `provenance.json`: `computed` (`trade_entries.py build`), `claude` with its model (`--entries-by-claude`), or `unrecorded`.
+- **Missing files.** A saved projection without `entries.json` (a run with `--no-entries`, or older than the step) is counted, not listed; an unreadable file, one that holds the `no setup passes` error, or a damaged one is listed with its reason and the rest are still scored. A run folder and its saved copy hold the same file, which is scored once.
+
+```
+PETR4.SA 1-3m  as of 2026-11-17T17:36-03:00 at 44.06  ENDED 2027-02-12
+  setups computed by trade_entries.py; rules 2
+  63 daily candle(s) after the as-of day, the last 2027-02-12
+  # side  kind         order      entry      stop    target  fill  win R/ord  filled     exit         R  other
+  1 long  reversal     limit         43        42        46  0.60 0.40 +0.36  2026-11-18 target   +3.00  same
+  2 short reversal     limit         47        48        45  0.30 0.50 +0.15  2026-12-01 stop     -1.00  target +2.00
+  3 long  continuation stop          50        49        52  0.10 0.40 +0.02  no         -        +0.00  same
+```
+
+(an example from the tests, on made-up candles.) Read it as the backtest's report and more so: it is a calibration check of the stated odds of hypothetical setups, with no commissions, spread, slippage or dividends; the three setups of a run share one price path, runs of one ticker overlap in time and the tickers are the ones you chose, so a few dozen setups are anecdote. It is not a strategy, not a claim about returns, and not advice.
+
 ## Does Claude's adjustment help?
 
 Step 2 costs money (about $0.20 per run with Sonnet, more with Opus or web research), while the baseline it starts from (`rz.py sim`) is free. `value_test.py` measures whether the paid step earns its cost: it runs the real step 2 on past dates and scores Claude's numbers against the baseline on the **same zones**, so the comparison isolates Claude's adjustment.
@@ -1211,7 +1248,7 @@ The simulation knows nothing about chart levels. The skill may therefore move a 
 1. Extend the backtest (`backtest.py`, which covers the unadjusted baseline): scheduled dividends as `drop` shocks, more tickers and sectors, and scoring the unadjusted simulation next to the skill's adjusted numbers for saved projections.
 2. Re-check sim method 2 when a falling market has ended inside the backtest window, and try a drift net of each asset's dividend yield. Revisit a calibration layer only with enough history that its fitted maps stop tracking one period's average rise.
 3. Measure the paid step where it can adjust: `value_test.py` with events or research as of the past date (a news archive cut at the as-of day), and with more dates as they pass the cutoff. Without research Sonnet 5.5 never adjusted; `--engine mechanical` is now the free path for such runs. Score saved mechanical projections against Claude's as the history grows (`zones score` groups them apart).
-4. Trade setups (rules version 2 counts the odds on simulated paths): check the simulated daily range against real daily ranges per ticker instead of one `SPREAD`, which would close most of the `1-2w` gap; judge again when a held-out year is not a strong rise; and try the zones themselves in the odds (paths conditioned on a zone holding, measured as `backtest.py` measures `turn`) only if the backtest shows the zones add anything beyond distance. Any such change is a new rules number, a change to the template and `setups()`/`pick()` together, and judged out of sample.
+4. Trade setups (rules version 2 counts the odds on simulated paths): check the simulated daily range against real daily ranges per ticker instead of one `SPREAD`, which would close most of the `1-2w` gap; judge again when a held-out year is not a strong rise; and try the zones themselves in the odds (paths conditioned on a zone holding, measured as `backtest.py` measures `turn`) only if the backtest shows the zones add anything beyond distance. Any such change is a new rules number, a change to the template and `setups()`/`pick()` together, and judged out of sample. Run `zones score-entries` as the saved setups' horizons end: the first forward check of the stated odds, per rules version.
 5. Add `json` to `--shape`.
 6. Carry event sizes as numbers (dividend amount, implied move) so the skill does not have to search for them.
 7. State `dividend_adjusted` explicitly in the input.
@@ -1223,10 +1260,11 @@ The simulation knows nothing about chart levels. The skill may therefore move a 
 stock_predict_zones/
 ├── build_prompt.py                 step 1: Yahoo Finance to input JSON
 ├── plot_projection.py              step 3: input + projection to image
-├── run_pipeline.py                 the `zones` command: all steps in one (step 2 through headless Claude Code), and list, runs, score, plot, show, entries, backtest, backtest-entries, batch, cache
+├── run_pipeline.py                 the `zones` command: all steps in one (step 2 through headless Claude Code), and list, runs, score, score-entries, plot, show, entries, backtest, backtest-entries, batch, cache
 ├── score_projections.py            saved projections against later prices, and the calibration summary
 ├── backtest.py                     the baseline probabilities on past dates: mechanical zones, rz.py sim, rz.outcome
 ├── backtest_entries.py             the trade setups on past dates: mechanical engine, trade_entries.py, a walk on daily candles
+├── score_entries.py                the saved trade setups (entries.json) against later prices, with backtest_entries.walk()
 ├── mechanical.py                   step 2 without Claude (--engine mechanical): backtest.py's zones, unadjusted rz.py sim
 ├── value_test.py                   paid: Claude's step 2 against the baseline on the same zones, after the model's cutoff
 ├── trade_entries.py                trade setups: prices from zone edges, odds on simulated paths; fills the prompt and checks the reply
