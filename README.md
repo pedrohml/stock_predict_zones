@@ -1214,6 +1214,19 @@ What it shows:
 - **`6-12m` win Brier reached the constant (0.244 against 0.244), not better than it.** The rules 3 errors at `6-12m` and in long continuations are directional: the held-out years rose more than the 5% a year drift (long continuations observed 92% fills), and short continuations kept losing (`1-3m` -0.23 R per order under the candidate). A symmetric change to the shape of volatility cannot fix a drift error; that is the limit of zone-blind random paths, already named in [Known limits](#known-limits).
 - The fit-year comparison, the bands and the held-out tables above come from a harness that ran `trade_entries.setups()`, `pick()` and `backtest_entries.walk()` on cached cases of the same grid; it reproduced the rules 3 held-out report exactly (same 1,821, 936 and 432 setups and the same numbers), and the candidate's held-out numbers equal the backtest reports. The same caveats apply as to the whole backtest: twelve survivor tickers in a mostly rising market, overlapping cases, no costs.
 
+**On the long universe too.** The candidate was run again on the 76 tickers and twenty years of [the long run](#the-long-run-2005-2026-76-tickers-rules-version-3-unchanged), with the same command and dates (report: [`examples/backtest_entries_2026-11-19_rules4_long.txt`](examples/backtest_entries_2026-11-19_rules4_long.txt)). Brier scores are given with the constant forecast's in brackets, because the two rule sets pick different setups:
+
+| Horizon | Rules | R/order st/obs | Brier fill | Brier win | Held-out Brier fill | Continuation fill st/obs (setups) | Short continuation R/order |
+|---|---|---|---|---|---|---|---|
+| `1-2w` | 3 | -0.07 / -0.01 | 0.208 (0.250) | 0.186 (0.201) | 0.207 (0.250) | 58% / 61% (10,395) | -0.07 / -0.19 |
+| | 4 | -0.06 / -0.00 | 0.212 (0.249) | 0.184 (0.199) | 0.211 (0.249) | 29% / 33% (2,377) | -0.05 / -0.16 |
+| `1-3m` | 3 | +0.03 / -0.05 | 0.197 (0.218) | 0.230 (0.238) | 0.206 (0.223) | 66% / 68% (94,496) | +0.02 / -0.09 |
+| | 4 | +0.02 / -0.05 | 0.185 (0.207) | 0.228 (0.238) | 0.193 (0.212) | 69% / 73% (89,497) | +0.01 / -0.10 |
+| `6-12m` | 3 | +0.06 / +0.05 | 0.186 (0.204) | 0.238 (0.248) | 0.184 (0.195) | 71% / 73% (27,618) | +0.01 / -0.08 |
+| | 4 | +0.07 / +0.05 | 0.191 (0.211) | 0.235 (0.246) | 0.204 (0.201) | 71% / 74% (30,260) | +0.02 / -0.03 |
+
+The verdict stands. The candidate is slightly better at `1-3m` (both Brier scores closer to zero relative to the constant, on fit and held-out years) and slightly better for `win_if_filled` everywhere. It is worse for `fill` at `1-2w`, and at `6-12m` on the held-out years its `fill` Brier is worse than the constant forecast (0.204 against 0.201), where rules 3 beat it. The R-per-order gap at `1-3m` barely narrows (0.08 to 0.07), the continuation fill under-statement widens there (66%/68% to 69%/73%), and the short continuation loss at `1-3m` is unchanged. Again the remaining errors are directional, not a matter of the shape of volatility.
+
 ### Result of 19 Nov 2026, rules version 1
 
 Twelve tickers (AAPL, BBDC4.SA, ITUB4.SA, JPM, KO, MSFT, NVDA, PETR4.SA, SPY, VALE3.SA, WEGE3.SA, XOM), the default three-year ranges and steps, sim method 2, pessimistic ordering: **3,146 cases, 9,438 setups**, none skipped. The full report is in [`examples/backtest_entries_2026-11-19.txt`](examples/backtest_entries_2026-11-19.txt), kept for comparison; the numbers below are for rules version 1, which these results led to replace. "st/obs" is the stated mean, then the observed value; "R/order (optimistic)" is the same mean with the other ordering.
