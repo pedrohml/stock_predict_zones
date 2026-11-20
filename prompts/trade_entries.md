@@ -58,7 +58,7 @@ Zones are listed nearest first. For a zone, the **near edge** is the one closest
 - Stop: that zone's near edge, moved `buffer` further away from the entry.
 - Target: the far edge of the next zone outward (`detail.next`).
 
-Prices: `risk = |entry − stop|` and `reward = |target − entry|`, rounded to the rows' precision; `ratio = reward / risk`. A setup is discarded when its prices are out of order (a long needs `stop < entry < target`, a short `target < entry < stop`), when its entry is on the wrong side of the current price for its order type, when `risk` rounds to zero, when `ratio` is below 0.5, or when its `fill` (below) is under 0.05: an order that almost never fills has an edge per order of about zero and would otherwise rank above every setup with a negative one.
+Prices: `risk = |entry − stop|` and `reward = |target − entry|`, rounded to the rows' precision; `ratio = reward / risk`. A setup is discarded when its prices are out of order (a long needs `stop < entry < target`, a short `target < entry < stop`), when its entry, stop or target rounds to zero or below, when its entry is on the wrong side of the current price for its order type, when `risk` rounds to zero, when `ratio` is below 0.5, or when its `fill` (below) is under 0.05: an order that almost never fills has an edge per order of about zero and would otherwise rank above every setup with a negative one.
 
 Odds, counted on 20,000 simulated price paths of the projection's own simulation (`rz.py sim`'s paths, same seed and drift), refined to daily steps with simulated daily highs and lows:
 

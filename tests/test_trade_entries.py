@@ -380,6 +380,17 @@ def test_a_risk_that_rounds_to_zero_is_no_setup(example):
     assert trade_entries.problems(source, proj, reply) == []
 
 
+@pytest.mark.parametrize("zone", [[0.0, 0.01], [0.004, 0.006], [-0.5, 0.01]])
+def test_a_price_at_or_below_zero_is_no_setup(example, zone):
+    """A support near zero (a collapsed stock) once made a short target <= 0 and a log of it."""
+    source, proj = copy.deepcopy(example)
+    [z for z in proj["supports"] if None not in z["zone"]][-1]["zone"] = zone
+    found = trade_entries.setups(source, proj)
+    assert found and all(min(s["entry"], s["stop"], s["target"]) > 0 for s in found)
+    reply = trade_entries.build(source, proj)
+    assert trade_entries.problems(source, proj, reply) == []
+
+
 def test_zone_edges_finer_than_the_rows_never_divide_by_zero(example):
     source, proj = copy.deepcopy(example)
     support = proj["supports"][1]

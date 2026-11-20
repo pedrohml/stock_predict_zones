@@ -325,6 +325,8 @@ def setups(source, proj, sim=None):
         ordered = stop < entry < target if side == "long" else target < entry < stop
         if not ordered:
             return
+        if min(half_up(x, digits) for x in (entry, stop, target)) <= 0:   # no price at or below zero
+            return
         risk, reward = half_up(abs(entry - stop), digits), half_up(abs(target - entry), digits)
         if risk <= 0:   # entry and stop round to the same price: no ratio, so no setup
             return
