@@ -78,11 +78,71 @@ def test_price_inside_a_zone_gives_a_market_order(input_data, projection_data):
     assert (inside["order"], inside["entry"], inside["fill"]) == ("market", 44.06, 1.0)
 
 
-def test_pick_keeps_three_distinct_entries_on_both_sides(example, input_data, projection_data):
+def test_pick_keeps_three_distinct_entries(example, input_data, projection_data):
     for source, proj in (example, (input_data, projection_data)):
-        picked = trade_entries.pick(trade_entries.setups(source, proj))
+        found = trade_entries.setups(source, proj)
+        picked = trade_entries.pick(found)
         assert len(picked) == 3 and len({item["entry"] for item in picked}) == 3
-        assert len({item["side"] for item in picked}) == 2
+        assert picked == sorted(picked, key=lambda item: (-item["per_order"], -item["fill"], item["id"]))
+    assert {item["side"] for item in picked} == {"long"}   # the fixture's best three: no short swapped in
+    assert any(item["side"] == "short" for item in found)
+
+
+def test_pick_keeps_the_best_three_whatever_their_side():
+    def item(name, side, entry, per_order):
+        return {"id": name, "side": side, "entry": entry, "per_order": per_order, "fill": 0.5}
+    found = [item("a", "long", 10, 0.09), item("b", "long", 10, 0.08), item("c", "long", 11, 0.07),
+             item("d", "long", 12, 0.03), item("e", "short", 9, 0.02)]
+    assert [x["id"] for x in trade_entries.pick(found)] == ["a", "c", "d"]   # b repeats a's entry; e is not swapped in
+
+
+@pytest.fixture
+def shorts_worse(monkeypatch):
+    """Every short's edge 1 R lower, so the example's best three distinct entries are all long."""
+    real = trade_entries.odds
+
+    def odds(sim, side, *rest):
+        out = real(sim, side, *rest)
+        return {**out, "if_filled": out["if_filled"] - (1.0 if side == "short" else 0.0)}
+    monkeypatch.setattr(trade_entries, "odds", odds)
+
+
+def test_a_one_sided_pick_is_kept_and_said_plainly(example, shorts_worse):
+    source, proj = example
+    found = trade_entries.setups(source, proj)
+    reply = trade_entries.build(source, proj, found)
+    assert [entry["side"] for entry in reply["entries"]] == ["long"] * 3
+    assert [entry["id"] for entry in reply["entries"]] == [item["id"] for item in found if item["side"] == "long"][:3]
+    line = trade_entries.TEXT["en"]["one_side"].format(side="long")
+    assert line in reply["confidence"]["limits"] and "not a forecast of direction or a recommendation" in line
+    assert trade_entries.problems(source, proj, reply) == [] and trade_entries.schema_problems(reply) == []
+
+    # the rules-2 pick, the best short swapped in for the third, no longer passes the check
+    short = next(item for item in found if item["side"] == "short")
+    swapped = copy.deepcopy(reply)
+    swapped["entries"][2] = trade_entries.entry_of(3, short, proj, trade_entries.TEXT["en"])
+    assert trade_entries.schema_problems(swapped) == []
+    assert any(line.startswith("ranking: got") for line in trade_entries.problems(source, proj, swapped))
+
+
+def test_the_one_side_line_in_portuguese(example, shorts_worse):
+    source, proj = copy.deepcopy(example)
+    source.setdefault("reply", {})["language"] = "pt-BR"
+    limits = trade_entries.build(source, proj)["confidence"]["limits"]
+    assert trade_entries.TEXT["pt"]["one_side"].format(side="comprado") in limits
+    assert set(trade_entries.TEXT["pt"]["sides"]) == set(trade_entries.TEXT["en"]["sides"]) == {"long", "short"}
+
+
+def test_both_sides_kept_add_no_one_side_line(example):
+    limits = trade_entries.build(*example)["confidence"]["limits"]
+    assert not any(line.startswith("every setup kept is on the") for line in limits)
+
+
+def test_an_entries_file_of_rules_2_is_named_as_such(input_data, projection_data, entries_data):
+    old = copy.deepcopy(entries_data)
+    old["rules"] = 2
+    bad = trade_entries.problems(input_data, projection_data, old)
+    assert len(bad) == 1 and "earlier version of the rules (rules 2, now 3)" in bad[0] and "other side" in bad[0]
 
 
 def test_half_up_rounding_of_the_buffer(example):

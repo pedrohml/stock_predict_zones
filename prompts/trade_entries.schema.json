@@ -12,7 +12,7 @@
       "required": ["task", "rules", "asset", "as_of", "valid_until", "probability", "units", "entries", "confidence", "method", "note"],
       "properties": {
         "task": { "const": "trade_entries" },
-        "rules": { "const": 2, "description": "Version of the setup rules. 2: odds counted on simulated paths. Files without it were written by version 1 (odds from reach and turn by formulas) and are not checked against version 2." },
+        "rules": { "const": 3, "description": "Version of the setup rules. 3: odds counted on simulated paths, the best three kept whatever their side. 2 (19 Nov 2026) swapped the third for the best setup of the other side when all three shared one. Files without it were written by version 1 (odds from reach and turn by formulas). Earlier versions are not checked against the current one." },
         "asset": {
           "type": "object",
           "additionalProperties": false,
@@ -48,7 +48,7 @@
           "minItems": 1,
           "maxItems": 3,
           "items": { "$ref": "#/$defs/entry" },
-          "description": "Best first, by edge.per_order, whatever its sign. Fewer than three only when fewer are valid. When no valid setup has a positive edge, confidence.limits says so."
+          "description": "Best first, by edge.per_order, whatever its sign or side, with distinct entry prices. Fewer than three only when fewer are valid. When no valid setup has a positive edge, or all kept are on one side, confidence.limits says so."
         },
         "confidence": {
           "type": "object",

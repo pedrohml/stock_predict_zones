@@ -31,7 +31,8 @@ ROOT = Path(__file__).resolve().parent
 TEMPLATE = ROOT / "prompts" / "trade_entries.md"
 SCHEMA = ROOT / "prompts" / "trade_entries.schema.json"
 RZ_PATH = ROOT / ".claude" / "skills" / "reversal-zones-projection" / "scripts" / "rz.py"
-RULES = 2   # version of the rules; 1 (until 19 Nov 2026) took fill and win from reach and turn by formulas
+RULES = 3   # version of the rules; 1 (until 19 Nov 2026) took fill and win from reach and turn by formulas,
+            # 2 (19 Nov 2026) also swapped the third setup for the other side when all three shared one
 
 # The path estimate (paths(), odds()). A change to any of these is a new RULES number: an
 # entries file is checked by recomputing it.
@@ -299,19 +300,16 @@ def setups(source, proj, sim=None):
 
 
 def pick(found):
-    """The three to keep: best first, distinct entry prices, and not all on one side."""
+    """The three to keep: best first, with distinct entry prices, whatever their side. Rules 2
+    swapped the third for the best of the other side when all three shared one; the setup
+    backtest found that swapped-in setup the weakest of the three (README), so rules 3 lists
+    the best three as they rank and says so in confidence.limits when they share a side."""
     chosen = []
     for item in found:
         if len(chosen) == 3:
             break
         if all(item["entry"] != kept["entry"] for kept in chosen):
             chosen.append(item)
-    if len(chosen) == 3 and len({item["side"] for item in chosen}) == 1:
-        other = next((item for item in found if item["side"] != chosen[0]["side"]
-                      and all(item["entry"] != kept["entry"] for kept in chosen[:2])), None)
-        if other:
-            chosen[2] = other
-            chosen.sort(key=lambda item: (-item["per_order"], -item["fill"], item["id"]))
     return chosen
 
 
@@ -335,6 +333,8 @@ TEXT = {
         "calibration": "a backtest of these rules on the mechanical engine compared the odds with outcomes on average over many past dates, before costs, not for this setup; the projection's own confidence is {level}",
         "no_edge": "no setup has a positive edge per order on the simulated paths: each of them loses on average, before costs",
         "fewer": "only {n} setup(s) pass the rules for this projection",
+        "one_side": "every setup kept is on the {side} side, because these ranked highest by edge per order on the simulated paths; the list is not balanced by side, and a one-sided list is not a forecast of direction or a recommendation",
+        "sides": {"long": "long", "short": "short"},
         "method": "Prices from zone edges only; fill, win and edge counted on {paths} simulated paths of the projection's simulation (sim method {sim}), refined to daily highs and lows; ranked by edge per order. {valid} setups were valid, {kept} kept. Written by trade_entries.py, without a language model.",
         "note": "Hypothetical setups for study, derived mechanically from a price simulation. Not a recommendation to buy or sell.",
     },
@@ -355,6 +355,8 @@ TEXT = {
         "calibration": "um backtest destas regras no motor mecânico comparou as chances com os resultados em média, em muitas datas passadas e antes de custos, não para este setup; a confiança da própria projeção é {level}",
         "no_edge": "nenhum setup tem edge por ordem positivo nos caminhos simulados: em média, todos perdem, antes de custos",
         "fewer": "apenas {n} setup(s) passam nas regras para esta projeção",
+        "one_side": "todos os setups mantidos são do lado {side}, porque foram os de maior edge por ordem nos caminhos simulados; a lista não é equilibrada por lado, e uma lista de um lado só não é previsão de direção nem recomendação",
+        "sides": {"long": "comprado", "short": "vendido"},
         "method": "Preços só de bordas de zonas; fill, win e edge contados em {paths} caminhos simulados da simulação da projeção (sim method {sim}), refinados para máximas e mínimas diárias; ordenados pelo edge por ordem. {valid} setups válidos, {kept} mantidos. Escrito por trade_entries.py, sem modelo de linguagem.",
         "note": "Setups hipotéticos para estudo, derivados mecanicamente de uma simulação de preços. Não é recomendação de compra ou venda.",
     },
@@ -443,6 +445,8 @@ def build(source, proj, found=None):
         limits.append(t["no_edge"])
     if len(kept) < 3:
         limits.append(t["fewer"].format(n=len(kept)))
+    if len({item["side"] for item in kept}) == 1:
+        limits.append(t["one_side"].format(side=t["sides"][kept[0]["side"]]))
     return {
         "task": "trade_entries", "rules": RULES,
         "asset": {"ticker": proj["asset"]["ticker"], "currency": proj["asset"]["currency"]},
@@ -465,6 +469,8 @@ def schema_problems(reply):
             for error in sorted(Draft202012Validator(schema).iter_errors(reply), key=lambda e: list(map(str, e.path)))]
 
 
+EARLIER = {1: "its odds came from reach and turn by formulas, not from simulated paths",
+           2: "its third setup may have been swapped for the best one of the other side"}
 PRICES = {"entry", "stop", "target", "risk", "reward"}   # checked to the rows' precision, the rest to 0.011
 
 
@@ -478,9 +484,10 @@ def problems(source, proj, reply):
     if reason:
         return [f"no setup can be built ({reason}), but the reply holds entries"]
     if isinstance(reply, dict) and "entries" in reply and reply.get("rules") != RULES:
-        return [f"written by an earlier version of the rules (rules {reply.get('rules', 1)}, now {RULES}): its odds "
-                "came from reach and turn by formulas, not from simulated paths; compute the setups again "
-                "(`zones entries` or `trade_entries.py build`)"]
+        version = reply.get("rules", 1)
+        why = EARLIER.get(version, "its rules are not this checkout's")
+        return [f"written by an earlier version of the rules (rules {version}, now {RULES}): {why}; compute the "
+                "setups again (`zones entries` or `trade_entries.py build`)"]
     bad = schema_problems(reply)
     if bad:
         return bad

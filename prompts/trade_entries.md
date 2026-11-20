@@ -73,7 +73,7 @@ The paths are random: they know the projection's volatility and drift, and nothi
 
 ## Choosing and ranking
 
-`<setups>` is already sorted by `edge.per_order`, highest first, then the higher `fill`, then `id`. Keep the top three, with two conditions: no two share the same entry price, and if all three would be on the same side, replace the third with the best setup on the other side (then sort the three again the same way). Number them 1 to 3 in the final order.
+`<setups>` is already sorted by `edge.per_order`, highest first, then the higher `fill`, then `id`. Keep the top three, on the condition that no two share the same entry price: skip a setup whose entry price is already kept and take the next. Do not balance the sides: if the best three are all long or all short, keep them as they are, and say plainly in `confidence.limits` that every setup kept is on that side because those ranked highest by edge per order on the simulated paths, and that a one-sided list is not a forecast of direction or a recommendation. Number them 1 to 3 in this order.
 
 Return three when there are three; if fewer are valid, say so in `confidence.limits` and return what there is. Keep a setup whose edge is negative: an `unfavourable` entry is a finding, and it is more useful than an invented level. If no setup in `<setups>` has a positive `edge.per_order`, say so plainly in `confidence.limits`: on the simulated paths every setup loses on average. Do not move a price off its zone edge to improve a setup.
 
@@ -90,13 +90,13 @@ No position size, leverage, or instruction to buy or sell. `why` describes the s
 
 ## Output
 
-Reply with one JSON object and nothing else: no prose before or after, no code fence. Keys, ids, enum values and their order stay exactly as below; `rules` is 2. Free-text values (`anchor`, `basis`, `why`, `watch`, `limits`, `method`, `note`) are written in the language named by `input.reply.language`. Prices keep the precision of the candle rows; probabilities, `ratio` and `edge` have two decimals.
+Reply with one JSON object and nothing else: no prose before or after, no code fence. Keys, ids, enum values and their order stay exactly as below; `rules` is 3. Free-text values (`anchor`, `basis`, `why`, `watch`, `limits`, `method`, `note`) are written in the language named by `input.reply.language`. Prices keep the precision of the candle rows; probabilities, `ratio` and `edge` have two decimals.
 
 The example shows the shape, computed from a real run. Your numbers come from `<setups>`.
 
 {
   "task": "trade_entries",
-  "rules": 2,
+  "rules": 3,
   "asset": { "ticker": "PETR4.SA", "currency": "BRL" },
   "as_of": { "time": "2026-11-18T15:15-03:00", "price": 42.77 },
   "valid_until": "2027-02-12",
