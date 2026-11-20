@@ -1,0 +1,61 @@
+# The ticker universe of the long setup backtest (backtest_entries.py --universe backtest_universe.txt).
+#
+# Format: '#' starts a comment; one 'version: N' line; '[group] reason' starts a group; other lines
+# list Yahoo symbols separated by spaces. TICKER@FIRST..LAST (dates YYYY-MM-DD, either side may be left
+# out) uses that symbol's daily rows in that range only, because the others are not usable: broken early
+# prices (rows before FIRST count as no history, so its first cases come once a live run's longest
+# series fits after FIRST) or sub-penny quotes after a failure (a setup still open at LAST is closed at
+# that close). A ticker may be in more than one group. Raise the version whenever a ticker is added,
+# removed or cut differently, and name the version with any result made from this file.
+#
+# Survivor bias is smaller than with today's names alone, not gone. Yahoo serves no history for most
+# symbols that were delisted, acquired or renamed away: tried on 19 Nov 2026 and not served were
+# Lehman (LEHMQ), Washington Mutual (WAMUQ), old GM (GMGMQ), AMR (AAMRQ), J.C. Penney (JCPNQ), Rite Aid
+# (RADCQ), Yellow (YELLQ), Sears (SHLDQ), SVB (SIVBQ), Bed Bath & Beyond (BBBYQ), Credit Suisse (CS),
+# Chesapeake (CHK), Walgreens (WBA), US Steel (X), Nordstrom (JWN), Foot Locker (FL), Hanesbrands (HBI),
+# DISH, Activision (ATVI), Twitter (TWTR); on B3 OGX (OGXP3), MMX (MMXM3), Gol (GOLL4), Azul (AZUL4,
+# before 2026), Cielo (CIEL3), Natura &Co (NTCO3), BRF (BRFS3), JBS (JBSS3), Marfrig (MRFG3), Saraiva
+# (SLED4), Eletrobras PNB (ELET6). Renamed symbols that Yahoo serves with their whole history are used
+# under the new name (EMBJ3 for EMBR3, AXIA3 for ELET3, BHIA3 for VIIA3). The names that fell hard
+# below are the ones that are still quoted, so the worst outcomes (a listing that ends at zero) are
+# mostly missing, and every ticker here was picked in 2026, knowing how it did.
+#
+# Data checks (a day-over-day close ratio above 1.6 or below 1/1.6 since 1995, looked at one by one).
+# Left out, because Yahoo's rows have unadjusted splits or adjusted prices thousands of times today's:
+# LREN3, CMIG4, GGBR4, GOAU4, BRKM5, GFSA3, OIBR3, CPFE3, PCAR3 (three +110-140% days that look like
+# wrong spin-off adjustments), RAPT4 (a recent unadjusted jump), NATU3 (a five-year gap), PARA (history
+# from 2021 only, broken prices), AZUL3 (2026 only), KODK (from 2013 only). Their exclusion is about the
+# data, not the outcome, but some (GFSA3, OIBR3, BRKM5, PCAR3) were large losers, so it adds to the
+# survivor bias. Cut with @: SUZB3 (flat 0.80 then 16.00 in May 2007), RADL3 (a x4.7 day in 2000 and
+# x1.7 in 2006), BHIA3 (x0.23 and x2.5 in 2003), COGN3 (x1.8 in 2012), CYRE3 (x1.7 in 2007), B3SA3 (x0.34
+# in May 2011), AMER3 (x0.42 and x2.8 around its 2024 reverse split; the 2023 collapse is kept), FRCB and
+# BIGGQ (sub-penny quotes after their failures; the collapses are kept), PDGR3 (eleven split-like jumps
+# from Oct 2021). Kept as real moves: AAPL Sep 2000, the 2008-2009 days of C, AIG, FNMA, FMCC, GNW, MBI's
+# Dec 2023 special dividend (prices are not dividend-adjusted), LUMN Aug 2024, the Ibovespa's -14% day of
+# 26 Oct 2026 and the B3 names that fell with it, XRX Oct 2026. BBDC4 has an unexplained x0.57 day on
+# 29 May 2009; it is kept, uncut, because it is one of the original twelve.
+
+version: 1
+
+[original] The twelve tickers of every earlier setup report (rules 1-3), kept so old and new results compare.
+AAPL MSFT NVDA SPY JPM XOM KO
+PETR4.SA VALE3.SA ITUB4.SA BBDC4.SA WEGE3.SA
+
+[us-large] US large caps across sectors (health, staples, retail, energy, industrials, media, tech, telecom, banks) with ordinary long records.
+JNJ PG WMT HD CVX CAT PFE DIS IBM VZ MCD BAC
+
+[us-fell-hard] US names, large and mid caps, with crashes or long stretches of decline: 2008 banks and insurers, industrials, retail, energy, travel.
+GE C AIG INTC BA T F XRX LUMN KSS M VFC CCL SLB CLF AAL
+
+[us-collapsed] US names that lost 90% or more in 2008 and are still quoted (Fannie Mae and Freddie Mac over the counter since 2010).
+FNMA FMCC MBI GNW
+
+[us-delisted] US symbols that failed and are still served up to their failure; the rows after the cut are sub-penny quotes.
+FRCB@..2023-04-28 BIGGQ@..2024-12-12
+
+[br-large] B3 large caps across sectors (beverages, banks, exchange, holding, pulp, aircraft, pharmacies, telecom, utilities, rental).
+ABEV3.SA BBAS3.SA B3SA3.SA@2011-06-01.. ITSA4.SA SUZB3.SA@2007-06-01.. EMBJ3.SA RADL3.SA@2007-01-01.. VIVT3.SA SBSP3.SA EGIE3.SA RENT3.SA AXIA3.SA
+
+[br-fell-hard] B3 large, mid and small caps that fell hard or for years: steel, retail, education, travel, meat, homebuilders, Americanas, Light, IRB, PDG.
+USIM5.SA CSNA3.SA MGLU3.SA COGN3.SA@2013-01-01.. IRBR3.SA MRVE3.SA CYRE3.SA@2008-01-01.. BHIA3.SA@2004-01-01.. CVCB3.SA BEEF3.SA
+HBOR3.SA RSID3.SA AMAR3.SA AMER3.SA@..2024-08-14 LIGT3.SA TCSA3.SA PDGR3.SA@..2021-10-14 ECOR3.SA

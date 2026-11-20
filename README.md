@@ -970,6 +970,8 @@ uv run python backtest_entries.py PETR4.SA --optimistic                         
 uv run python backtest_entries.py PETR4.SA --json                                  # one JSON object instead of the tables
 uv run python backtest_entries.py PETR4.SA --csv setups.csv                        # every setup, one row each
 uv run zones backtest-entries PETR4.SA NVDA --horizon 1-2w                         # the same, through zones
+uv run python backtest_entries.py --universe backtest_universe.txt --horizon 1-2w 1-3m 6-12m --start 2005-01-03 \
+    --by-year --by-regime --by-part --subset original --jobs 10                    # the long run (below)
 ```
 
 | Option | Default | Meaning |
@@ -978,7 +980,17 @@ uv run zones backtest-entries PETR4.SA NVDA --horizon 1-2w                      
 | `--start`, `--end`, `--step N` | as [`backtest.py`](#backtest-of-the-baseline) | The as-of grid, per horizon: three years ending one horizon (plus a week) before today, every 5, 10 or 21 trading days. |
 | `--method N` | `2`, as a live run | Sim method of the projection (`mechanical.build(d, method=N)`). |
 | `--optimistic` | off | Resolve a candle whose order is unknown in the setup's favour instead of against it. |
-| `--json`, `--csv FILE`, `--quiet`, `--no-cache` | off | As in `backtest.py`. The CSV has one row per setup: its stated numbers, fill, exit, R, and the other ordering's exit and R. |
+| `--universe FILE` | none | Read the tickers from a [universe file](#the-universe-file) (tickers given on the command line are added). The report names the file and its version and adds a table by group. |
+| `--group NAME` | every group | With `--universe`: only this group's tickers (repeatable), e.g. `--group original` for the twelve tickers of the earlier reports. |
+| `--subset NAME` | none | With `--universe`: repeat the whole report for this group's tickers alone (repeatable). |
+| `--by-year` | off | Add a compact table per calendar year of the as-of date. |
+| `--by-regime` | off | Add tables by market regime: the index's return over the 365 days before the as-of date (bull at or above +10%, bear at or below -10%, flat between; known at the time), and the index's move from the as-of close to `valid_until` (known only afterwards). The index is the Ibovespa (`^BVSP`) for `.SA` symbols and the S&P 500 (`^GSPC`) for the rest, downloaded once through `data_source`. |
+| `--by-part` | off | Add a table by part of the [fixed fit / held-out split](#the-fit--held-out-split). |
+| `--part fit\|held-out` | both | Report only the cases of one part. |
+| `--jobs N` | `1` | Run the cases in N processes. Downloads stay in the main process (the cache and the shared rate limit apply as always) and the results come back in serial order, so the output is byte for byte that of `--jobs 1`. |
+| `--json`, `--csv FILE`, `--quiet`, `--no-cache` | off | As in `backtest.py`. The CSV has one row per setup: its stated numbers, fill, exit, R, and the other ordering's exit and R, plus the case's part and, with `--by-regime`, its regime and index moves. |
+
+**History.** A date is skipped ("less history than a live run requests") when the ticker's daily candles start after the first day of the longest series a live run of that horizon asks Yahoo for: 2 years before the as-of date at `1-2w`, 5 years at `1-3m`, 10 years at `6-12m`. The presets assume a mature listing; with less history `input_as_of()` would build shorter series than any live run of an established name sees. So the as-of dates of a young listing start later, and at `6-12m` most B3 names (Yahoo's B3 history starts around 2000) only from about 2010.
 
 **What it does, per ticker, horizon and as-of date** (after that day's close):
 
