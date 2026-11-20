@@ -535,3 +535,10 @@ def test_cases_on_stale_quotes_are_skipped():
     after = [r if not ("2025-03-13" <= r[0] <= "2025-03-24") else [r[0], r[4], r[4], r[4], r[4]] for r in ROWS]
     assert be.run_case("AAA", "1-2w", {**DATA, "rows": after}, day, TODAY)["skipped"] == be.STALE_REASON
     assert "skipped" not in be.run_case("AAA", "1-2w", DATA, day, TODAY)
+
+
+def test_cli_help(capsys):
+    """Every help string formats (argparse reads % as a format character)."""
+    with pytest.raises(SystemExit) as stop:
+        be.main(["--help"])
+    assert stop.value.code == 0 and "--by-regime" in capsys.readouterr().out
