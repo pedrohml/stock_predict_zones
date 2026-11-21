@@ -1351,6 +1351,38 @@ Brier scores (0 is perfect; then always forecasting the observed rate): fill 0.2
 
 To repeat it: `uv run python backtest_entries.py AAPL BBDC4.SA ITUB4.SA JPM KO MSFT NVDA PETR4.SA SPY VALE3.SA WEGE3.SA XOM --horizon 1-2w 1-3m 6-12m` (Yahoo's history may have been revised since, and the default ranges move with today's date; pass `--start`/`--end` for the dates above).
 
+### Segmenting the setups: no situation held
+
+Calibrated odds say what a setup is worth on average; the next question was whether some situation, known at the as-of date, does better than that average after costs. The search followed a protocol written before any data was read ([`examples/segmentation_2026-11-20/PROTOCOL.md`](examples/segmentation_2026-11-20/PROTOCOL.md); script, frozen segments and output in the same folder):
+
+- **Data:** the three picked setups of every case of the long run (76 tickers, 2005-2026, rules 5, pessimistic ordering), from `backtest_entries.py --csv`.
+- **Outcome:** R per order net of an assumed round-trip cost of 0.20% of the entry price, charged on filled setups, in R (0.002 x entry / risk).
+- **Features, all known at the as-of close:** side, kind, order, rank, quality, ratio, stated fill, win and edge, risk and entry distance as % of price, the index's trailing 12-month regime, the ticker's own 3- and 12-month return, 3-month volatility, and close above or below its 200-day average. Numeric features were cut into terciles on the fit part.
+- **Search, fit part only:** every value and every pair of values (about 2,700 segments), each with at least 1,000 setups on 150 dates. A segment passed only with a positive net mean in each of three blocks of fit years and t >= 3, its error clustered by as-of month.
+- **Freeze, then judge once:** the best five passing (at most two per horizon) were written to `FROZEN.json`, then judged once on the held-out part. A segment held if net > 0 with t >= 2 there.
+- **One amendment before the held-out part was read:** the universe group was dropped as a feature. Its first search was won almost entirely by `group = original`, the twelve tickers chosen in 2026 because they are still listed and mostly rose. That is survivorship, not a situation; that search is kept as `FROZEN_v1_with_group.json` and was never judged.
+
+| Horizon | Fit part, net R per order (gross) | Segments tried / passing | Held-out, net R per order (gross) |
+|---|---|---|---|
+| `1-2w` | -0.06 (+0.01) | 878 / 0 | -0.06 (+0.00) |
+| `1-3m` | -0.02 (+0.01) | 978 / 0 | -0.05 (-0.02) |
+| `6-12m` | +0.04 (+0.07) | 857 / 230 | -0.12 (-0.09) |
+
+The two frozen `6-12m` segments, net +0.12 and +0.11 R per order on the fit part, did not hold:
+
+| Segment | Held-out setups | Held-out net (gross) | t |
+|---|---|---|---|
+| stated edge in its middle tercile, and a 12-month return in its top tercile | 349 | -0.02 (+0.01) | -0.3 |
+| ratio and stated fill both in their top terciles | 538 | -0.17 (-0.13) | -2.8 |
+
+What it shows:
+
+- **At `1-2w` and `1-3m` the cost alone turns an even result into a loss.** Their stops are close, so 0.20% of the price is a large share of 1R.
+- **At `6-12m` the passing segments were the fit years' rising market, cut different ways.** The held-out years (2008, 2009, 2014-2016) include falling markets, and every segment fell with them.
+- **The setups' value is the calibration of their odds, not an edge.** No situation tried here beat the average out of sample.
+
+The usual limits apply, more strongly: survivor tickers chosen in 2026, overlapping cases, mechanical zones, an assumed cost level, no borrowing costs or dividends, pessimistic ordering inside a day. It is a search for a calibration pattern in hypothetical setups, not a strategy, and its negative result is not advice either.
+
 ## Scoring the saved setups
 
 The [setup backtest](#backtest-of-the-trade-setups) replays today's rules on past dates. `score_entries.py` checks the setups that real runs actually wrote, before the prices existed: the forward, out-of-sample check. Every run keeps its `entries.json` in the run folder and, next to the saved projection, in `projections/`.
@@ -1554,7 +1586,7 @@ stock_predict_zones/
 ├── .claude/skills/reversal-zones-projection/
 │   ├── SKILL.md                    step 2: the skill
 │   └── scripts/rz.py               its helper: levels, simulation, validation, saving, outcomes
-├── examples/                       one complete run: input, projection and charts; reports of the value test and the setup backtest
+├── examples/                       one complete run: input, projection and charts; reports of the value test and the setup backtest; segmentation_2026-11-20/ (the segment search)
 ├── prompts/
 │   ├── trade_entries.md            prompt: three ranked trade setups from one run
 │   └── trade_entries.schema.json   JSON Schema of its reply
