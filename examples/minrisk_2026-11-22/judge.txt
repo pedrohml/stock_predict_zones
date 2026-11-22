@@ -1,0 +1,16 @@
+1-2w  min2    orders  46211 (base  78408) long  65% fill  36% R/o st -0.001 obs +0.010 (opt +0.054) net -0.015 (t -3.2) vs base -0.031 diff +0.016 t +5.0 [+0.008/+0.026/+0.013] gap 0.010 (base 0.007) -> ADOPTED
+   fresh tickers, fit years: 1-2w  min2    orders  34949 (base  60454) long  65% fill  36% R/o st -0.001 obs +0.009 (opt +0.053) net -0.016 (t -2.9) vs base -0.031 diff +0.015 t +4.2 [+0.012/+0.023/+0.013] gap 0.011 (base 0.008)
+   fresh tickers, held-out years: 1-2w  min2    orders  11037 (base  17435) long  65% fill  37% R/o st +0.000 obs +0.013 (opt +0.062) net -0.010 (t -1.0) vs base -0.027 diff +0.017 t +2.7 [+0.000/+0.031/nan] gap 0.013 (base 0.008)
+for reference, every variant on the fresh tickers:
+   1-2w  base    orders  78408 (base  78408) long  66% fill  39% R/o st +0.004 obs +0.011 (opt +0.069) net -0.031 (t -7.0) vs base -0.031 diff +0.000 t +0.0 [+0.000/+0.000/+0.000] gap 0.007 (base 0.007)
+   1-2w  min1    orders  74843 (base  78408) long  66% fill  38% R/o st +0.003 obs +0.010 (opt +0.067) net -0.028 (t -6.2) vs base -0.031 diff +0.003 t +3.8 [+0.004/+0.004/+0.002] gap 0.007 (base 0.007)
+   1-2w  min1.5  orders  61999 (base  78408) long  65% fill  37% R/o st +0.001 obs +0.011 (opt +0.063) net -0.020 (t -4.4) vs base -0.031 diff +0.011 t +5.2 [+0.007/+0.017/+0.008] gap 0.010 (base 0.007)
+   1-2w  min2    orders  46211 (base  78408) long  65% fill  36% R/o st -0.001 obs +0.010 (opt +0.054) net -0.015 (t -3.2) vs base -0.031 diff +0.016 t +5.0 [+0.008/+0.026/+0.013] gap 0.010 (base 0.007)
+   1-2w  min3    orders  22824 (base  78408) long  65% fill  34% R/o st -0.006 obs +0.005 (opt +0.041) net -0.012 (t -1.9) vs base -0.031 diff +0.019 t +3.4 [+0.001/+0.036/+0.019] gap 0.010 (base 0.007)
+   1-2w  min4    orders  11465 (base  78408) long  64% fill  32% R/o st -0.009 obs +0.004 (opt +0.032) net -0.008 (t -0.9) vs base -0.031 diff +0.023 t +2.8 [+0.003/+0.043/+0.025] gap 0.014 (base 0.007)
+   1-3m  base    orders  37956 (base  37956) long  99% fill  57% R/o st +0.035 obs +0.025 (opt +0.048) net -0.003 (t -0.3) vs base -0.003 diff +0.000 t +0.0 [+0.000/+0.000/+0.000] gap 0.010 (base 0.010)
+   1-3m  min1    orders  37956 (base  37956) long  99% fill  57% R/o st +0.035 obs +0.025 (opt +0.048) net -0.003 (t -0.3) vs base -0.003 diff -0.000 t -1.4 [+0.000/-0.000/+0.000] gap 0.010 (base 0.010)
+   1-3m  min1.5  orders  37912 (base  37956) long  99% fill  57% R/o st +0.035 obs +0.025 (opt +0.049) net -0.003 (t -0.3) vs base -0.003 diff +0.000 t +0.4 [+0.000/-0.000/+0.000] gap 0.010 (base 0.010)
+   1-3m  min2    orders  37462 (base  37956) long  99% fill  56% R/o st +0.033 obs +0.025 (opt +0.047) net -0.002 (t -0.2) vs base -0.003 diff +0.001 t +1.1 [+0.004/+0.001/-0.001] gap 0.009 (base 0.010)
+   1-3m  min3    orders  33585 (base  37956) long  97% fill  53% R/o st +0.028 obs +0.025 (opt +0.044) net +0.003 (t +0.3) vs base -0.003 diff +0.006 t +1.8 [+0.005/+0.009/+0.002] gap 0.003 (base 0.010)
+   1-3m  min4    orders  27295 (base  37956) long  94% fill  50% R/o st +0.022 obs +0.029 (opt +0.045) net +0.011 (t +1.1) vs base -0.003 diff +0.014 t +2.7 [+0.016/+0.012/+0.012] gap 0.006 (base 0.010)

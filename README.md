@@ -1724,6 +1724,14 @@ Taking the setups' losses apart showed that the worst ones are the tight ones: a
 
 **Judgement, once, on the fresh universe**, per frozen horizon: adopted when the difference with rules 6 is positive with t ≥ 2 and the gap between stated and observed R per order is no more than 0.02 above rules 6's. If adopted, it becomes rules 7: `MIN_RISK` in `trade_entries.py`, the template, the README's backtest tables and `EDGE_BAND` re-measured on the fit part. `CORRECTION` is fitted over every valid setup, so it stays.
 
+#### Result: a 2% minimum risk at `1-2w` held on the fresh universe; adopted as a protection, not yet in the rules
+
+Fit part (`fit.txt`): `min2` frozen at `1-2w`, net R per order −0.023 against −0.036 for rules 6, a difference of +0.013 (t 5.2), positive in every block, keeping 68% of the orders. At `1-3m` no candidate passed, so that horizon keeps rules 6.
+
+Fresh universe, run once (`judge.txt`; 50 tickers, all years): `min2` net −0.015 against −0.031, a difference of +0.016 (t 5.0), positive in every block (+0.008 / +0.026 / +0.013). Its gap between stated and observed R per order was 0.010, against 0.007 for rules 6, inside the allowed +0.02. **Adopted.** The kept setups still lose after costs: the rule makes the `1-2w` list lose about half as much, and it makes no claim of an edge.
+
+Still to do before it is a rule: rules 7, with `MIN_RISK` at `1-2w` in `trade_entries.py`, the template, `EDGE_BAND` re-measured on the fit part, and the backtest tables.
+
 ## Scoring the saved setups
 
 The [setup backtest](#backtest-of-the-trade-setups) replays today's rules on past dates. `score_entries.py` checks the setups that real runs actually wrote, before the prices existed: the forward, out-of-sample check. Every run keeps its `entries.json` in the run folder and, next to the saved projection, in `projections/`.
@@ -1927,7 +1935,7 @@ stock_predict_zones/
 ├── .claude/skills/reversal-zones-projection/
 │   ├── SKILL.md                    step 2: the skill
 │   └── scripts/rz.py               its helper: levels, simulation, validation, saving, outcomes
-├── examples/                       one complete run: input, projection and charts; reports of the value test and the setup backtest; segmentation_2026-11-20/ (the segment search); zone_rule_2026-11-21/ (the zone-rule study), placement_2026-11-21/ (stop and target placement, not adopted), fixed_target_2026-11-22/ (a fixed R target at 1-3m, not adopted), patterns_2026-11-22/ (candlestick and chart patterns, none passed), trend_2026-11-22/ (trading with the trend, not adopted; fresh_universe.txt, still unread), meta_2026-11-22/ (meta-labelling the setups, not adopted), minrisk_2026-11-22/ (a minimum risk per setup)
+├── examples/                       one complete run: input, projection and charts; reports of the value test and the setup backtest; segmentation_2026-11-20/ (the segment search); zone_rule_2026-11-21/ (the zone-rule study), placement_2026-11-21/ (stop and target placement, not adopted), fixed_target_2026-11-22/ (a fixed R target at 1-3m, not adopted), patterns_2026-11-22/ (candlestick and chart patterns, none passed), trend_2026-11-22/ (trading with the trend, not adopted; fresh_universe.txt, still unread), meta_2026-11-22/ (meta-labelling the setups, not adopted), minrisk_2026-11-22/ (a minimum risk per setup, adopted at 1-2w; the fresh universe has now been read once)
 ├── prompts/
 │   ├── trade_entries.md            prompt: three ranked trade setups from one run
 │   └── trade_entries.schema.json   JSON Schema of its reply
