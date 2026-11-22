@@ -1817,6 +1817,10 @@ Rules 9 left out the `1-2w` continuations, which lost where the reversals did no
 
 **Judgement, once, on universe v2**, per frozen horizon: adopted when the difference with rules 9 is positive with t ≥ 2 and the gap between stated and observed R per order is no more than 0.02 above rules 9's. If adopted, it becomes rules 10 (`EXCLUDED` at that horizon), with `EDGE_BAND` re-measured on the fit part.
 
+#### Result: no candidate passed at `1-3m` or `6-12m`; universe v2 stays unread
+
+Fit part ([`fit.txt`](examples/kinds_2026-11-22/fit.txt), [`FROZEN.json`](examples/kinds_2026-11-22/FROZEN.json): nothing frozen). At both horizons the picks are already mostly long (93% at `1-3m`, 88% at `6-12m`), so dropping a short cell or market orders changes almost nothing (best: `-short-cont` at `6-12m`, +0.003 R per order, t 1.3). Dropping any long cell, or a whole kind, costs 0.03 to 0.07 R per order (t −2.8 to −7.0): at these horizons the long reversals and the long continuations are where the gross R is, the long side riding the market's average rise. Rules 9 stays as it is at `1-3m` and `6-12m`. Since nothing was frozen, the fresh universe version 2 was not run: **it is still unread**, available for the next judgement.
+
 ## Scoring the saved setups
 
 The [setup backtest](#backtest-of-the-trade-setups) replays today's rules on past dates. `score_entries.py` checks the setups that real runs actually wrote, before the prices existed: the forward, out-of-sample check. Every run keeps its `entries.json` in the run folder and, next to the saved projection, in `projections/`.
