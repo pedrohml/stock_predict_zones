@@ -1,0 +1,115 @@
+NOT ADOPTED. Stop and target placement, fit part of the long setup backtest (README, "Stop and target
+placement: protocol" and its result). No variant met the protocol's choice rule at any horizon, so no
+candidate was frozen and the held-out part was not used. The rules stay version 5.
+
+Made on 22 Nov 2026 (76 tickers, universe version 1, sim method 2, as-of dates from 2005-01-03 to
+2026-10-30 / 2026-08-14 / 2025-11-13, the default steps, fit cases only):
+  uv run python examples/placement_2026-11-21/harness.py OUT --part fit --jobs 7      # 1 h 55 min
+  uv run python examples/placement_2026-11-21/analyse.py fit OUT
+The harness reproduces rules 5 exactly (verify.py; variant k0.25-zone refits CORRECTION to the shipped
+numbers and gives the long report's fit rows and bands 0.29 / 0.09).
+
+Columns (picked setups, pessimistic ordering): fill and win stated/observed; R/o = R per order stated/observed
+(opt = observed under the optimistic ordering); net = R per order net of a 0.20% round trip; gap = |stated -
+observed| R per order; Bf, Bw = Brier of fill and win (constant forecast in brackets); risk = median risk as %
+of price; net% = mean net result per order as % of the entry price; band = EDGE_BAND re-measured; vs r5 =
+net difference, its t (clustered by as-of month) and the difference in 2005-2012 / 2013-2019 / 2020-2026.
+A '*' would mark a variant meeting the choice rule; none does. Variant names: k = stop buffer in moves,
+zone / 0.75zone / xR = target, min = minimum risk as % of the entry.
+
+
+1-2w: 57336 fit cases
+k0.25-zone (rules 5)   n 171998 fill 53%/52% win 30%/30% R/o +0.005/+0.006 (opt +0.152) net -0.062 gap 0.000 Bf 0.208(0.250) Bw 0.198(0.211) risk 1.82% net% -0.085% ratio 2.12 band 0.29
+  k0.25-zone             n 171998 fill 53%/52% win 30%/30% R/o +0.005/+0.006 (opt +0.152) net -0.062 gap 0.000 Bf 0.208(0.250) Bw 0.198(0.211) risk 1.82% net% -0.085% ratio 2.12 band 0.29 | vs r5 +0.000 t +0.0 blocks +0.000/+0.000/+0.000
+  k0.25-0.75zone         n 171998 fill 51%/51% win 35%/35% R/o +0.005/+0.006 (opt +0.220) net -0.060 gap 0.001 Bf 0.214(0.250) Bw 0.217(0.227) risk 1.82% net% -0.081% ratio 1.64 band 0.43 | vs r5 +0.002 t +1.4 blocks +0.002/+0.003/+0.003
+  k0.25-1.5R             n 172001 fill 75%/75% win 37%/36% R/o +0.017/+0.009 (opt +0.140) net -0.090 gap 0.008 Bf 0.122(0.185) Bw 0.231(0.229) risk 1.79% net% -0.130% ratio 1.50 band 0.17 | vs r5 -0.028 t -9.2 blocks -0.037/-0.024/-0.024
+  k0.25-2R               n 172001 fill 76%/76% win 30%/29% R/o +0.029/+0.014 (opt +0.096) net -0.084 gap 0.015 Bf 0.125(0.183) Bw 0.207(0.206) risk 1.79% net% -0.123% ratio 2.00 band 0.09 | vs r5 -0.022 t -6.1 blocks -0.031/-0.018/-0.018
+  k0.25-3R               n 172000 fill 75%/76% win 20%/19% R/o +0.043/+0.020 (opt +0.051) net -0.078 gap 0.023 Bf 0.128(0.184) Bw 0.155(0.155) risk 1.79% net% -0.110% ratio 3.00 band 0.03 | vs r5 -0.016 t -2.9 blocks -0.021/-0.009/-0.017
+  k0.5-zone              n 172004 fill 52%/51% win 33%/33% R/o +0.007/+0.009 (opt +0.122) net -0.044 gap 0.002 Bf 0.212(0.250) Bw 0.206(0.222) risk 2.28% net% -0.071% ratio 1.71 band 0.23 | vs r5 +0.018 t +11.7 blocks +0.019/+0.017/+0.016
+  k0.5-0.75zone          n 171995 fill 51%/50% win 39%/39% R/o +0.006/+0.008 (opt +0.177) net -0.045 gap 0.002 Bf 0.217(0.250) Bw 0.225(0.238) risk 2.28% net% -0.067% ratio 1.30 band 0.35 | vs r5 +0.017 t +7.9 blocks +0.018/+0.014/+0.018
+  k0.5-1.5R              n 172007 fill 75%/76% win 36%/35% R/o +0.020/+0.015 (opt +0.084) net -0.063 gap 0.005 Bf 0.126(0.184) Bw 0.227(0.226) risk 2.25% net% -0.113% ratio 1.50 band 0.09 | vs r5 -0.001 t -0.3 blocks -0.002/+0.001/-0.001
+  k0.5-2R                n 172005 fill 75%/75% win 28%/27% R/o +0.029/+0.020 (opt +0.058) net -0.057 gap 0.009 Bf 0.129(0.185) Bw 0.196(0.196) risk 2.25% net% -0.098% ratio 2.00 band 0.04 | vs r5 +0.005 t +1.2 blocks +0.007/+0.009/+0.002
+  k0.5-3R                n 172005 fill 75%/75% win 16%/15% R/o +0.042/+0.023 (opt +0.035) net -0.054 gap 0.019 Bf 0.131(0.187) Bw 0.130(0.131) risk 2.25% net% -0.094% ratio 3.00 band 0.03 | vs r5 +0.008 t +1.3 blocks +0.014/+0.019/-0.002
+  k1-zone                n 171982 fill 51%/51% win 36%/36% R/o +0.007/+0.005 (opt +0.083) net -0.033 gap 0.002 Bf 0.216(0.250) Bw 0.212(0.231) risk 3.17% net% -0.069% ratio 1.26 band 0.15 | vs r5 +0.029 t +14.6 blocks +0.030/+0.028/+0.030
+  k1-0.75zone            n 170323 fill 49%/49% win 42%/42% R/o +0.005/+0.004 (opt +0.118) net -0.032 gap 0.001 Bf 0.221(0.250) Bw 0.230(0.243) risk 3.16% net% -0.065% ratio 0.97 band 0.24 | vs r5 +0.030 t +10.1 blocks +0.031/+0.027/+0.030
+  k1-1.5R                n 172004 fill 76%/76% win 30%/29% R/o +0.023/+0.018 (opt +0.044) net -0.037 gap 0.005 Bf 0.134(0.181) Bw 0.207(0.208) risk 3.14% net% -0.093% ratio 1.50 band 0.03 | vs r5 +0.024 t +4.9 blocks +0.023/+0.034/+0.020
+  k1-2R                  n 172004 fill 77%/77% win 21%/20% R/o +0.029/+0.019 (opt +0.034) net -0.037 gap 0.009 Bf 0.131(0.178) Bw 0.159(0.161) risk 3.14% net% -0.096% ratio 2.00 band 0.02 | vs r5 +0.025 t +3.9 blocks +0.026/+0.038/+0.017
+  k1-3R                  n 172004 fill 79%/79% win 9%/9% R/o +0.039/+0.019 (opt +0.031) net -0.040 gap 0.020 Bf 0.126(0.163) Bw 0.082(0.083) risk 3.13% net% -0.102% ratio 3.00 band 0.03 | vs r5 +0.022 t +2.6 blocks +0.016/+0.038/+0.017
+  k1.5-zone              n 170690 fill 51%/50% win 37%/37% R/o +0.008/+0.005 (opt +0.056) net -0.025 gap 0.003 Bf 0.218(0.250) Bw 0.215(0.234) risk 4.08% net% -0.066% ratio 0.99 band 0.10 | vs r5 +0.037 t +14.5 blocks +0.036/+0.035/+0.039
+  k1.5-0.75zone          n 162332 fill 47%/46% win 41%/41% R/o +0.004/+0.003 (opt +0.079) net -0.025 gap 0.001 Bf 0.224(0.249) Bw 0.231(0.243) risk 4.07% net% -0.060% ratio 0.80 band 0.17 | vs r5 +0.037 t +10.8 blocks +0.039/+0.031/+0.040
+  k1.5-1.5R              n 172002 fill 79%/80% win 24%/23% R/o +0.029/+0.021 (opt +0.034) net -0.024 gap 0.008 Bf 0.135(0.160) Bw 0.177(0.179) risk 4.06% net% -0.078% ratio 1.50 band 0.01 | vs r5 +0.038 t +4.8 blocks +0.040/+0.053/+0.027
+  k1.5-2R                n 172001 fill 81%/81% win 14%/14% R/o +0.032/+0.024 (opt +0.034) net -0.022 gap 0.008 Bf 0.129(0.152) Bw 0.119(0.121) risk 4.05% net% -0.075% ratio 2.00 band 0.01 | vs r5 +0.040 t +4.6 blocks +0.040/+0.057/+0.031
+  k1.5-3R                n 172000 fill 81%/82% win 5%/5% R/o +0.039/+0.026 (opt +0.035) net -0.020 gap 0.012 Bf 0.126(0.149) Bw 0.048(0.048) risk 4.05% net% -0.070% ratio 3.00 band 0.02 | vs r5 +0.042 t +4.4 blocks +0.035/+0.061/+0.035
+  k0.25-zone-min1%       n 171998 fill 53%/52% win 31%/31% R/o +0.006/+0.006 (opt +0.144) net -0.057 gap 0.000 Bf 0.208(0.250) Bw 0.199(0.214) risk 1.82% net% -0.085% ratio 2.05 band 0.27 | vs r5 +0.005 t +7.0 blocks +0.007/+0.008/+0.003
+  k0.25-2R-min1%         n 172007 fill 76%/76% win 30%/29% R/o +0.032/+0.016 (opt +0.090) net -0.075 gap 0.016 Bf 0.126(0.182) Bw 0.206(0.205) risk 1.79% net% -0.120% ratio 2.00 band 0.08 | vs r5 -0.013 t -3.2 blocks -0.021/-0.002/-0.014
+  k0.5-zone-min1%        n 171998 fill 52%/51% win 33%/34% R/o +0.007/+0.008 (opt +0.119) net -0.043 gap 0.001 Bf 0.212(0.250) Bw 0.206(0.223) risk 2.28% net% -0.071% ratio 1.69 band 0.22 | vs r5 +0.019 t +12.2 blocks +0.022/+0.019/+0.017
+  k0.5-2R-min1%          n 172005 fill 75%/76% win 27%/27% R/o +0.030/+0.020 (opt +0.056) net -0.054 gap 0.009 Bf 0.129(0.185) Bw 0.195(0.195) risk 2.25% net% -0.097% ratio 2.00 band 0.04 | vs r5 +0.008 t +1.8 blocks +0.010/+0.014/+0.003
+  k0.25-zone-min2%       n 171132 fill 52%/51% win 33%/33% R/o +0.005/+0.004 (opt +0.110) net -0.041 gap 0.001 Bf 0.212(0.250) Bw 0.205(0.222) risk 2.06% net% -0.085% ratio 1.68 band 0.21 | vs r5 +0.021 t +13.1 blocks +0.025/+0.020/+0.018
+  k0.25-2R-min2%         n 172007 fill 76%/76% win 26%/25% R/o +0.031/+0.020 (opt +0.065) net -0.046 gap 0.011 Bf 0.127(0.182) Bw 0.187(0.188) risk 2.02% net% -0.102% ratio 2.00 band 0.05 | vs r5 +0.016 t +2.7 blocks +0.019/+0.031/+0.004
+  k0.5-zone-min2%        n 171132 fill 51%/51% win 34%/34% R/o +0.004/+0.004 (opt +0.097) net -0.036 gap 0.000 Bf 0.214(0.250) Bw 0.208(0.225) risk 2.28% net% -0.076% ratio 1.51 band 0.19 | vs r5 +0.026 t +13.9 blocks +0.031/+0.024/+0.023
+  k0.5-2R-min2%          n 172005 fill 76%/76% win 24%/24% R/o +0.033/+0.024 (opt +0.048) net -0.036 gap 0.009 Bf 0.132(0.183) Bw 0.179(0.181) risk 2.25% net% -0.084% ratio 2.00 band 0.03 | vs r5 +0.026 t +4.4 blocks +0.032/+0.039/+0.014
+1-2w: candidate none
+
+1-3m: 26506 fit cases
+k0.25-zone (rules 5)   n  79513 fill 62%/62% win 38%/38% R/o +0.011/+0.013 (opt +0.067) net -0.022 gap 0.002 Bf 0.201(0.236) Bw 0.219(0.235) risk 4.01% net% -0.040% ratio 1.67 band 0.09
+  k0.25-zone             n  79513 fill 62%/62% win 38%/38% R/o +0.011/+0.013 (opt +0.067) net -0.022 gap 0.002 Bf 0.201(0.236) Bw 0.219(0.235) risk 4.01% net% -0.040% ratio 1.67 band 0.09 | vs r5 +0.000 t +0.0 blocks +0.000/+0.000/+0.000
+  k0.25-0.75zone         n  79512 fill 61%/61% win 43%/43% R/o +0.009/+0.007 (opt +0.079) net -0.027 gap 0.001 Bf 0.205(0.238) Bw 0.232(0.245) risk 4.02% net% -0.057% ratio 1.29 band 0.12 | vs r5 -0.005 t -1.5 blocks -0.008/-0.014/+0.002
+  k0.25-1.5R             n  79517 fill 72%/72% win 39%/39% R/o +0.029/+0.031 (opt +0.063) net -0.010 gap 0.002 Bf 0.154(0.202) Bw 0.238(0.238) risk 3.97% net% -0.002% ratio 1.50 band 0.05 | vs r5 +0.012 t +1.9 blocks +0.016/+0.027/+0.001
+  k0.25-2R               n  79516 fill 74%/74% win 33%/33% R/o +0.044/+0.043 (opt +0.069) net +0.000 gap 0.001 Bf 0.152(0.191) Bw 0.220(0.221) risk 3.98% net% +0.055% ratio 2.00 band 0.04 | vs r5 +0.022 t +2.5 blocks +0.025/+0.049/+0.005
+  k0.25-3R               n  79514 fill 76%/76% win 24%/24% R/o +0.071/+0.070 (opt +0.095) net +0.027 gap 0.000 Bf 0.150(0.182) Bw 0.180(0.181) risk 3.98% net% +0.193% ratio 3.00 band 0.04 | vs r5 +0.049 t +3.7 blocks +0.049/+0.088/+0.027
+  k0.5-zone              n  79511 fill 64%/64% win 43%/43% R/o +0.025/+0.021 (opt +0.060) net -0.008 gap 0.004 Bf 0.202(0.230) Bw 0.231(0.245) risk 5.01% net% +0.013% ratio 1.24 band 0.06 | vs r5 +0.014 t +4.5 blocks +0.015/+0.020/+0.009
+  k0.5-0.75zone          n  79504 fill 62%/62% win 48%/48% R/o +0.018/+0.018 (opt +0.066) net -0.011 gap 0.001 Bf 0.206(0.236) Bw 0.237(0.250) risk 5.01% net% +0.002% ratio 1.00 band 0.08 | vs r5 +0.011 t +3.8 blocks +0.009/+0.014/+0.011
+  k0.5-1.5R              n  79517 fill 80%/79% win 40%/40% R/o +0.047/+0.043 (opt +0.068) net +0.006 gap 0.004 Bf 0.142(0.164) Bw 0.239(0.240) risk 4.98% net% +0.076% ratio 1.50 band 0.03 | vs r5 +0.028 t +2.8 blocks +0.030/+0.050/+0.014
+  k0.5-2R                n  79513 fill 81%/80% win 33%/33% R/o +0.068/+0.065 (opt +0.091) net +0.028 gap 0.003 Bf 0.138(0.157) Bw 0.220(0.221) risk 4.96% net% +0.211% ratio 2.00 band 0.03 | vs r5 +0.049 t +3.7 blocks +0.057/+0.081/+0.027
+  k0.5-3R                n  79513 fill 81%/81% win 22%/22% R/o +0.096/+0.094 (opt +0.117) net +0.056 gap 0.002 Bf 0.136(0.154) Bw 0.170(0.171) risk 4.96% net% +0.390% ratio 3.00 band 0.03 | vs r5 +0.078 t +4.3 blocks +0.086/+0.122/+0.049
+  k1-zone                n  79490 fill 66%/65% win 51%/51% R/o +0.033/+0.031 (opt +0.049) net +0.009 gap 0.002 Bf 0.200(0.226) Bw 0.236(0.250) risk 6.99% net% +0.109% ratio 0.86 band 0.03 | vs r5 +0.031 t +8.3 blocks +0.037/+0.033/+0.026
+  k1-0.75zone            n  78512 fill 61%/61% win 53%/53% R/o +0.018/+0.018 (opt +0.041) net -0.002 gap 0.000 Bf 0.209(0.238) Bw 0.237(0.249) risk 7.00% net% +0.044% ratio 0.76 band 0.04 | vs r5 +0.019 t +4.2 blocks +0.018/+0.013/+0.024
+  k1-1.5R                n  79510 fill 81%/81% win 38%/38% R/o +0.076/+0.077 (opt +0.088) net +0.049 gap 0.001 Bf 0.136(0.155) Bw 0.235(0.236) risk 6.93% net% +0.438% ratio 1.50 band 0.02 | vs r5 +0.071 t +5.6 blocks +0.078/+0.105/+0.048
+  k1-2R                  n  79510 fill 82%/81% win 29%/29% R/o +0.090/+0.096 (opt +0.107) net +0.069 gap 0.006 Bf 0.133(0.151) Bw 0.204(0.205) risk 6.91% net% +0.606% ratio 2.00 band 0.03 | vs r5 +0.091 t +5.7 blocks +0.098/+0.133/+0.064
+  k1-3R                  n  79510 fill 82%/82% win 16%/16% R/o +0.115/+0.120 (opt +0.129) net +0.092 gap 0.005 Bf 0.132(0.149) Bw 0.131(0.132) risk 6.91% net% +0.807% ratio 3.00 band 0.02 | vs r5 +0.114 t +5.5 blocks +0.124/+0.168/+0.079
+  k1.5-zone              n  78770 fill 62%/62% win 50%/50% R/o +0.024/+0.022 (opt +0.031) net +0.006 gap 0.002 Bf 0.207(0.237) Bw 0.234(0.250) risk 9.02% net% +0.121% ratio 0.75 band 0.02 | vs r5 +0.028 t +6.6 blocks +0.027/+0.026/+0.031
+  k1.5-0.75zone          n  74493 fill 57%/57% win 52%/51% R/o +0.010/+0.009 (opt +0.021) net -0.005 gap 0.001 Bf 0.218(0.246) Bw 0.236(0.250) risk 9.03% net% +0.020% ratio 0.69 band 0.02 | vs r5 +0.017 t +2.6 blocks +0.008/+0.008/+0.026
+  k1.5-1.5R              n  79506 fill 81%/81% win 33%/33% R/o +0.085/+0.092 (opt +0.096) net +0.071 gap 0.007 Bf 0.136(0.155) Bw 0.219(0.221) risk 8.98% net% +0.780% ratio 1.50 band 0.02 | vs r5 +0.093 t +6.8 blocks +0.095/+0.133/+0.069
+  k1.5-2R                n  79506 fill 82%/82% win 22%/22% R/o +0.099/+0.107 (opt +0.110) net +0.086 gap 0.008 Bf 0.133(0.150) Bw 0.172(0.174) risk 8.97% net% +0.936% ratio 2.00 band 0.02 | vs r5 +0.107 t +6.4 blocks +0.113/+0.153/+0.079
+  k1.5-3R                n  79506 fill 82%/82% win 10%/10% R/o +0.114/+0.121 (opt +0.124) net +0.100 gap 0.007 Bf 0.131(0.148) Bw 0.086(0.088) risk 8.97% net% +1.107% ratio 3.00 band 0.02 | vs r5 +0.122 t +6.1 blocks +0.127/+0.169/+0.092
+  k0.25-zone-min1%       n  79513 fill 62%/62% win 38%/38% R/o +0.011/+0.013 (opt +0.067) net -0.022 gap 0.002 Bf 0.201(0.236) Bw 0.219(0.235) risk 4.01% net% -0.040% ratio 1.66 band 0.09 | vs r5 +0.000 t +1.9 blocks +0.000/+0.001/+0.000
+  k0.25-2R-min1%         n  79516 fill 74%/74% win 33%/33% R/o +0.044/+0.043 (opt +0.069) net +0.001 gap 0.001 Bf 0.152(0.191) Bw 0.220(0.221) risk 3.98% net% +0.055% ratio 2.00 band 0.04 | vs r5 +0.022 t +2.5 blocks +0.025/+0.050/+0.005
+  k0.5-zone-min1%        n  79511 fill 64%/64% win 43%/43% R/o +0.025/+0.021 (opt +0.060) net -0.008 gap 0.004 Bf 0.202(0.230) Bw 0.231(0.245) risk 5.01% net% +0.013% ratio 1.24 band 0.06 | vs r5 +0.014 t +4.5 blocks +0.015/+0.019/+0.009
+  k0.5-2R-min1%          n  79513 fill 81%/80% win 33%/33% R/o +0.068/+0.065 (opt +0.091) net +0.028 gap 0.003 Bf 0.138(0.157) Bw 0.220(0.221) risk 4.96% net% +0.211% ratio 2.00 band 0.03 | vs r5 +0.050 t +3.7 blocks +0.057/+0.081/+0.027
+  k0.25-zone-min2%       n  79512 fill 62%/62% win 38%/38% R/o +0.016/+0.016 (opt +0.067) net -0.018 gap 0.000 Bf 0.201(0.235) Bw 0.220(0.237) risk 4.02% net% -0.037% ratio 1.63 band 0.09 | vs r5 +0.004 t +4.5 blocks +0.005/+0.006/+0.001
+  k0.25-2R-min2%         n  79516 fill 75%/75% win 33%/33% R/o +0.047/+0.046 (opt +0.069) net +0.005 gap 0.001 Bf 0.150(0.188) Bw 0.220(0.221) risk 3.98% net% +0.061% ratio 2.00 band 0.03 | vs r5 +0.027 t +2.8 blocks +0.031/+0.057/+0.007
+  k0.5-zone-min2%        n  79510 fill 64%/64% win 43%/43% R/o +0.025/+0.021 (opt +0.059) net -0.008 gap 0.004 Bf 0.202(0.230) Bw 0.231(0.245) risk 5.01% net% +0.013% ratio 1.24 band 0.06 | vs r5 +0.014 t +4.6 blocks +0.016/+0.021/+0.009
+  k0.5-2R-min2%          n  79513 fill 81%/81% win 33%/33% R/o +0.069/+0.066 (opt +0.091) net +0.029 gap 0.002 Bf 0.137(0.157) Bw 0.220(0.221) risk 4.96% net% +0.214% ratio 2.00 band 0.03 | vs r5 +0.051 t +3.8 blocks +0.059/+0.084/+0.028
+1-3m: candidate none
+
+6-12m: 10079 fit cases
+k0.25-zone (rules 5)   n  30234 fill 70%/71% win 46%/47% R/o +0.059/+0.065 (opt +0.079) net +0.044 gap 0.006 Bf 0.187(0.206) Bw 0.238(0.249) risk 8.50% net% +0.303% ratio 1.29 band 0.03
+  k0.25-zone             n  30234 fill 70%/71% win 46%/47% R/o +0.059/+0.065 (opt +0.079) net +0.044 gap 0.006 Bf 0.187(0.206) Bw 0.238(0.249) risk 8.50% net% +0.303% ratio 1.29 band 0.03 | vs r5 +0.000 t +0.0 blocks +0.000/+0.000/+0.000
+  k0.25-0.75zone         n  30230 fill 68%/70% win 52%/53% R/o +0.043/+0.048 (opt +0.063) net +0.028 gap 0.005 Bf 0.189(0.210) Bw 0.237(0.249) risk 8.50% net% +0.145% ratio 1.00 band 0.03 | vs r5 -0.016 t -4.0 blocks -0.014/-0.024/-0.014
+  k0.25-1.5R             n  30236 fill 77%/79% win 43%/43% R/o +0.075/+0.074 (opt +0.087) net +0.051 gap 0.000 Bf 0.144(0.167) Bw 0.243(0.245) risk 8.40% net% +0.356% ratio 1.50 band 0.02 | vs r5 +0.006 t +0.7 blocks -0.010/+0.024/+0.007
+  k0.25-2R               n  30235 fill 78%/79% win 36%/37% R/o +0.099/+0.113 (opt +0.124) net +0.090 gap 0.014 Bf 0.143(0.164) Bw 0.231(0.232) risk 8.40% net% +0.688% ratio 2.00 band 0.03 | vs r5 +0.045 t +3.7 blocks +0.030/+0.066/+0.044
+  k0.25-3R               n  30234 fill 79%/80% win 27%/28% R/o +0.146/+0.165 (opt +0.177) net +0.141 gap 0.019 Bf 0.135(0.157) Bw 0.199(0.200) risk 8.38% net% +1.013% ratio 3.00 band 0.04 | vs r5 +0.097 t +5.3 blocks +0.096/+0.103/+0.094
+  k0.5-zone              n  30231 fill 69%/71% win 51%/52% R/o +0.053/+0.071 (opt +0.078) net +0.055 gap 0.018 Bf 0.187(0.207) Bw 0.238(0.250) risk 10.66% net% +0.499% ratio 1.03 band 0.04 | vs r5 +0.010 t +3.3 blocks +0.006/+0.006/+0.015
+  k0.5-0.75zone          n  30225 fill 66%/67% win 54%/55% R/o +0.036/+0.051 (opt +0.058) net +0.036 gap 0.015 Bf 0.194(0.222) Bw 0.235(0.247) risk 10.66% net% +0.242% ratio 0.90 band 0.03 | vs r5 -0.008 t -1.6 blocks -0.006/-0.018/-0.005
+  k0.5-1.5R              n  30236 fill 79%/80% win 43%/43% R/o +0.087/+0.112 (opt +0.116) net +0.093 gap 0.025 Bf 0.136(0.158) Bw 0.243(0.246) risk 10.56% net% +0.890% ratio 1.50 band 0.04 | vs r5 +0.048 t +4.5 blocks +0.036/+0.071/+0.044
+  k0.5-2R                n  30235 fill 79%/81% win 36%/37% R/o +0.115/+0.151 (opt +0.154) net +0.132 gap 0.035 Bf 0.133(0.155) Bw 0.230(0.232) risk 10.54% net% +1.259% ratio 2.00 band 0.05 | vs r5 +0.087 t +6.0 blocks +0.087/+0.107/+0.078
+  k0.5-3R                n  30234 fill 80%/81% win 25%/26% R/o +0.163/+0.199 (opt +0.203) net +0.180 gap 0.037 Bf 0.129(0.151) Bw 0.191(0.192) risk 10.53% net% +1.686% ratio 3.00 band 0.05 | vs r5 +0.136 t +6.2 blocks +0.167/+0.121/+0.126
+  k1-zone                n  30204 fill 66%/66% win 53%/55% R/o +0.043/+0.064 (opt +0.066) net +0.053 gap 0.021 Bf 0.195(0.223) Bw 0.233(0.248) risk 15.04% net% +0.592% ratio 0.85 band 0.04 | vs r5 +0.009 t +1.5 blocks +0.011/-0.009/+0.016
+  k1-0.75zone            n  29627 fill 60%/61% win 53%/55% R/o +0.022/+0.039 (opt +0.041) net +0.030 gap 0.017 Bf 0.207(0.238) Bw 0.233(0.247) risk 14.92% net% +0.313% ratio 0.72 band 0.03 | vs r5 -0.015 t -1.8 blocks -0.022/-0.029/-0.004
+  k1-1.5R                n  30231 fill 80%/82% win 40%/42% R/o +0.109/+0.151 (opt +0.151) net +0.137 gap 0.041 Bf 0.129(0.150) Bw 0.241(0.243) risk 14.88% net% +1.827% ratio 1.50 band 0.05 | vs r5 +0.093 t +6.5 blocks +0.116/+0.088/+0.083
+  k1-2R                  n  30231 fill 80%/82% win 32%/33% R/o +0.138/+0.179 (opt +0.180) net +0.166 gap 0.041 Bf 0.128(0.149) Bw 0.218(0.220) risk 14.88% net% +2.188% ratio 2.00 band 0.05 | vs r5 +0.121 t +6.6 blocks +0.177/+0.089/+0.107
+  k1-3R                  n  30230 fill 80%/82% win 19%/20% R/o +0.175/+0.231 (opt +0.232) net +0.217 gap 0.055 Bf 0.127(0.148) Bw 0.156(0.158) risk 14.88% net% +2.757% ratio 3.00 band 0.07 | vs r5 +0.173 t +7.0 blocks +0.265/+0.105/+0.156
+  k1.5-zone              n  29696 fill 61%/61% win 50%/53% R/o +0.029/+0.051 (opt +0.052) net +0.043 gap 0.022 Bf 0.206(0.237) Bw 0.232(0.249) risk 19.33% net% +0.690% ratio 0.72 band 0.04 | vs r5 -0.001 t -0.1 blocks +0.005/-0.020/+0.005
+  k1.5-0.75zone          n  27696 fill 55%/57% win 51%/54% R/o +0.009/+0.027 (opt +0.028) net +0.020 gap 0.018 Bf 0.215(0.246) Bw 0.235(0.248) risk 19.14% net% +0.414% ratio 0.66 band 0.04 | vs r5 -0.024 t -2.4 blocks -0.042/-0.040/-0.007
+  k1.5-1.5R              n  30222 fill 80%/82% win 35%/37% R/o +0.120/+0.162 (opt +0.162) net +0.151 gap 0.042 Bf 0.127(0.148) Bw 0.230(0.232) risk 19.18% net% +2.500% ratio 1.50 band 0.05 | vs r5 +0.107 t +6.6 blocks +0.188/+0.053/+0.089
+  k1.5-2R                n  30216 fill 80%/82% win 25%/26% R/o +0.143/+0.193 (opt +0.194) net +0.183 gap 0.050 Bf 0.127(0.147) Bw 0.192(0.194) risk 19.18% net% +2.952% ratio 2.00 band 0.06 | vs r5 +0.138 t +6.9 blocks +0.238/+0.063/+0.120
+  k1.5-3R                n  30210 fill 80%/82% win 13%/13% R/o +0.169/+0.233 (opt +0.236) net +0.223 gap 0.064 Bf 0.126(0.147) Bw 0.114(0.116) risk 19.18% net% +3.551% ratio 3.00 band 0.08 | vs r5 +0.179 t +7.3 blocks +0.290/+0.093/+0.159
+  k0.25-zone-min1%       n  30234 fill 70%/71% win 46%/47% R/o +0.059/+0.065 (opt +0.079) net +0.044 gap 0.006 Bf 0.187(0.206) Bw 0.238(0.249) risk 8.50% net% +0.303% ratio 1.29 band 0.03 | vs r5 +0.000 t +0.0 blocks +0.000/+0.000/+0.000
+  k0.25-2R-min1%         n  30235 fill 78%/79% win 36%/37% R/o +0.099/+0.113 (opt +0.124) net +0.090 gap 0.014 Bf 0.143(0.164) Bw 0.231(0.232) risk 8.40% net% +0.688% ratio 2.00 band 0.03 | vs r5 +0.045 t +3.7 blocks +0.030/+0.066/+0.044
+  k0.5-zone-min1%        n  30231 fill 69%/71% win 51%/52% R/o +0.053/+0.071 (opt +0.078) net +0.055 gap 0.018 Bf 0.187(0.207) Bw 0.238(0.250) risk 10.66% net% +0.499% ratio 1.03 band 0.04 | vs r5 +0.010 t +3.3 blocks +0.006/+0.006/+0.015
+  k0.5-2R-min1%          n  30235 fill 79%/81% win 36%/37% R/o +0.115/+0.151 (opt +0.154) net +0.132 gap 0.035 Bf 0.133(0.155) Bw 0.230(0.232) risk 10.54% net% +1.259% ratio 2.00 band 0.05 | vs r5 +0.087 t +6.0 blocks +0.087/+0.107/+0.078
+  k0.25-zone-min2%       n  30234 fill 70%/71% win 46%/47% R/o +0.059/+0.065 (opt +0.079) net +0.045 gap 0.006 Bf 0.187(0.206) Bw 0.238(0.249) risk 8.50% net% +0.304% ratio 1.29 band 0.03 | vs r5 +0.000 t +0.5 blocks +0.000/+0.000/+0.000
+  k0.25-2R-min2%         n  30235 fill 78%/79% win 36%/37% R/o +0.099/+0.113 (opt +0.124) net +0.090 gap 0.014 Bf 0.143(0.164) Bw 0.231(0.232) risk 8.40% net% +0.689% ratio 2.00 band 0.03 | vs r5 +0.045 t +3.7 blocks +0.030/+0.066/+0.044
+  k0.5-zone-min2%        n  30231 fill 69%/71% win 51%/52% R/o +0.053/+0.071 (opt +0.078) net +0.055 gap 0.018 Bf 0.187(0.207) Bw 0.238(0.250) risk 10.66% net% +0.499% ratio 1.03 band 0.04 | vs r5 +0.010 t +3.3 blocks +0.006/+0.006/+0.015
+  k0.5-2R-min2%          n  30235 fill 79%/81% win 36%/37% R/o +0.115/+0.151 (opt +0.154) net +0.132 gap 0.035 Bf 0.133(0.155) Bw 0.230(0.232) risk 10.54% net% +1.259% ratio 2.00 band 0.05 | vs r5 +0.087 t +6.0 blocks +0.087/+0.107/+0.078
+6-12m: candidate none
