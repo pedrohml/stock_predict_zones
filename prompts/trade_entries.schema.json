@@ -12,7 +12,7 @@
       "required": ["task", "rules", "asset", "as_of", "valid_until", "probability", "units", "entries", "confidence", "method", "note"],
       "properties": {
         "task": { "const": "trade_entries" },
-        "rules": { "const": 7, "description": "Version of the setup rules. 7: as 6, and a 1-2w setup whose risk is under 2% of its entry is discarded (a stop too tight to pay a trade's costs), with the 1-2w band re-measured. 6 (until 22 Nov 2026): as 5, on the zones of the current mechanical zone rule (1.5 zone widths, at least two candidates per cluster), with the correction refitted and the bands re-measured on them. 5 (until 22 Nov 2026): odds counted on simulated paths, then at 1-2w and 1-3m corrected per side and kind by the error the long setup backtest measured (log-odds shifts of fill and win, a shift of the edge), the best three kept whatever their side, quality against a band per horizon (the model's measured error), on the earlier zones. 4 (GARCH paths) was evaluated and never shipped. 3 (until 20 Nov 2026) stated the uncorrected path counts. 2 (19 Nov 2026) swapped the third for the best setup of the other side when all three shared one, and labelled quality with one band of ±0.05 R. Files without it were written by version 1 (odds from reach and turn by formulas). Earlier versions are not checked against the current one." },
+        "rules": { "const": 8, "description": "Version of the setup rules. 8: as 7, and only setups whose reward is at least their risk are kept (ratio at least 1; 0.5 until then). 7 (until 22 Nov 2026): as 6, and a 1-2w setup whose risk is under 2% of its entry is discarded (a stop too tight to pay a trade's costs), with the 1-2w band re-measured. 6 (until 22 Nov 2026): as 5, on the zones of the current mechanical zone rule (1.5 zone widths, at least two candidates per cluster), with the correction refitted and the bands re-measured on them. 5 (until 22 Nov 2026): odds counted on simulated paths, then at 1-2w and 1-3m corrected per side and kind by the error the long setup backtest measured (log-odds shifts of fill and win, a shift of the edge), the best three kept whatever their side, quality against a band per horizon (the model's measured error), on the earlier zones. 4 (GARCH paths) was evaluated and never shipped. 3 (until 20 Nov 2026) stated the uncorrected path counts. 2 (19 Nov 2026) swapped the third for the best setup of the other side when all three shared one, and labelled quality with one band of ±0.05 R. Files without it were written by version 1 (odds from reach and turn by formulas). Earlier versions are not checked against the current one." },
         "asset": {
           "type": "object",
           "additionalProperties": false,
@@ -102,7 +102,7 @@
           "properties": {
             "risk": { "$ref": "#/$defs/distance", "description": "|entry - stop|." },
             "reward": { "$ref": "#/$defs/distance", "description": "|target - entry|." },
-            "ratio": { "type": "number", "minimum": 0.5, "description": "reward / risk." }
+            "ratio": { "type": "number", "minimum": 1, "description": "reward / risk; at least 1 since rules 8." }
           }
         },
         "odds": {

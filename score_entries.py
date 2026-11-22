@@ -41,6 +41,7 @@ RULES_MEANING = {
        "win_if_filled was a ceiling, since the projection does not know whether the stop comes first",
     2: "fill and win_if_filled were counted on simulated price paths",
     7: "as rules 6, and 1-2w setups whose risk was under 2% of the entry were discarded",
+    8: "as rules 7, and only setups whose reward was at least their risk (ratio at least 1) were kept",
 }
 
 RULES = [

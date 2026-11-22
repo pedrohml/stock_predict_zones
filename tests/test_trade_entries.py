@@ -63,7 +63,7 @@ def test_setups_follow_the_rules(example):
             assert item["stop"] < item["entry"] < item["target"]
         else:
             assert item["target"] < item["entry"] < item["stop"]
-        assert item["ratio"] >= 0.5 and 0 <= item["win_if_filled"] <= 1 and 0 <= item["fill"] <= 1
+        assert item["ratio"] >= trade_entries.MIN_RATIO == 1.0 and 0 <= item["win_if_filled"] <= 1 and 0 <= item["fill"] <= 1
         assert item["per_order"] == trade_entries.half_up(item["fill"] * item["if_filled"])
         assert item["quality"] == trade_entries.quality(item["if_filled"], trade_entries.band(example[0]))
         d = item["detail"]
@@ -72,7 +72,8 @@ def test_setups_follow_the_rules(example):
     assert not {"short-S3-continuation", "long-R3-continuation"} & {item["id"] for item in found}
 
 
-def test_price_inside_a_zone_gives_a_market_order(input_data, projection_data):
+def test_price_inside_a_zone_gives_a_market_order(input_data, projection_data, monkeypatch):
+    monkeypatch.setattr(trade_entries, "MIN_RATIO", 0.5)   # the fixture's market order has a ratio under 1
     by_id = {item["id"]: item for item in trade_entries.setups(input_data, projection_data)}
     inside = by_id["long-S1-reversal"]          # the fixture's price 44.06 sits in S1 43.2-44.6
     assert (inside["order"], inside["entry"], inside["fill"]) == ("market", 44.06, 1.0)
@@ -143,16 +144,16 @@ def test_an_entries_file_of_rules_2_is_named_as_such(input_data, projection_data
     old = copy.deepcopy(entries_data)
     old["rules"] = 2
     bad = trade_entries.problems(input_data, projection_data, old)
-    assert len(bad) == 1 and "earlier version of the rules (rules 2, now 7)" in bad[0] and "other side" in bad[0]
+    assert len(bad) == 1 and "earlier version of the rules (rules 2, now 8)" in bad[0] and "other side" in bad[0]
 
 
 @pytest.mark.parametrize("version, why", [(3, "uncorrected path counts"), (4, "never shipped"),
-                                          (5, "zones of the earlier zone rule"), (6, "under 2% of the entry")])
-def test_an_entries_file_of_rules_3_to_6_is_named_as_such(input_data, projection_data, entries_data, version, why):
+                                          (5, "zones of the earlier zone rule"), (6, "under 2% of the entry"), (7, "ratio of 0.5")])
+def test_an_entries_file_of_rules_3_to_7_is_named_as_such(input_data, projection_data, entries_data, version, why):
     old = copy.deepcopy(entries_data)
     old["rules"] = version
     bad = trade_entries.problems(input_data, projection_data, old)
-    assert len(bad) == 1 and f"(rules {version}, now 7)" in bad[0] and why in bad[0]
+    assert len(bad) == 1 and f"(rules {version}, now 8)" in bad[0] and why in bad[0]
 
 
 def test_half_up_rounding_of_the_buffer(example):
@@ -247,7 +248,7 @@ def test_build_reproduces_the_prompt_example(example):
     third = reply["entries"][2]
     assert third["stop"]["anchor"] == "R1 near edge 43.23 − buffer 0.70"
     assert all(any("2026-12-21" in line for line in entry["watch"]) for entry in reply["entries"])
-    assert "8 setups were valid, 3 kept" in reply["method"] and "20,000 simulated paths" in reply["method"]
+    assert "7 setups were valid, 3 kept" in reply["method"] and "20,000 simulated paths" in reply["method"]
     for got, shown in zip(reply["entries"], template_example()["entries"]):
         assert (got["odds"]["fill"], got["odds"]["win_if_filled"], got["edge"]) == (
             shown["odds"]["fill"], shown["odds"]["win_if_filled"], shown["edge"])
@@ -285,8 +286,8 @@ def test_an_entries_file_of_the_earlier_rules_is_named_as_such(input_data, proje
 # ---- quality: the edge against the model's measured error at the horizon -----------
 
 def test_the_quality_band_follows_the_horizon():
-    assert trade_entries.band({"horizon": "1-2w"}) == 0.16
-    assert trade_entries.band({"horizon": "1-3m"}) == 0.05
+    assert trade_entries.band({"horizon": "1-2w"}) == 0.15
+    assert trade_entries.band({"horizon": "1-3m"}) == 0.06
     assert trade_entries.band({"horizon": "6-12m"}) == 0.32
     widest = max(trade_entries.EDGE_BAND.values())
     assert trade_entries.band({"horizon": "today"}) == widest and trade_entries.band({}) == widest
@@ -302,8 +303,8 @@ def test_the_label_is_recomputed_for_the_horizon(example, monkeypatch):
     """The same edges get other labels under another band, and check recomputes them."""
     source, proj = example
     reply = trade_entries.build(source, proj)
-    assert [e["quality"] for e in reply["entries"]] == ["favourable", "marginal", "marginal"]   # band 0.05
-    assert "±0.05 R" in " ".join(reply["confidence"]["limits"])
+    assert [e["quality"] for e in reply["entries"]] == ["favourable", "marginal", "marginal"]   # band 0.06
+    assert "±0.06 R" in " ".join(reply["confidence"]["limits"])
     monkeypatch.setitem(trade_entries.EDGE_BAND, "1-3m", 0.07)
     assert trade_entries.problems(source, proj, reply) == [
         "long-S3-reversal.quality: favourable, expected marginal"]
@@ -608,3 +609,13 @@ def test_min_risk_discards_tight_setups_at_its_horizon_only(example, monkeypatch
     at_1_3m = trade_entries.setups(source, proj)                  # 1-3m: no minimum
     monkeypatch.setattr(trade_entries, "MIN_RISK", {})
     assert at_1_3m == trade_entries.setups(source, proj)
+
+
+def test_a_reward_under_the_risk_is_no_setup(input_data, projection_data, monkeypatch):
+    """Rules 8: only setups whose reward is at least their risk are kept."""
+    kept = trade_entries.setups(input_data, projection_data)
+    assert kept and all(item["ratio"] >= 1 for item in kept)
+    monkeypatch.setattr(trade_entries, "MIN_RATIO", 0.5)
+    before = trade_entries.setups(input_data, projection_data)
+    assert any(item["ratio"] < 1 for item in before)                      # the fixture has such setups
+    assert [i["id"] for i in before if i["ratio"] >= 1] == [i["id"] for i in kept]

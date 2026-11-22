@@ -1,0 +1,906 @@
+Setup rules 8 (rules 7 plus MIN_RATIO 1: only setups whose reward is at least their risk; bands 0.15 / 0.06 / 0.32,
+measured on these runs' fit part) on the long universe, run on 22 Nov 2026. One run per horizon, each with its --end:
+  uv run python backtest_entries.py --universe backtest_universe.txt --horizon 1-2w --start 2005-01-03 --end 2026-10-30 \
+      --by-year --by-regime --by-part --subset original --jobs 14
+  (1-3m: --end 2026-08-14; 6-12m: --end 2025-11-13)
+The quality rows of these reports were labelled with the rules 7 bands (0.16 / 0.05 / 0.32), since the new bands
+were measured from them; nothing else depends on the band.
+
+BACKTEST of the trade setups (mechanical engine, trade_entries.py), hypothetical, for calibration
+  AAPL, MSFT, NVDA, SPY, JPM, XOM, KO, PETR4.SA, VALE3.SA, ITUB4.SA, BBDC4.SA, WEGE3.SA, JNJ, PG, WMT, HD, CVX, CAT, PFE, DIS, IBM, VZ, MCD, BAC, GE, C, AIG, INTC, BA, T, F, XRX, LUMN, KSS, M, VFC, CCL, SLB, CLF, AAL, FNMA, FMCC, MBI, GNW, FRCB, BIGGQ, ABEV3.SA, BBAS3.SA, B3SA3.SA, ITSA4.SA, SUZB3.SA, EMBJ3.SA, RADL3.SA, VIVT3.SA, SBSP3.SA, EGIE3.SA, RENT3.SA, AXIA3.SA, USIM5.SA, CSNA3.SA, MGLU3.SA, COGN3.SA, IRBR3.SA, MRVE3.SA, CYRE3.SA, BHIA3.SA, CVCB3.SA, BEEF3.SA, HBOR3.SA, RSID3.SA, AMAR3.SA, AMER3.SA, LIGT3.SA, TCSA3.SA, PDGR3.SA, ECOR3.SA; horizons 1-2w; sim method 2; ordering inside a candle: pessimistic; setup rules 8
+  1-2w: as-of dates 2005-01-03 to 2026-10-30, every 5 trading day(s)
+  52060 case(s), 152855 setups; skipped: 22066 1-2w: no setup passes the rules for this projection, 79 1-2w: a series would start at a local midnight that did not exist (DST), 827 1-2w: stale quotes (over 20% of the daily candles have no range), 2467 1-2w: less history than a live run requests (2y of candles before the as-of date), 2 1-2w: no daily candle after the as-of day
+  Universe backtest_universe.txt, version 1: [original] 12; [us-large] 12; [us-fell-hard] 16; [us-
+    collapsed] 4; [us-delisted] 2; [br-large] 12; [br-fell-hard] 18 (76 tickers). Yahoo serves no
+    history for most delisted or acquired symbols, so survivor bias is smaller than with today's
+    names alone, not gone (the file lists what was tried).
+  Rows used in a date range only (the others are unusable; before the range counts as no history,
+    and a setup still open at the range's end is closed at its last close): WEGE3.SA 2005-07-01..,
+    FRCB ..2023-04-28, BIGGQ ..2024-12-12, ABEV3.SA 2007-09-01.., B3SA3.SA 2011-06-01.., SUZB3.SA
+    2018-01-01.., RADL3.SA 2007-05-04.., COGN3.SA 2013-01-01.., CYRE3.SA 2008-01-01.., BHIA3.SA
+    2006-05-01.., RSID3.SA ..2026-01-21, AMER3.SA ..2024-08-14, LIGT3.SA 2008-01-01.., PDGR3.SA
+    ..2021-10-14.
+  Regime: the index's return over the 365 days before the as-of date, bull at or above +10%, bear at
+    or below -10%, flat between; index: *.SA ^BVSP, other ^GSPC.
+  Fit / held-out split: held-out = cases whose whole window (as-of date to valid_until) lies in
+    2008, 2009, 2014, 2015, 2016; fit = cases whose window touches none of those years; embargo =
+    the rest, used by neither.
+  Rules:
+  - The setups are made after the as-of day's close; the walk starts with the next daily candle
+    (that day's own candle is never used) and ends with the candle of valid_until, the horizon's
+    last close. Daily candles are used whatever the horizon's close basis.
+  - Fill: a limit order fills when the candle reaches its entry (a long's low at or below it, a
+    short's high at or above it); a stop order fills when the candle reaches its entry in the
+    order's direction (a long's high at or above it, a short's low at or below it). A touch is
+    enough. When the open is already past the entry, the order fills at the open (better than the
+    entry for a limit, worse for a stop). A market order fills at the next candle's open, not at the
+    as-of close it was priced at. An unfilled order stays in place until valid_until, even if the
+    price runs to the target first.
+  - After the fill: the stop or the target closes the setup at its price; an open past the stop or
+    the target closes it at that open (a gap through the stop can lose more than 1R). Still open
+    after the last candle: closed at that candle's close (expiry).
+  - Ordering inside a candle is unknown. On the fill candle, a level the price must have crossed
+    after the entry (the entry lies between the open and the level) is hit after the fill; any other
+    level the candle reaches may have come before it. When the candle allows more than one result
+    (stop or target, stop or still open, target or still open), the default is the pessimistic one
+    (stop first, target not yet); --optimistic takes the other. Each setup is played both ways, and
+    'ambiguous' counts those whose result differs.
+  - R = (exit - fill price) / risk for a long, (fill price - exit) / risk for a short, where risk is
+    the setup's own entry-to-stop distance. An order that never fills is 0R. A win is an exit at the
+    target.
+  Caveats:
+  - Mechanical zones and unadjusted probabilities (mechanical.py), as a live `--engine mechanical`
+    run makes them: not Claude's zones or adjustments. The inputs carry no events.
+  - No commissions, spread, slippage, borrowing costs or dividends; prices are split-adjusted and
+    not dividend-adjusted, so a short does not pay the dividend and a long does not receive it.
+  - The ordering inside a daily candle is unknown and counted pessimistically by default
+    (--optimistic gives the other bound). Touch fills are generous for limit orders.
+  - Tickers chosen today are survivors, in what was mostly a rising market for them.
+  - Cases overlap whenever the step is shorter than the horizon, the three setups of a case share
+    one price path, and tickers move together; the bootstrap resamples whole cases and still
+    understates the uncertainty.
+  - This checks the calibration of the stated odds of hypothetical setups. It is not a strategy, not
+    a claim about returns, and not advice.
+
+HORIZON 1-2w: 52060 case(s), 152855 setups, 52588 filled; exits: 11499 target, 26931 stop, 14158 expiry, 100267 unfilled
+  st = stated by the setup (mean), obs = observed. win is among filled setups; R/fill is the mean result of filled setups, R/order counts unfilled ones as 0R.
+    group                  setups  fill st/obs   win st/obs  R/fill st/obs  R/order st/obs  ambig
+    all                    152855      36%/34%      21%/22%    -0.01/-0.01     -0.01/-0.00     3%
+    by side:
+      long                  91842      37%/36%      22%/24%    +0.02/+0.02     +0.01/+0.01     3%
+      short                 61013      35%/32%      18%/19%    -0.06/-0.06     -0.02/-0.02     3%
+    by kind:
+      continuation           9581      41%/39%      13%/16%    -0.33/-0.35     -0.13/-0.13     9%
+      reversal             143274      36%/34%      21%/22%    +0.01/+0.02     +0.00/+0.01     2%
+    by side and kind:
+      long reversal         88520      36%/35%      23%/24%    +0.03/+0.04     +0.01/+0.01     3%
+      long continuation      3322      51%/48%      15%/15%    -0.26/-0.25     -0.13/-0.12     9%
+      short reversal        54754      35%/32%      19%/19%    -0.02/-0.02     -0.01/-0.01     2%
+      short continuation     6259      35%/34%      12%/16%    -0.39/-0.42     -0.13/-0.14     8%
+    by order:
+      limit                141821      35%/33%      21%/22%    +0.01/+0.02     +0.00/+0.01     2%
+      market                 1453    100%/100%      38%/38%    +0.04/-0.01     +0.04/-0.01     2%
+      stop                   9581      41%/39%      13%/16%    -0.33/-0.35     -0.13/-0.13     9%
+    by quality:
+      favourable              441      94%/95%      20%/15%    +0.20/+0.05     +0.18/+0.05     1%
+      marginal             143532      36%/34%      21%/22%    +0.01/+0.02     +0.00/+0.01     2%
+      unfavourable           8882      38%/36%      14%/17%    -0.37/-0.37     -0.14/-0.13     8%
+    by rank:
+      1                     52060      46%/44%      27%/27%    +0.03/+0.03     +0.01/+0.01     4%
+      2                     51109      29%/27%      14%/17%    -0.01/+0.02     -0.00/+0.01     2%
+      3                     49686      33%/31%      17%/19%    -0.09/-0.08     -0.03/-0.02     3%
+    by ticker:
+      AAL                    2816      37%/38%      20%/20%    -0.02/-0.11     -0.01/-0.04     3%
+      AAPL                   2117      35%/33%      20%/18%    -0.03/-0.06     -0.01/-0.02     2%
+      ABEV3.SA               1247      33%/31%      20%/22%    -0.02/+0.03     -0.01/+0.01     3%
+      AIG                    1751      36%/31%      19%/19%    -0.03/-0.06     -0.01/-0.02     2%
+      AMAR3.SA               2306      37%/39%      21%/23%    -0.00/+0.03     +0.00/+0.01     4%
+      AMER3.SA               2515      36%/36%      19%/18%    -0.01/-0.14     -0.00/-0.05     3%
+      AXIA3.SA               2898      37%/36%      22%/24%    -0.01/+0.02     -0.00/+0.01     3%
+      B3SA3.SA               1830      35%/35%      21%/25%    -0.01/+0.09     -0.00/+0.03     2%
+      BA                     2059      35%/33%      21%/19%    -0.02/-0.12     -0.01/-0.04     2%
+      BAC                    1952      35%/32%      20%/17%    -0.03/-0.10     -0.01/-0.03     1%
+      BBAS3.SA               2696      35%/34%      20%/23%    -0.01/+0.00     -0.00/+0.00     2%
+      BBDC4.SA               1831      35%/32%      21%/20%    -0.02/-0.14     -0.01/-0.04     2%
+      BEEF3.SA               2326      35%/37%      21%/23%    -0.01/-0.01     -0.00/-0.00     4%
+      BHIA3.SA               1583      37%/37%      20%/20%    -0.01/-0.02     -0.00/-0.01     3%
+      BIGGQ                  2626      36%/33%      21%/20%    -0.02/-0.03     -0.01/-0.01     3%
+      C                      2034      35%/33%      19%/19%    -0.02/-0.07     -0.01/-0.02     2%
+      CAT                    2219      34%/34%      19%/19%    -0.01/-0.04     -0.01/-0.01     2%
+      CCL                    2335      36%/34%      21%/19%    -0.02/-0.07     -0.01/-0.02     2%
+      CLF                    3285      36%/37%      19%/20%    -0.01/-0.01     -0.00/-0.00     2%
+      COGN3.SA               1746      36%/38%      21%/24%    -0.00/+0.04     -0.00/+0.01     2%
+      CSNA3.SA               3098      36%/36%      19%/20%    -0.01/-0.08     -0.00/-0.03     2%
+      CVCB3.SA               1555      36%/36%      21%/22%    -0.01/+0.01     -0.00/+0.00     3%
+      CVX                    1370      36%/33%      22%/25%    -0.03/+0.04     -0.01/+0.01     2%
+      CYRE3.SA               2321      36%/36%      20%/24%    -0.01/+0.07     -0.00/+0.03     3%
+      DIS                    1381      34%/30%      20%/22%    -0.02/+0.03     -0.01/+0.01     2%
+      ECOR3.SA               1942      35%/34%      20%/25%    -0.01/+0.01     -0.00/+0.00     3%
+      EGIE3.SA               1835      36%/31%      22%/28%    -0.02/+0.14     -0.01/+0.04     4%
+      EMBJ3.SA               2858      36%/34%      21%/25%    -0.02/+0.09     -0.00/+0.03     4%
+      F                      2520      35%/34%      19%/21%    -0.02/+0.04     -0.01/+0.01     2%
+      FMCC                   2813      42%/39%      22%/24%    -0.01/-0.03     -0.00/-0.01     6%
+      FNMA                   2925      41%/38%      22%/22%    -0.01/-0.02     -0.01/-0.01     6%
+      FRCB                    755      34%/29%      19%/21%    -0.02/+0.05     -0.01/+0.01     2%
+      GE                     1773      35%/35%      20%/22%    -0.02/-0.01     -0.01/-0.00     2%
+      GNW                    2672      36%/34%      21%/21%    -0.01/-0.01     -0.00/-0.00     3%
+      HBOR3.SA               2351      36%/37%      21%/22%    -0.00/-0.01     +0.00/-0.00     3%
+      HD                     1333      34%/33%      20%/23%    -0.02/+0.04     -0.01/+0.01     2%
+      IBM                    1134      34%/27%      21%/21%    -0.02/+0.07     -0.01/+0.02     1%
+      INTC                   2136      35%/32%      20%/19%    -0.02/-0.04     -0.01/-0.01     2%
+      IRBR3.SA               1018      36%/34%      20%/20%    -0.01/-0.08     -0.00/-0.03     2%
+      ITSA4.SA               2368      35%/31%      22%/25%    -0.01/+0.08     -0.01/+0.02     1%
+      ITUB4.SA               2416      35%/33%      21%/24%    -0.02/+0.03     -0.01/+0.01     2%
+      JNJ                     311      33%/23%      19%/23%    -0.02/+0.10     -0.01/+0.02     1%
+      JPM                    1505      36%/30%      20%/23%    -0.02/+0.09     -0.01/+0.03     2%
+      KO                      419      36%/27%      23%/22%    -0.02/+0.10     -0.01/+0.03     2%
+      KSS                    2661      36%/35%      21%/21%    -0.02/+0.02     -0.01/+0.01     3%
+      LIGT3.SA               2237      36%/37%      20%/21%    -0.01/+0.05     -0.00/+0.02     4%
+      LUMN                   2040      35%/33%      21%/22%    -0.02/+0.00     -0.01/+0.00     3%
+      M                      2828      36%/34%      20%/22%    -0.02/+0.03     -0.01/+0.01     3%
+      MBI                    2909      37%/35%      20%/20%    -0.01/-0.08     -0.01/-0.03     3%
+      MCD                     589      35%/25%      22%/27%    -0.03/+0.19     -0.01/+0.05     1%
+      MGLU3.SA               1986      38%/40%      20%/19%    -0.01/-0.13     -0.00/-0.05     3%
+      MRVE3.SA               2469      35%/35%      20%/25%    -0.01/-0.01     -0.00/-0.00     3%
+      MSFT                   1515      34%/26%      20%/22%    -0.02/+0.12     -0.01/+0.03     2%
+      NVDA                   3115      40%/42%      22%/28%    -0.00/+0.13     -0.00/+0.05     3%
+      PDGR3.SA               1823      38%/37%      20%/19%    -0.01/-0.07     -0.00/-0.02     3%
+      PETR4.SA               2716      36%/33%      20%/23%    -0.01/+0.06     -0.01/+0.02     2%
+      PFE                    1214      35%/29%      21%/21%    -0.03/+0.02     -0.01/+0.00     2%
+      PG                      396      34%/25%      21%/19%    -0.03/+0.13     -0.01/+0.03     2%
+      RADL3.SA               2206      35%/33%      21%/27%    -0.01/+0.13     -0.00/+0.04     3%
+      RENT3.SA               2683      36%/36%      21%/24%    -0.01/+0.00     -0.00/+0.00     3%
+      RSID3.SA               2903      38%/38%      21%/20%    -0.00/-0.07     -0.00/-0.03     4%
+      SBSP3.SA               2690      36%/36%      21%/23%    -0.01/-0.00     -0.00/-0.00     4%
+      SLB                    2563      35%/33%      20%/22%    -0.02/-0.05     -0.01/-0.02     2%
+      SPY                     486      33%/27%      21%/23%    -0.04/+0.03     -0.01/+0.01     1%
+      SUZB3.SA                756      36%/35%      20%/20%    -0.01/-0.05     -0.01/-0.02     2%
+      T                       934      33%/28%      19%/22%    -0.02/+0.06     -0.01/+0.02     2%
+      TCSA3.SA               2472      37%/38%      20%/21%    -0.01/-0.06     -0.00/-0.02     4%
+      USIM5.SA               3111      37%/36%      21%/20%    -0.01/-0.11     -0.00/-0.04     3%
+      VALE3.SA               2890      35%/34%      20%/19%    -0.02/-0.02     -0.01/-0.01     2%
+      VFC                    2083      36%/32%      21%/21%    -0.02/+0.03     -0.01/+0.01     2%
+      VIVT3.SA               2127      35%/30%      22%/25%    -0.02/+0.07     -0.01/+0.02     3%
+      VZ                      688      34%/26%      22%/19%    -0.02/-0.02     -0.01/-0.00     1%
+      WEGE3.SA               2145      35%/35%      20%/24%    -0.02/+0.02     -0.01/+0.01     4%
+      WMT                     731      33%/22%      22%/24%    -0.03/+0.20     -0.01/+0.04     1%
+      XOM                    1381      35%/33%      20%/21%    -0.03/-0.03     -0.01/-0.01     2%
+      XRX                    2527      36%/34%      20%/20%    -0.02/-0.09     -0.01/-0.03     2%
+  Brier, fill: 0.188 (always the observed rate 0.226); win: 0.157 (always the observed rate 0.171). 0 is perfect.
+  Bootstrap over cases, 90%: fill 34%-35%, win 22%-22%, R/fill -0.02 to +0.00, R/order -0.01 to +0.00
+  Per ticker, R/order: lowest -0.05, median +0.00, highest +0.05; positive in 40 of 76 tickers.
+  Ambiguous candles changed 3% of the setups; with the optimistic ordering R/order would be +0.05.
+  Reliability, fill:  0-10%: n 9365, 0.07->0.09  10-20%: n 27883, 0.15->0.15  20-30%: n 28883, 0.24->0.23  30-40%: n 27492, 0.34->0.31  40-50%: n 20119, 0.44->0.41  50-60%: n 17629, 0.55->0.52  60-70%: n 13932, 0.64->0.62  70-80%: n 3449, 0.73->0.72  80-90%: n 1415, 0.85->0.88  90-100%: n 2688, 0.97->0.97
+  Reliability, win if filled:  0-10%: n 15479, 0.04->0.08  10-20%: n 12021, 0.14->0.17  20-30%: n 8424, 0.24->0.25  30-40%: n 10109, 0.35->0.34  40-50%: n 6109, 0.43->0.41  50-60%: n 446, 0.51->0.48
+  R/o = R per order (st/obs) of the long, short and short continuation setups; cont fill = fill of the continuations;
+  Brier m/c = Brier score of the stated odds / of always forecasting the group's own observed rate.
+    group                  setups  fill st/obs   win st/obs  R/order st/obs     long R/o    short R/o   s.cont R/o  cont fill  Brier fill m/c  Brier win m/c
+    by year of the as-of date:
+      2005                   3528      35%/33%      20%/25%     -0.01/+0.04  +0.01/+0.08  -0.02/-0.03  -0.14/-0.16    38%/36%     0.180/0.222    0.175/0.188
+      2006                   3711      36%/34%      22%/25%     -0.00/+0.03  +0.01/+0.05  -0.02/-0.01  -0.13/-0.14    40%/37%     0.181/0.223    0.174/0.188
+      2007                   4521      34%/35%      20%/23%     -0.01/+0.01  +0.01/+0.01  -0.02/+0.01  -0.13/-0.05    37%/34%     0.190/0.227    0.168/0.176
+      2008                   7673      36%/38%      19%/22%     -0.00/-0.01  +0.01/-0.02  -0.02/+0.02  -0.12/-0.14    41%/39%     0.200/0.236    0.164/0.173
+      2009                   7526      38%/32%      23%/21%     -0.01/+0.00  +0.00/+0.06  -0.02/-0.07  -0.16/-0.19    46%/42%     0.183/0.217    0.154/0.168
+      2010                   6584      36%/34%      21%/23%     -0.00/+0.00  +0.01/+0.02  -0.02/-0.02  -0.14/-0.14    38%/31%     0.188/0.226    0.167/0.174
+      2011                   6856      36%/36%      21%/22%     -0.00/+0.01  +0.01/+0.01  -0.02/+0.00  -0.13/-0.18    39%/39%     0.189/0.231    0.162/0.174
+      2012                   6100      37%/35%      21%/23%     -0.01/+0.01  +0.01/+0.02  -0.02/+0.00  -0.13/-0.08    41%/39%     0.192/0.228    0.160/0.176
+      2013                   5691      35%/34%      21%/21%     -0.01/-0.00  +0.01/+0.02  -0.03/-0.03  -0.14/-0.20    41%/36%     0.185/0.223    0.153/0.169
+      2014                   5853      35%/36%      20%/21%     -0.00/+0.01  +0.01/+0.01  -0.02/-0.01  -0.13/-0.18    38%/39%     0.191/0.230    0.157/0.168
+      2015                   7294      36%/36%      20%/22%     -0.00/-0.01  +0.01/-0.02  -0.02/+0.01  -0.12/-0.13    38%/36%     0.191/0.229    0.161/0.172
+      2016                   7273      36%/33%      21%/22%     -0.00/-0.00  +0.01/+0.03  -0.02/-0.06  -0.14/-0.14    42%/40%     0.186/0.220    0.156/0.173
+      2017                   5873      36%/34%      21%/22%     -0.01/+0.01  +0.00/+0.02  -0.02/-0.00  -0.15/-0.10    41%/38%     0.185/0.223    0.160/0.174
+      2018                   7941      35%/35%      20%/23%     -0.00/+0.02  +0.01/+0.03  -0.02/-0.00  -0.13/-0.12    38%/36%     0.190/0.226    0.162/0.179
+      2019                   7695      36%/32%      21%/21%     -0.01/-0.00  +0.01/+0.04  -0.02/-0.06  -0.15/-0.13    42%/38%     0.183/0.217    0.152/0.167
+      2020                  10050      38%/33%      20%/20%     -0.01/-0.02  +0.00/-0.03  -0.02/-0.02  -0.14/-0.16    44%/40%     0.189/0.222    0.149/0.160
+      2021                   8767      36%/36%      21%/20%     -0.00/-0.02  +0.01/-0.02  -0.02/-0.02  -0.15/-0.23    43%/44%     0.188/0.229    0.148/0.161
+      2022                   9818      35%/36%      20%/21%     -0.00/-0.02  +0.01/-0.03  -0.02/-0.02  -0.13/-0.10    39%/42%     0.192/0.232    0.155/0.166
+      2023                   7924      36%/33%      21%/23%     -0.01/-0.01  +0.00/+0.01  -0.02/-0.04  -0.14/-0.07    42%/40%     0.183/0.222    0.157/0.176
+      2024                   7262      36%/34%      21%/21%     -0.01/+0.00  +0.00/-0.00  -0.02/+0.01  -0.13/-0.20    40%/40%     0.182/0.223    0.153/0.166
+      2025                   7558      36%/32%      21%/22%     -0.01/+0.00  +0.00/+0.02  -0.02/-0.03  -0.13/-0.11    40%/37%     0.186/0.217    0.153/0.169
+      2026                   7357      36%/37%      20%/21%     -0.01/-0.03  +0.01/-0.02  -0.02/-0.04  -0.13/-0.12    41%/39%     0.195/0.233    0.150/0.166
+    by regime: index's trailing 12-month return:
+      bull                  75607      36%/34%      21%/22%     -0.01/-0.00  +0.01/+0.01  -0.02/-0.02  -0.14/-0.15    41%/38%     0.188/0.226    0.156/0.170
+      flat                  54238      36%/34%      21%/22%     -0.00/-0.00  +0.01/+0.01  -0.02/-0.01  -0.13/-0.13    40%/38%     0.187/0.225    0.158/0.172
+      bear                  23010      37%/35%      20%/22%     -0.00/-0.00  +0.01/+0.02  -0.02/-0.04  -0.12/-0.15    41%/40%     0.192/0.228    0.160/0.172
+    by the index's move over the horizon (known only afterwards):
+      index up              89354      36%/30%      21%/24%     -0.01/+0.02  +0.01/+0.09  -0.02/-0.08  -0.14/-0.14    40%/34%     0.178/0.212    0.163/0.180
+      index down            63501      36%/40%      20%/20%     -0.00/-0.03  +0.01/-0.10  -0.02/+0.06  -0.13/-0.14    41%/45%     0.202/0.240    0.151/0.160
+    by part of the fixed fit / held-out split:
+      fit                  116855      36%/34%      21%/22%     -0.01/-0.00  +0.01/+0.01  -0.02/-0.02  -0.14/-0.14    41%/38%     0.187/0.225    0.157/0.171
+      held-out              35216      36%/35%      20%/22%     -0.00/-0.00  +0.01/+0.01  -0.02/-0.02  -0.13/-0.15    41%/39%     0.190/0.227    0.159/0.171
+      embargo                 784      36%/30%      21%/18%     -0.01/-0.01  +0.00/-0.00  -0.02/-0.02  -0.14/+0.14    45%/47%     0.184/0.209    0.128/0.148
+    by universe group:
+      all                  152855      36%/34%      21%/22%     -0.01/-0.00  +0.01/+0.01  -0.02/-0.02  -0.13/-0.14    41%/39%     0.188/0.226    0.157/0.171
+      original              22536      36%/34%      21%/23%     -0.01/+0.01  +0.01/+0.04  -0.02/-0.03  -0.14/-0.15    40%/37%     0.185/0.223    0.162/0.176
+      us-large              13318      34%/30%      20%/21%     -0.01/+0.00  +0.01/+0.02  -0.03/-0.02  -0.13/-0.08    37%/32%     0.179/0.210    0.152/0.166
+      us-fell-hard          36345      36%/34%      20%/20%     -0.01/-0.01  +0.00/-0.00  -0.02/-0.02  -0.13/-0.10    40%/39%     0.189/0.224    0.152/0.163
+      us-collapsed          11319      39%/37%      21%/22%     -0.00/-0.01  +0.00/-0.00  -0.02/-0.03  -0.14/-0.25    45%/41%     0.193/0.232    0.157/0.170
+      us-delisted            3381      36%/32%      20%/21%     -0.01/-0.00  +0.00/-0.01  -0.03/+0.00  -0.15/-0.14    44%/38%     0.185/0.219    0.152/0.163
+      br-large              26194      36%/34%      21%/24%     -0.00/+0.02  +0.01/+0.04  -0.02/-0.01  -0.14/-0.18    40%/39%     0.184/0.223    0.169/0.185
+      br-fell-hard          39762      37%/37%      20%/21%     -0.00/-0.01  +0.01/-0.01  -0.02/-0.01  -0.13/-0.18    42%/42%     0.193/0.233    0.155/0.168
+
+====================================================================================================
+SUBSET [original]: AAPL, BBDC4.SA, ITUB4.SA, JPM, KO, MSFT, NVDA, PETR4.SA, SPY, VALE3.SA, WEGE3.SA, XOM; 7740 case(s), 22536 setups. The same tables for these tickers only.
+====================================================================================================
+
+HORIZON 1-2w: 7740 case(s), 22536 setups, 7572 filled; exits: 1733 target, 3736 stop, 2103 expiry, 14964 unfilled
+  st = stated by the setup (mean), obs = observed. win is among filled setups; R/fill is the mean result of filled setups, R/order counts unfilled ones as 0R.
+    group                  setups  fill st/obs   win st/obs  R/fill st/obs  R/order st/obs  ambig
+    all                     22536      36%/34%      21%/23%    -0.02/+0.03     -0.01/+0.01     2%
+    by side:
+      long                  13680      37%/34%      23%/26%    +0.02/+0.11     +0.01/+0.04     2%
+      short                  8856      34%/32%      18%/17%    -0.07/-0.10     -0.02/-0.03     2%
+    by kind:
+      continuation           1528      40%/37%      14%/19%    -0.34/-0.29     -0.14/-0.11     7%
+      reversal              21008      36%/33%      21%/23%    +0.01/+0.05     +0.00/+0.02     2%
+    by side and kind:
+      long reversal         13196      36%/34%      23%/26%    +0.03/+0.11     +0.01/+0.04     2%
+      long continuation       484      51%/46%      17%/24%    -0.26/-0.03     -0.14/-0.01     5%
+      short reversal         7812      34%/32%      18%/18%    -0.03/-0.05     -0.01/-0.02     1%
+      short continuation     1044      35%/33%      12%/16%    -0.39/-0.45     -0.14/-0.15     7%
+    by order:
+      limit                 20749      35%/32%      21%/23%    +0.01/+0.06     +0.00/+0.02     2%
+      market                  259    100%/100%      40%/40%    +0.03/-0.02     +0.03/-0.02     2%
+      stop                   1528      40%/37%      14%/19%    -0.34/-0.29     -0.14/-0.11     7%
+    by quality:
+      favourable               54     96%/100%      25%/17%    +0.19/+0.07     +0.19/+0.07     2%
+      marginal              21033      36%/33%      21%/23%    +0.01/+0.05     +0.00/+0.02     2%
+      unfavourable           1449      38%/36%      15%/20%    -0.37/-0.28     -0.14/-0.10     6%
+    by rank:
+      1                      7740      46%/42%      27%/29%    +0.03/+0.08     +0.01/+0.04     3%
+      2                      7546      28%/26%      14%/17%    -0.01/+0.05     -0.00/+0.01     1%
+      3                      7250      33%/32%      18%/20%    -0.09/-0.07     -0.03/-0.02     2%
+    by ticker:
+      AAPL                   2117      35%/33%      20%/18%    -0.03/-0.06     -0.01/-0.02     2%
+      BBDC4.SA               1831      35%/32%      21%/20%    -0.02/-0.14     -0.01/-0.04     2%
+      ITUB4.SA               2416      35%/33%      21%/24%    -0.02/+0.03     -0.01/+0.01     2%
+      JPM                    1505      36%/30%      20%/23%    -0.02/+0.09     -0.01/+0.03     2%
+      KO                      419      36%/27%      23%/22%    -0.02/+0.10     -0.01/+0.03     2%
+      MSFT                   1515      34%/26%      20%/22%    -0.02/+0.12     -0.01/+0.03     2%
+      NVDA                   3115      40%/42%      22%/28%    -0.00/+0.13     -0.00/+0.05     3%
+      PETR4.SA               2716      36%/33%      20%/23%    -0.01/+0.06     -0.01/+0.02     2%
+      SPY                     486      33%/27%      21%/23%    -0.04/+0.03     -0.01/+0.01     1%
+      VALE3.SA               2890      35%/34%      20%/19%    -0.02/-0.02     -0.01/-0.01     2%
+      WEGE3.SA               2145      35%/35%      20%/24%    -0.02/+0.02     -0.01/+0.01     4%
+      XOM                    1381      35%/33%      20%/21%    -0.03/-0.03     -0.01/-0.01     2%
+  Brier, fill: 0.185 (always the observed rate 0.223); win: 0.162 (always the observed rate 0.176). 0 is perfect.
+  Bootstrap over cases, 90%: fill 33%-34%, win 22%-24%, R/fill +0.00 to +0.05, R/order +0.00 to +0.02
+  Per ticker, R/order: lowest -0.04, median +0.01, highest +0.05; positive in 8 of 12 tickers.
+  Ambiguous candles changed 2% of the setups; with the optimistic ordering R/order would be +0.05.
+  Reliability, fill:  0-10%: n 1353, 0.07->0.08  10-20%: n 4170, 0.15->0.14  20-30%: n 4292, 0.24->0.23  30-40%: n 4034, 0.34->0.30  40-50%: n 2972, 0.44->0.40  50-60%: n 2634, 0.55->0.51  60-70%: n 1983, 0.64->0.62  70-80%: n 503, 0.73->0.73  80-90%: n 184, 0.84->0.84  90-100%: n 411, 0.98->0.98
+  Reliability, win if filled:  0-10%: n 2230, 0.04->0.08  10-20%: n 1688, 0.14->0.19  20-30%: n 1243, 0.24->0.26  30-40%: n 1429, 0.35->0.33  40-50%: n 894, 0.43->0.44  50-60%: n 88, 0.51->0.52
+  R/o = R per order (st/obs) of the long, short and short continuation setups; cont fill = fill of the continuations;
+  Brier m/c = Brier score of the stated odds / of always forecasting the group's own observed rate.
+    group                  setups  fill st/obs   win st/obs  R/order st/obs     long R/o    short R/o   s.cont R/o  cont fill  Brier fill m/c  Brier win m/c
+    by year of the as-of date:
+      2005                    759      37%/35%      21%/26%     +0.00/+0.03  +0.01/+0.11  -0.02/-0.11  -0.14/-0.24    36%/33%     0.178/0.228    0.186/0.192
+      2006                    782      39%/40%      23%/26%     -0.01/+0.03  +0.00/+0.05  -0.02/-0.01  -0.14/-0.16    43%/41%     0.185/0.240    0.174/0.192
+      2007                    915      35%/35%      19%/22%     -0.01/+0.02  +0.01/+0.07  -0.03/-0.04  -0.13/-0.24    36%/32%     0.197/0.227    0.157/0.170
+      2008                   1491      37%/38%      20%/22%     -0.00/+0.00  +0.01/-0.00  -0.02/+0.01  -0.14/-0.20    42%/38%     0.198/0.235    0.168/0.173
+      2009                   1303      38%/31%      23%/26%     -0.00/+0.05  +0.01/+0.10  -0.02/-0.05  -0.14/-0.10    38%/36%     0.179/0.214    0.174/0.192
+      2010                    967      36%/35%      21%/24%     -0.01/+0.02  +0.01/+0.04  -0.02/-0.01  -0.13/-0.21    36%/33%     0.185/0.229    0.172/0.183
+      2011                    988      38%/37%      23%/24%     -0.00/+0.05  +0.01/+0.08  -0.02/-0.01  -0.15/-0.34    38%/41%     0.178/0.233    0.167/0.180
+      2012                    921      36%/36%      21%/27%     -0.00/+0.05  +0.01/+0.05  -0.02/+0.06  -0.13/+0.11    39%/44%     0.187/0.230    0.186/0.196
+      2013                    908      35%/35%      21%/23%     -0.00/+0.03  +0.01/+0.06  -0.02/-0.02  -0.15/-0.31    40%/37%     0.180/0.227    0.160/0.180
+      2014                    862      35%/39%      20%/26%     -0.00/+0.02  +0.01/+0.04  -0.03/-0.02  -0.12/-0.18    35%/35%     0.194/0.237    0.167/0.192
+      2015                   1082      36%/34%      21%/23%     -0.01/-0.01  +0.01/-0.03  -0.02/+0.03  -0.13/-0.09    39%/32%     0.188/0.223    0.164/0.179
+      2016                   1017      36%/31%      22%/28%     -0.00/+0.04  +0.01/+0.07  -0.02/-0.01  -0.14/-0.17    42%/34%     0.179/0.215    0.175/0.202
+      2017                    735      35%/29%      20%/21%     -0.01/+0.01  +0.01/+0.01  -0.03/+0.01  -0.15/-0.10    40%/32%     0.175/0.205    0.150/0.168
+      2018                   1105      35%/33%      19%/22%     -0.00/+0.01  +0.01/+0.06  -0.02/-0.05  -0.14/-0.13    43%/41%     0.186/0.222    0.158/0.174
+      2019                    963      35%/28%      21%/19%     -0.01/-0.01  +0.01/+0.03  -0.03/-0.07  -0.15/-0.14    39%/32%     0.176/0.200    0.140/0.153
+      2020                   1531      38%/33%      20%/19%     -0.01/-0.04  -0.00/-0.02  -0.02/-0.06  -0.15/-0.32    44%/44%     0.190/0.220    0.145/0.154
+      2021                   1196      36%/33%      20%/21%     -0.01/-0.01  +0.00/-0.01  -0.03/-0.02  -0.15/-0.04    45%/48%     0.186/0.221    0.151/0.165
+      2022                   1522      34%/35%      20%/19%     -0.00/+0.00  +0.01/+0.03  -0.02/-0.05  -0.13/+0.00    38%/43%     0.189/0.227    0.148/0.153
+      2023                    986      36%/29%      23%/30%     -0.01/+0.05  +0.00/+0.11  -0.03/-0.04  -0.14/-0.13    41%/26%     0.179/0.206    0.179/0.209
+      2024                    657      33%/30%      18%/17%     -0.01/-0.06  +0.00/-0.02  -0.03/-0.10  -0.11/-0.19    34%/41%     0.175/0.210    0.129/0.142
+      2025                    830      34%/28%      19%/19%     -0.01/-0.03  +0.00/+0.01  -0.03/-0.08  -0.13/-0.23    37%/30%     0.181/0.200    0.152/0.152
+      2026                   1016      35%/36%      19%/21%     -0.01/-0.03  +0.00/+0.01  -0.03/-0.09  -0.14/-0.03    40%/38%     0.196/0.230    0.152/0.167
+    by regime: index's trailing 12-month return:
+      bull                  10708      36%/34%      20%/22%     -0.01/-0.00  +0.01/+0.02  -0.03/-0.04  -0.14/-0.17    40%/39%     0.187/0.224    0.158/0.173
+      flat                   7979      36%/33%      22%/24%     -0.01/+0.02  +0.01/+0.05  -0.02/-0.03  -0.13/-0.14    39%/33%     0.182/0.221    0.166/0.180
+      bear                   3849      36%/34%      21%/23%     -0.00/+0.01  +0.01/+0.04  -0.02/-0.03  -0.14/-0.13    40%/42%     0.188/0.224    0.163/0.178
+    by the index's move over the horizon (known only afterwards):
+      index up              13175      36%/29%      21%/26%     -0.01/+0.03  +0.01/+0.12  -0.02/-0.10  -0.14/-0.14    40%/32%     0.174/0.206    0.172/0.193
+      index down             9361      36%/40%      20%/20%     -0.01/-0.02  +0.01/-0.08  -0.02/+0.06  -0.14/-0.17    40%/46%     0.201/0.240    0.151/0.158
+    by part of the fixed fit / held-out split:
+      fit                   16720      36%/33%      21%/22%     -0.01/+0.01  +0.01/+0.04  -0.02/-0.04  -0.14/-0.16    40%/38%     0.184/0.222    0.159/0.173
+      held-out               5694      37%/34%      21%/25%     -0.00/+0.02  +0.01/+0.03  -0.02/-0.01  -0.13/-0.15    39%/35%     0.188/0.226    0.169/0.186
+      embargo                 122      37%/33%      20%/15%     -0.01/-0.02  +0.00/-0.03  -0.03/+0.01  -0.20/+0.37    50%/50%     0.197/0.220    0.131/0.128
+
+BACKTEST of the trade setups (mechanical engine, trade_entries.py), hypothetical, for calibration
+  AAPL, MSFT, NVDA, SPY, JPM, XOM, KO, PETR4.SA, VALE3.SA, ITUB4.SA, BBDC4.SA, WEGE3.SA, JNJ, PG, WMT, HD, CVX, CAT, PFE, DIS, IBM, VZ, MCD, BAC, GE, C, AIG, INTC, BA, T, F, XRX, LUMN, KSS, M, VFC, CCL, SLB, CLF, AAL, FNMA, FMCC, MBI, GNW, FRCB, BIGGQ, ABEV3.SA, BBAS3.SA, B3SA3.SA, ITSA4.SA, SUZB3.SA, EMBJ3.SA, RADL3.SA, VIVT3.SA, SBSP3.SA, EGIE3.SA, RENT3.SA, AXIA3.SA, USIM5.SA, CSNA3.SA, MGLU3.SA, COGN3.SA, IRBR3.SA, MRVE3.SA, CYRE3.SA, BHIA3.SA, CVCB3.SA, BEEF3.SA, HBOR3.SA, RSID3.SA, AMAR3.SA, AMER3.SA, LIGT3.SA, TCSA3.SA, PDGR3.SA, ECOR3.SA; horizons 1-3m; sim method 2; ordering inside a candle: pessimistic; setup rules 8
+  1-3m: as-of dates 2005-01-03 to 2026-08-14, every 10 trading day(s)
+  34906 case(s), 104528 setups; skipped: 264 1-3m: stale quotes (over 20% of the daily candles have no range), 3178 1-3m: less history than a live run requests (5y of candles before the as-of date), 19 1-3m: a series would start at a local midnight that did not exist (DST), 1 1-3m: the zone rule found no zone on one side of the price, 2 1-3m: no daily candle after the as-of day
+  Universe backtest_universe.txt, version 1: [original] 12; [us-large] 12; [us-fell-hard] 16; [us-
+    collapsed] 4; [us-delisted] 2; [br-large] 12; [br-fell-hard] 18 (76 tickers). Yahoo serves no
+    history for most delisted or acquired symbols, so survivor bias is smaller than with today's
+    names alone, not gone (the file lists what was tried).
+  Rows used in a date range only (the others are unusable; before the range counts as no history,
+    and a setup still open at the range's end is closed at its last close): WEGE3.SA 2005-07-01..,
+    FRCB ..2023-04-28, BIGGQ ..2024-12-12, ABEV3.SA 2007-09-01.., B3SA3.SA 2011-06-01.., SUZB3.SA
+    2018-01-01.., RADL3.SA 2007-05-04.., COGN3.SA 2013-01-01.., CYRE3.SA 2008-01-01.., BHIA3.SA
+    2006-05-01.., RSID3.SA ..2026-01-21, AMER3.SA ..2024-08-14, LIGT3.SA 2008-01-01.., PDGR3.SA
+    ..2021-10-14.
+  Regime: the index's return over the 365 days before the as-of date, bull at or above +10%, bear at
+    or below -10%, flat between; index: *.SA ^BVSP, other ^GSPC.
+  Fit / held-out split: held-out = cases whose whole window (as-of date to valid_until) lies in
+    2008, 2009, 2014, 2015, 2016; fit = cases whose window touches none of those years; embargo =
+    the rest, used by neither.
+  Rules:
+  - The setups are made after the as-of day's close; the walk starts with the next daily candle
+    (that day's own candle is never used) and ends with the candle of valid_until, the horizon's
+    last close. Daily candles are used whatever the horizon's close basis.
+  - Fill: a limit order fills when the candle reaches its entry (a long's low at or below it, a
+    short's high at or above it); a stop order fills when the candle reaches its entry in the
+    order's direction (a long's high at or above it, a short's low at or below it). A touch is
+    enough. When the open is already past the entry, the order fills at the open (better than the
+    entry for a limit, worse for a stop). A market order fills at the next candle's open, not at the
+    as-of close it was priced at. An unfilled order stays in place until valid_until, even if the
+    price runs to the target first.
+  - After the fill: the stop or the target closes the setup at its price; an open past the stop or
+    the target closes it at that open (a gap through the stop can lose more than 1R). Still open
+    after the last candle: closed at that candle's close (expiry).
+  - Ordering inside a candle is unknown. On the fill candle, a level the price must have crossed
+    after the entry (the entry lies between the open and the level) is hit after the fill; any other
+    level the candle reaches may have come before it. When the candle allows more than one result
+    (stop or target, stop or still open, target or still open), the default is the pessimistic one
+    (stop first, target not yet); --optimistic takes the other. Each setup is played both ways, and
+    'ambiguous' counts those whose result differs.
+  - R = (exit - fill price) / risk for a long, (fill price - exit) / risk for a short, where risk is
+    the setup's own entry-to-stop distance. An order that never fills is 0R. A win is an exit at the
+    target.
+  Caveats:
+  - Mechanical zones and unadjusted probabilities (mechanical.py), as a live `--engine mechanical`
+    run makes them: not Claude's zones or adjustments. The inputs carry no events.
+  - No commissions, spread, slippage, borrowing costs or dividends; prices are split-adjusted and
+    not dividend-adjusted, so a short does not pay the dividend and a long does not receive it.
+  - The ordering inside a daily candle is unknown and counted pessimistically by default
+    (--optimistic gives the other bound). Touch fills are generous for limit orders.
+  - Tickers chosen today are survivors, in what was mostly a rising market for them.
+  - Cases overlap whenever the step is shorter than the horizon, the three setups of a case share
+    one price path, and tickers move together; the bootstrap resamples whole cases and still
+    understates the uncertainty.
+  - This checks the calibration of the stated odds of hypothetical setups. It is not a strategy, not
+    a claim about returns, and not advice.
+
+HORIZON 1-3m: 34906 case(s), 104528 setups, 53840 filled; exits: 16697 target, 28945 stop, 8198 expiry, 50688 unfilled
+  st = stated by the setup (mean), obs = observed. win is among filled setups; R/fill is the mean result of filled setups, R/order counts unfilled ones as 0R.
+    group                  setups  fill st/obs   win st/obs  R/fill st/obs  R/order st/obs  ambig
+    all                    104528      51%/52%      31%/31%    +0.05/+0.04     +0.03/+0.02     1%
+    by side:
+      long                  96835      52%/52%      32%/32%    +0.06/+0.05     +0.03/+0.02     1%
+      short                  7693      41%/41%      20%/20%    -0.10/-0.14     -0.04/-0.06     1%
+    by kind:
+      continuation          49361      60%/59%      33%/33%    +0.05/+0.04     +0.03/+0.02     2%
+      reversal              55167      44%/45%      28%/29%    +0.05/+0.03     +0.02/+0.01     1%
+    by side and kind:
+      long reversal         50403      44%/45%      29%/30%    +0.06/+0.05     +0.03/+0.02     1%
+      long continuation     46432      61%/61%      34%/33%    +0.06/+0.05     +0.04/+0.03     2%
+      short reversal         4764      46%/45%      21%/19%    -0.10/-0.15     -0.04/-0.07     1%
+      short continuation     2929      32%/34%      18%/22%    -0.11/-0.12     -0.03/-0.04     2%
+    by order:
+      limit                 54557      43%/44%      28%/29%    +0.05/+0.03     +0.02/+0.01     1%
+      market                  610    100%/100%      37%/35%    +0.05/-0.01     +0.05/-0.01     0%
+      stop                  49361      60%/59%      33%/33%    +0.05/+0.04     +0.03/+0.02     2%
+    by quality:
+      favourable            59383      53%/54%      30%/30%    +0.08/+0.05     +0.04/+0.03     1%
+      marginal              37555      51%/50%      35%/35%    +0.02/+0.03     +0.01/+0.02     2%
+      unfavourable           7590      40%/40%      20%/21%    -0.11/-0.13     -0.04/-0.05     1%
+    by rank:
+      1                     34906      64%/63%      31%/31%    +0.08/+0.07     +0.05/+0.04     2%
+      2                     34871      50%/51%      33%/33%    +0.05/+0.02     +0.02/+0.01     1%
+      3                     34751      39%/41%      27%/28%    +0.02/+0.00     +0.00/+0.00     1%
+    by ticker:
+      AAL                    1200      50%/50%      31%/31%    +0.03/+0.03     +0.02/+0.01     1%
+      AAPL                   1632      52%/54%      32%/44%    +0.05/+0.37     +0.03/+0.20     1%
+      ABEV3.SA               1038      50%/51%      34%/35%    +0.06/+0.03     +0.03/+0.02     2%
+      AIG                    1617      54%/51%      32%/29%    +0.05/+0.00     +0.02/+0.00     2%
+      AMAR3.SA               1029      48%/51%      25%/21%    +0.04/-0.17     +0.02/-0.09     2%
+      AMER3.SA               1047      50%/52%      26%/26%    +0.04/-0.08     +0.02/-0.04     1%
+      AXIA3.SA               1612      52%/48%      32%/34%    +0.04/+0.05     +0.02/+0.03     1%
+      B3SA3.SA                759      51%/54%      31%/29%    +0.05/-0.01     +0.02/-0.01     0%
+      BA                     1631      52%/51%      31%/34%    +0.05/+0.13     +0.03/+0.07     0%
+      BAC                    1631      52%/51%      31%/29%    +0.05/-0.02     +0.02/-0.01     1%
+      BBAS3.SA               1613      51%/50%      31%/34%    +0.04/+0.18     +0.02/+0.09     1%
+      BBDC4.SA               1009      53%/54%      32%/31%    +0.05/-0.04     +0.03/-0.02     1%
+      BEEF3.SA               1048      51%/54%      31%/27%    +0.04/-0.07     +0.02/-0.04     1%
+      BHIA3.SA                724      48%/48%      23%/23%    +0.04/-0.12     +0.02/-0.06     1%
+      BIGGQ                  1493      51%/54%      28%/30%    +0.04/+0.08     +0.02/+0.04     1%
+      C                      1624      52%/51%      31%/28%    +0.05/-0.08     +0.02/-0.04     1%
+      CAT                    1632      52%/52%      32%/34%    +0.05/+0.09     +0.03/+0.05     1%
+      CCL                    1630      50%/50%      29%/30%    +0.05/+0.09     +0.02/+0.05     0%
+      CLF                    1630      50%/50%      29%/29%    +0.03/+0.01     +0.02/+0.00     1%
+      COGN3.SA                642      50%/53%      28%/25%    +0.04/-0.07     +0.02/-0.04     1%
+      CSNA3.SA               1571      50%/52%      28%/31%    +0.04/+0.09     +0.02/+0.05     1%
+      CVCB3.SA                571      49%/52%      25%/20%    +0.04/-0.18     +0.02/-0.09     2%
+      CVX                    1630      52%/50%      33%/33%    +0.06/+0.13     +0.03/+0.06     1%
+      CYRE3.SA               1011      51%/49%      31%/33%    +0.04/+0.10     +0.02/+0.05     1%
+      DIS                    1632      52%/53%      33%/34%    +0.07/+0.07     +0.03/+0.04     1%
+      ECOR3.SA                846      50%/55%      29%/32%    +0.04/+0.04     +0.02/+0.02     2%
+      EGIE3.SA               1444      51%/54%      34%/33%    +0.06/-0.08     +0.03/-0.04     2%
+      EMBJ3.SA               1588      51%/51%      30%/31%    +0.05/+0.02     +0.03/+0.01     3%
+      F                      1631      51%/51%      31%/29%    +0.04/-0.01     +0.02/-0.00     1%
+      FMCC                   1597      50%/49%      28%/26%    +0.03/-0.03     +0.01/-0.02     6%
+      FNMA                   1546      51%/47%      26%/25%    +0.03/-0.06     +0.01/-0.03     6%
+      FRCB                    552      51%/50%      34%/30%    +0.05/-0.08     +0.03/-0.04     1%
+      GE                     1631      52%/54%      31%/28%    +0.06/-0.04     +0.03/-0.02     1%
+      GNW                    1299      51%/47%      31%/29%    +0.03/+0.01     +0.02/+0.00     2%
+      HBOR3.SA               1023      48%/50%      27%/24%    +0.04/-0.13     +0.02/-0.07     2%
+      HD                     1630      52%/54%      31%/36%    +0.06/+0.21     +0.03/+0.11     1%
+      IBM                    1628      51%/49%      33%/35%    +0.06/+0.09     +0.03/+0.05     1%
+      INTC                   1632      51%/50%      32%/32%    +0.05/-0.02     +0.03/-0.01     1%
+      IRBR3.SA                302      54%/51%      30%/36%    +0.03/+0.23     +0.01/+0.12     0%
+      ITSA4.SA               1614      52%/54%      33%/37%    +0.05/+0.07     +0.03/+0.04     1%
+      ITUB4.SA               1538      52%/51%      32%/33%    +0.05/+0.08     +0.03/+0.04     1%
+      JNJ                    1630      52%/52%      35%/37%    +0.09/+0.16     +0.05/+0.08     2%
+      JPM                    1630      52%/53%      33%/36%    +0.06/+0.15     +0.03/+0.08     1%
+      KO                     1630      53%/51%      35%/34%    +0.09/+0.09     +0.05/+0.04     1%
+      KSS                    1631      51%/50%      31%/28%    +0.04/+0.01     +0.02/+0.01     1%
+      LIGT3.SA               1011      51%/55%      28%/28%    +0.03/-0.05     +0.01/-0.03     3%
+      LUMN                   1630      50%/48%      29%/25%    +0.06/-0.16     +0.03/-0.08     2%
+      M                      1631      50%/51%      28%/26%    +0.04/-0.05     +0.02/-0.02     1%
+      MBI                    1624      52%/48%      31%/28%    +0.03/-0.01     +0.01/-0.01     2%
+      MCD                    1631      53%/53%      34%/33%    +0.08/+0.05     +0.04/+0.03     1%
+      MGLU3.SA                771      49%/49%      29%/35%    +0.03/+0.23     +0.02/+0.11     1%
+      MRVE3.SA               1047      50%/51%      31%/31%    +0.04/+0.03     +0.02/+0.01     2%
+      MSFT                   1630      52%/56%      32%/36%    +0.06/+0.17     +0.03/+0.09     1%
+      NVDA                   1628      53%/54%      32%/41%    +0.03/+0.27     +0.02/+0.15     1%
+      PDGR3.SA                719      50%/50%      21%/14%    +0.04/-0.31     +0.02/-0.15     3%
+      PETR4.SA               1579      51%/52%      30%/37%    +0.04/+0.26     +0.02/+0.13     1%
+      PFE                    1628      52%/51%      33%/30%    +0.07/-0.02     +0.03/-0.01     1%
+      PG                     1630      52%/53%      33%/29%    +0.09/-0.02     +0.05/-0.01     2%
+      RADL3.SA               1065      50%/54%      32%/34%    +0.05/+0.04     +0.03/+0.02     2%
+      RENT3.SA               1212      51%/56%      32%/33%    +0.04/+0.07     +0.02/+0.04     2%
+      RSID3.SA               1460      49%/49%      24%/21%    +0.03/-0.10     +0.02/-0.05     2%
+      SBSP3.SA               1559      51%/53%      32%/34%    +0.05/+0.07     +0.02/+0.04     2%
+      SLB                    1630      51%/50%      30%/30%    +0.05/+0.03     +0.03/+0.01     0%
+      SPY                    1631      54%/56%      33%/31%    +0.10/+0.11     +0.05/+0.06     0%
+      SUZB3.SA                273      53%/51%      34%/30%    +0.04/+0.01     +0.02/+0.01     2%
+      T                      1631      51%/51%      33%/33%    +0.08/+0.04     +0.04/+0.02     2%
+      TCSA3.SA               1073      48%/52%      25%/23%    +0.05/-0.16     +0.02/-0.08     3%
+      USIM5.SA               1581      50%/52%      27%/28%    +0.04/+0.07     +0.02/+0.04     1%
+      VALE3.SA               1613      50%/53%      30%/31%    +0.05/+0.07     +0.02/+0.03     0%
+      VFC                    1629      51%/52%      32%/31%    +0.05/+0.02     +0.03/+0.01     1%
+      VIVT3.SA               1611      51%/52%      34%/33%    +0.06/+0.01     +0.03/+0.00     3%
+      VZ                     1630      51%/50%      34%/29%    +0.07/-0.06     +0.04/-0.03     1%
+      WEGE3.SA               1203      51%/54%      33%/36%    +0.06/+0.09     +0.03/+0.05     2%
+      WMT                    1631      52%/53%      34%/34%    +0.07/+0.09     +0.04/+0.05     2%
+      XOM                    1628      52%/49%      33%/31%    +0.07/+0.01     +0.03/+0.00     1%
+      XRX                    1631      50%/51%      29%/23%    +0.05/-0.12     +0.02/-0.06     1%
+  Brier, fill: 0.211 (always the observed rate 0.250); win: 0.201 (always the observed rate 0.214). 0 is perfect.
+  Bootstrap over cases, 90%: fill 51%-52%, win 31%-31%, R/fill +0.03 to +0.05, R/order +0.01 to +0.02
+  Per ticker, R/order: lowest -0.15, median +0.01, highest +0.20; positive in 47 of 76 tickers.
+  Ambiguous candles changed 1% of the setups; with the optimistic ordering R/order would be +0.05.
+  Reliability, fill:  0-10%: n 2843, 0.07->0.12  10-20%: n 6420, 0.15->0.19  20-30%: n 8093, 0.25->0.28  30-40%: n 13440, 0.35->0.36  40-50%: n 18215, 0.45->0.44  50-60%: n 17270, 0.54->0.54  60-70%: n 14232, 0.64->0.64  70-80%: n 13337, 0.75->0.74  80-90%: n 9246, 0.83->0.82  90-100%: n 1432, 0.96->0.95
+  Reliability, win if filled:  0-10%: n 5148, 0.04->0.09  10-20%: n 6194, 0.15->0.18  20-30%: n 8906, 0.25->0.25  30-40%: n 17655, 0.35->0.34  40-50%: n 14434, 0.45->0.43  50-60%: n 1502, 0.51->0.49  60-70%: n 1, 0.60->0.00
+  R/o = R per order (st/obs) of the long, short and short continuation setups; cont fill = fill of the continuations;
+  Brier m/c = Brier score of the stated odds / of always forecasting the group's own observed rate.
+    group                  setups  fill st/obs   win st/obs  R/order st/obs     long R/o    short R/o   s.cont R/o  cont fill  Brier fill m/c  Brier win m/c
+    by year of the as-of date:
+      2005                   3715      51%/51%      32%/33%     +0.03/+0.06  +0.04/+0.06  -0.05/-0.03  -0.04/+0.01    60%/60%     0.213/0.250    0.210/0.222
+      2006                   3755      52%/52%      34%/36%     +0.04/+0.09  +0.04/+0.09  -0.05/-0.00  -0.04/-0.02    61%/66%     0.194/0.250    0.224/0.231
+      2007                   3783      50%/59%      31%/32%     +0.03/-0.01  +0.04/-0.00  -0.05/-0.07  -0.04/-0.01    58%/61%     0.230/0.242    0.214/0.218
+      2008                   3756      47%/55%      26%/24%     +0.02/-0.12  +0.03/-0.14  -0.03/+0.02  -0.03/-0.06    53%/46%     0.249/0.248    0.174/0.180
+      2009                   3809      51%/40%      30%/29%     +0.02/+0.12  +0.02/+0.14  -0.03/-0.05  -0.03/-0.00    59%/61%     0.190/0.240    0.188/0.207
+      2010                   4136      56%/49%      32%/33%     +0.02/+0.08  +0.03/+0.10  -0.04/-0.09  -0.04/-0.13    65%/62%     0.201/0.250    0.204/0.220
+      2011                   4151      52%/53%      31%/28%     +0.03/-0.06  +0.03/-0.07  -0.04/-0.03  -0.04/+0.06    60%/57%     0.212/0.249    0.192/0.200
+      2012                   4392      52%/52%      31%/30%     +0.03/+0.04  +0.03/+0.05  -0.04/-0.14  -0.04/-0.14    61%/61%     0.206/0.250    0.198/0.209
+      2013                   4975      53%/52%      33%/32%     +0.03/+0.03  +0.04/+0.04  -0.04/-0.10  -0.04/-0.12    62%/60%     0.207/0.250    0.205/0.219
+      2014                   5014      52%/55%      32%/32%     +0.03/+0.01  +0.04/+0.02  -0.05/-0.11  -0.04/-0.19    61%/61%     0.211/0.248    0.209/0.219
+      2015                   5038      50%/55%      29%/26%     +0.03/-0.09  +0.03/-0.10  -0.05/+0.08  -0.04/+0.04    58%/50%     0.235/0.248    0.181/0.190
+      2016                   5386      51%/48%      32%/35%     +0.03/+0.09  +0.03/+0.12  -0.04/-0.18  -0.04/-0.16    59%/62%     0.201/0.249    0.214/0.228
+      2017                   5417      54%/53%      33%/37%     +0.03/+0.09  +0.04/+0.11  -0.05/-0.24  -0.04/-0.13    63%/67%     0.201/0.249    0.220/0.234
+      2018                   5429      50%/54%      30%/29%     +0.03/-0.02  +0.03/-0.03  -0.04/+0.01  -0.03/+0.05    58%/58%     0.220/0.249    0.194/0.207
+      2019                   5484      52%/51%      32%/35%     +0.03/+0.06  +0.03/+0.07  -0.04/-0.03  -0.04/-0.12    60%/63%     0.202/0.250    0.216/0.229
+      2020                   5533      48%/46%      30%/28%     +0.02/-0.01  +0.02/-0.00  -0.03/-0.04  -0.03/-0.00    55%/56%     0.210/0.248    0.191/0.202
+      2021                   5509      53%/49%      31%/30%     +0.02/+0.02  +0.02/+0.02  -0.04/-0.04  -0.03/+0.02    62%/55%     0.206/0.250    0.194/0.208
+      2022                   5618      49%/52%      29%/27%     +0.02/-0.04  +0.03/-0.04  -0.04/-0.00  -0.03/-0.07    57%/52%     0.218/0.249    0.187/0.198
+      2023                   5533      52%/50%      31%/32%     +0.02/+0.05  +0.03/+0.06  -0.04/-0.10  -0.04/+0.01    61%/59%     0.213/0.250    0.203/0.217
+      2024                   5511      52%/54%      31%/29%     +0.03/-0.02  +0.03/-0.02  -0.04/-0.01  -0.03/-0.07    60%/57%     0.209/0.249    0.192/0.206
+      2025                   5357      50%/51%      32%/34%     +0.02/+0.05  +0.03/+0.06  -0.04/-0.05  -0.03/+0.01    58%/66%     0.196/0.250    0.217/0.226
+      2026                   3227      50%/55%      30%/29%     +0.02/-0.02  +0.03/-0.02  -0.04/-0.04  -0.03/+0.08    58%/58%     0.218/0.248    0.198/0.206
+    by regime: index's trailing 12-month return:
+      bull                  55929      53%/53%      32%/31%     +0.03/+0.02  +0.03/+0.02  -0.04/-0.07  -0.04/-0.03    61%/60%     0.211/0.249    0.202/0.215
+      flat                  37430      50%/50%      31%/31%     +0.03/+0.02  +0.03/+0.02  -0.04/-0.03  -0.04/-0.04    58%/58%     0.211/0.250    0.201/0.213
+      bear                  11169      48%/50%      28%/30%     +0.02/+0.03  +0.03/+0.04  -0.03/-0.08  -0.03/-0.07    56%/61%     0.207/0.250    0.197/0.210
+    by the index's move over the horizon (known only afterwards):
+      index up              70764      51%/50%      32%/36%     +0.03/+0.09  +0.03/+0.11  -0.04/-0.13  -0.04/-0.11    60%/66%     0.195/0.250    0.217/0.229
+      index down            33764      51%/55%      29%/22%     +0.03/-0.13  +0.03/-0.15  -0.04/+0.11  -0.03/+0.11    59%/46%     0.244/0.247    0.171/0.173
+    by part of the fixed fit / held-out split:
+      fit                   79414      52%/52%      31%/32%     +0.03/+0.03  +0.03/+0.03  -0.04/-0.06  -0.03/-0.03    60%/60%     0.208/0.250    0.203/0.216
+      held-out              20802      50%/52%      30%/29%     +0.03/-0.00  +0.03/+0.00  -0.04/-0.05  -0.04/-0.07    58%/56%     0.218/0.250    0.194/0.207
+      embargo                4312      53%/50%      31%/28%     +0.03/-0.01  +0.03/-0.01  -0.04/-0.04  -0.04/-0.09    61%/54%     0.224/0.250    0.193/0.201
+    by universe group:
+      all                  104528      51%/52%      31%/31%     +0.03/+0.02  +0.03/+0.02  -0.04/-0.06  -0.03/-0.04    60%/59%     0.211/0.250    0.201/0.214
+      original              18351      52%/53%      32%/35%     +0.03/+0.08  +0.04/+0.09  -0.05/-0.11  -0.04/-0.11    61%/64%     0.203/0.249    0.218/0.228
+      us-large              19563      52%/52%      33%/33%     +0.04/+0.03  +0.04/+0.04  -0.05/-0.09  -0.04/-0.06    61%/61%     0.209/0.250    0.209/0.220
+      us-fell-hard          25639      51%/51%      31%/29%     +0.02/-0.00  +0.03/-0.00  -0.04/-0.05  -0.03/-0.02    60%/58%     0.212/0.250    0.194/0.207
+      us-collapsed           6066      51%/48%      29%/27%     +0.01/-0.01  +0.02/-0.01  -0.03/-0.06  -0.03/-0.12    58%/53%     0.219/0.249    0.190/0.196
+      us-delisted            2045      51%/53%      30%/30%     +0.02/+0.02  +0.03/+0.02  -0.04/-0.02  -0.04/-0.06    59%/60%     0.219/0.249    0.194/0.209
+      br-large              15388      51%/52%      32%/34%     +0.03/+0.02  +0.03/+0.03  -0.04/-0.03  -0.03/-0.05    59%/61%     0.206/0.250    0.211/0.223
+      br-fell-hard          17476      50%/51%      27%/27%     +0.02/-0.02  +0.02/-0.02  -0.03/-0.01  -0.03/+0.05    57%/54%     0.218/0.250    0.180/0.195
+
+====================================================================================================
+SUBSET [original]: AAPL, BBDC4.SA, ITUB4.SA, JPM, KO, MSFT, NVDA, PETR4.SA, SPY, VALE3.SA, WEGE3.SA, XOM; 6124 case(s), 18351 setups. The same tables for these tickers only.
+====================================================================================================
+
+HORIZON 1-3m: 6124 case(s), 18351 setups, 9721 filled; exits: 3416 target, 4875 stop, 1430 expiry, 8630 unfilled
+  st = stated by the setup (mean), obs = observed. win is among filled setups; R/fill is the mean result of filled setups, R/order counts unfilled ones as 0R.
+    group                  setups  fill st/obs   win st/obs  R/fill st/obs  R/order st/obs  ambig
+    all                     18351      52%/53%      32%/35%    +0.06/+0.14     +0.03/+0.08     1%
+    by side:
+      long                  17153      53%/54%      33%/36%    +0.07/+0.17     +0.04/+0.09     1%
+      short                  1198      42%/42%      20%/16%    -0.11/-0.27     -0.05/-0.11     1%
+    by kind:
+      continuation           8989      61%/64%      34%/36%    +0.06/+0.15     +0.04/+0.09     1%
+      reversal               9362      44%/43%      30%/33%    +0.05/+0.14     +0.02/+0.06     1%
+    by side and kind:
+      long reversal          8613      44%/42%      31%/35%    +0.07/+0.17     +0.03/+0.07     1%
+      long continuation      8540      62%/65%      35%/37%    +0.07/+0.16     +0.04/+0.10     1%
+      short reversal          749      46%/49%      20%/17%    -0.11/-0.23     -0.05/-0.11     0%
+      short continuation      449      34%/29%      19%/15%    -0.12/-0.39     -0.04/-0.11     1%
+    by order:
+      limit                  9267      43%/42%      30%/33%    +0.05/+0.14     +0.02/+0.06     1%
+      market                   95    100%/100%      40%/39%    +0.06/+0.12     +0.06/+0.12     0%
+      stop                   8989      61%/64%      34%/36%    +0.06/+0.15     +0.04/+0.09     1%
+    by quality:
+      favourable            12071      53%/54%      32%/34%    +0.09/+0.15     +0.05/+0.08     1%
+      marginal               5078      53%/53%      37%/43%    +0.02/+0.20     +0.01/+0.11     1%
+      unfavourable           1202      41%/42%      20%/17%    -0.11/-0.26     -0.05/-0.11     1%
+    by rank:
+      1                      6124      66%/67%      33%/36%    +0.08/+0.20     +0.05/+0.14     1%
+      2                      6124      51%/51%      35%/38%    +0.06/+0.13     +0.03/+0.07     1%
+      3                      6103      40%/40%      28%/31%    +0.02/+0.06     +0.01/+0.02     1%
+    by ticker:
+      AAPL                   1632      52%/54%      32%/44%    +0.05/+0.37     +0.03/+0.20     1%
+      BBDC4.SA               1009      53%/54%      32%/31%    +0.05/-0.04     +0.03/-0.02     1%
+      ITUB4.SA               1538      52%/51%      32%/33%    +0.05/+0.08     +0.03/+0.04     1%
+      JPM                    1630      52%/53%      33%/36%    +0.06/+0.15     +0.03/+0.08     1%
+      KO                     1630      53%/51%      35%/34%    +0.09/+0.09     +0.05/+0.04     1%
+      MSFT                   1630      52%/56%      32%/36%    +0.06/+0.17     +0.03/+0.09     1%
+      NVDA                   1628      53%/54%      32%/41%    +0.03/+0.27     +0.02/+0.15     1%
+      PETR4.SA               1579      51%/52%      30%/37%    +0.04/+0.26     +0.02/+0.13     1%
+      SPY                    1631      54%/56%      33%/31%    +0.10/+0.11     +0.05/+0.06     0%
+      VALE3.SA               1613      50%/53%      30%/31%    +0.05/+0.07     +0.02/+0.03     0%
+      WEGE3.SA               1203      51%/54%      33%/36%    +0.06/+0.09     +0.03/+0.05     2%
+      XOM                    1628      52%/49%      33%/31%    +0.07/+0.01     +0.03/+0.00     1%
+  Brier, fill: 0.203 (always the observed rate 0.249); win: 0.218 (always the observed rate 0.228). 0 is perfect.
+  Bootstrap over cases, 90%: fill 52%-54%, win 34%-36%, R/fill +0.12 to +0.17, R/order +0.06 to +0.09
+  Per ticker, R/order: lowest -0.02, median +0.06, highest +0.20; positive in 11 of 12 tickers.
+  Ambiguous candles changed 1% of the setups; with the optimistic ordering R/order would be +0.09.
+  Reliability, fill:  0-10%: n 435, 0.07->0.09  10-20%: n 1003, 0.15->0.16  20-30%: n 1303, 0.25->0.25  30-40%: n 2414, 0.35->0.35  40-50%: n 3194, 0.45->0.44  50-60%: n 3086, 0.54->0.55  60-70%: n 2485, 0.64->0.63  70-80%: n 2255, 0.75->0.79  80-90%: n 1877, 0.84->0.85  90-100%: n 299, 0.95->0.94
+  Reliability, win if filled:  0-10%: n 603, 0.05->0.10  10-20%: n 936, 0.15->0.21  20-30%: n 1574, 0.25->0.29  30-40%: n 3740, 0.35->0.37  40-50%: n 2499, 0.45->0.45  50-60%: n 369, 0.51->0.51
+  R/o = R per order (st/obs) of the long, short and short continuation setups; cont fill = fill of the continuations;
+  Brier m/c = Brier score of the stated odds / of always forecasting the group's own observed rate.
+    group                  setups  fill st/obs   win st/obs  R/order st/obs     long R/o    short R/o   s.cont R/o  cont fill  Brier fill m/c  Brier win m/c
+    by year of the as-of date:
+      2005                    695      53%/52%      33%/41%     +0.04/+0.17  +0.04/+0.20  -0.05/-0.27  -0.05/-0.32    60%/69%     0.197/0.250    0.239/0.242
+      2006                    758      52%/53%      33%/35%     +0.04/+0.11  +0.04/+0.12  -0.05/-0.14  -0.04/-0.03    60%/66%     0.186/0.249    0.223/0.226
+      2007                    750      51%/60%      31%/38%     +0.04/+0.10  +0.04/+0.11  -0.04/-0.13  -0.03/-0.16    58%/69%     0.217/0.239    0.240/0.235
+      2008                    749      47%/54%      27%/24%     +0.02/-0.12  +0.03/-0.12  -0.04/-0.08  -0.03/-0.24    54%/44%     0.243/0.248    0.176/0.184
+      2009                    740      53%/42%      31%/34%     +0.02/+0.16  +0.02/+0.18  -0.03/+0.01  -0.03/-0.00    61%/64%     0.187/0.244    0.202/0.224
+      2010                    807      56%/52%      31%/32%     +0.03/+0.11  +0.03/+0.12  -0.05/-0.07  -0.06/-0.44    65%/62%     0.201/0.249    0.194/0.218
+      2011                    789      51%/51%      33%/30%     +0.03/-0.02  +0.03/-0.02  -0.05/-0.07  -0.04/+0.01    59%/52%     0.206/0.250    0.217/0.212
+      2012                    812      54%/53%      33%/29%     +0.03/+0.02  +0.04/+0.01  -0.05/+0.12  -0.05/+0.02    63%/60%     0.211/0.249    0.205/0.205
+      2013                    900      54%/56%      35%/36%     +0.04/+0.06  +0.04/+0.07  -0.05/-0.13  -0.03/-0.29    63%/63%     0.195/0.247    0.222/0.232
+      2014                    899      52%/57%      34%/35%     +0.04/-0.00  +0.04/+0.01  -0.06/-0.20  -0.04/-0.40    61%/69%     0.200/0.245    0.219/0.227
+      2015                    893      51%/52%      31%/28%     +0.03/-0.06  +0.04/-0.07  -0.05/+0.10  -0.04/+0.03    58%/47%     0.240/0.250    0.194/0.204
+      2016                    919      52%/50%      35%/45%     +0.02/+0.18  +0.03/+0.23  -0.05/-0.24  -0.05/-0.14    61%/67%     0.197/0.250    0.255/0.247
+      2017                    903      54%/55%      34%/41%     +0.04/+0.15  +0.04/+0.19  -0.06/-0.50  -0.04/-0.18    65%/77%     0.172/0.247    0.230/0.241
+      2018                    891      49%/54%      31%/31%     +0.03/+0.02  +0.04/+0.03  -0.05/-0.07  -0.04/+0.09    59%/61%     0.213/0.249    0.203/0.212
+      2019                    890      54%/53%      34%/41%     +0.03/+0.12  +0.04/+0.15  -0.05/-0.42  -0.05/-0.07    62%/68%     0.198/0.249    0.230/0.242
+      2020                    900      49%/51%      31%/36%     +0.02/+0.11  +0.03/+0.13  -0.03/-0.03  -0.02/-0.04    56%/65%     0.206/0.250    0.232/0.232
+      2021                    899      55%/53%      32%/37%     +0.02/+0.12  +0.03/+0.14  -0.04/-0.11  -0.03/-0.14    64%/69%     0.198/0.249    0.216/0.234
+      2022                    920      50%/56%      32%/32%     +0.02/+0.02  +0.03/+0.02  -0.04/+0.02  -0.04/-0.07    58%/58%     0.208/0.247    0.212/0.217
+      2023                    894      54%/50%      35%/38%     +0.03/+0.13  +0.03/+0.14  -0.05/-0.10  -0.04/-0.07    64%/63%     0.200/0.250    0.224/0.235
+      2024                    902      53%/56%      33%/37%     +0.03/+0.12  +0.04/+0.12  -0.05/+0.02  -0.04/-0.17    63%/66%     0.196/0.247    0.224/0.234
+      2025                    898      51%/52%      33%/34%     +0.03/+0.06  +0.04/+0.07  -0.05/-0.12  -0.05/+0.03    61%/68%     0.188/0.250    0.218/0.226
+      2026                    543      52%/54%      31%/36%     +0.04/+0.10  +0.04/+0.12  -0.04/-0.39  -0.03/-0.29    59%/66%     0.197/0.249    0.224/0.230
+    by regime: index's trailing 12-month return:
+      bull                   9785      54%/55%      33%/35%     +0.03/+0.08  +0.04/+0.09  -0.05/-0.19  -0.04/-0.14    62%/65%     0.201/0.248    0.217/0.228
+      flat                   6511      51%/51%      33%/35%     +0.03/+0.06  +0.03/+0.07  -0.05/-0.05  -0.04/-0.06    59%/62%     0.207/0.250    0.217/0.228
+      bear                   2055      48%/50%      31%/36%     +0.02/+0.10  +0.03/+0.12  -0.03/-0.08  -0.03/-0.16    56%/63%     0.198/0.250    0.230/0.230
+    by the index's move over the horizon (known only afterwards):
+      index up              12375      52%/51%      34%/41%     +0.03/+0.17  +0.04/+0.19  -0.05/-0.16  -0.04/-0.12    61%/71%     0.185/0.250    0.238/0.242
+      index down             5976      52%/56%      30%/24%     +0.03/-0.12  +0.03/-0.13  -0.04/+0.01  -0.04/-0.08    61%/48%     0.239/0.246    0.181/0.183
+    by part of the fixed fit / held-out split:
+      fit                   13755      53%/53%      33%/36%     +0.03/+0.09  +0.04/+0.11  -0.05/-0.13  -0.04/-0.10    61%/65%     0.199/0.249    0.221/0.230
+      held-out               3810      50%/51%      32%/33%     +0.03/+0.03  +0.03/+0.04  -0.04/-0.08  -0.04/-0.14    59%/58%     0.214/0.250    0.210/0.222
+      embargo                 786      54%/54%      31%/30%     +0.03/-0.01  +0.04/-0.01  -0.05/-0.01  -0.06/-0.16    63%/60%     0.216/0.248    0.203/0.209
+
+BACKTEST of the trade setups (mechanical engine, trade_entries.py), hypothetical, for calibration
+  AAPL, MSFT, NVDA, SPY, JPM, XOM, KO, PETR4.SA, VALE3.SA, ITUB4.SA, BBDC4.SA, WEGE3.SA, JNJ, PG, WMT, HD, CVX, CAT, PFE, DIS, IBM, VZ, MCD, BAC, GE, C, AIG, INTC, BA, T, F, XRX, LUMN, KSS, M, VFC, CCL, SLB, CLF, AAL, FNMA, FMCC, MBI, GNW, FRCB, BIGGQ, ABEV3.SA, BBAS3.SA, B3SA3.SA, ITSA4.SA, SUZB3.SA, EMBJ3.SA, RADL3.SA, VIVT3.SA, SBSP3.SA, EGIE3.SA, RENT3.SA, AXIA3.SA, USIM5.SA, CSNA3.SA, MGLU3.SA, COGN3.SA, IRBR3.SA, MRVE3.SA, CYRE3.SA, BHIA3.SA, CVCB3.SA, BEEF3.SA, HBOR3.SA, RSID3.SA, AMAR3.SA, AMER3.SA, LIGT3.SA, TCSA3.SA, PDGR3.SA, ECOR3.SA; horizons 6-12m; sim method 2; ordering inside a candle: pessimistic; setup rules 8
+  6-12m: as-of dates 2005-01-03 to 2025-11-13, every 21 trading day(s)
+  13866 case(s), 41199 setups; skipped: 3782 6-12m: less history than a live run requests (10y of candles before the as-of date), 35 6-12m: stale quotes (over 20% of the daily candles have no range), 4 6-12m: no setup passes the rules for this projection, 2 6-12m: a series would start at a local midnight that did not exist (DST)
+  Universe backtest_universe.txt, version 1: [original] 12; [us-large] 12; [us-fell-hard] 16; [us-
+    collapsed] 4; [us-delisted] 2; [br-large] 12; [br-fell-hard] 18 (76 tickers). Yahoo serves no
+    history for most delisted or acquired symbols, so survivor bias is smaller than with today's
+    names alone, not gone (the file lists what was tried).
+  Rows used in a date range only (the others are unusable; before the range counts as no history,
+    and a setup still open at the range's end is closed at its last close): WEGE3.SA 2005-07-01..,
+    FRCB ..2023-04-28, BIGGQ ..2024-12-12, ABEV3.SA 2007-09-01.., B3SA3.SA 2011-06-01.., SUZB3.SA
+    2018-01-01.., RADL3.SA 2007-05-04.., COGN3.SA 2013-01-01.., CYRE3.SA 2008-01-01.., BHIA3.SA
+    2006-05-01.., RSID3.SA ..2026-01-21, AMER3.SA ..2024-08-14, LIGT3.SA 2008-01-01.., PDGR3.SA
+    ..2021-10-14.
+  Regime: the index's return over the 365 days before the as-of date, bull at or above +10%, bear at
+    or below -10%, flat between; index: *.SA ^BVSP, other ^GSPC.
+  Fit / held-out split: held-out = cases whose whole window (as-of date to valid_until) lies in
+    2008, 2009, 2014, 2015, 2016; fit = cases whose window touches none of those years; embargo =
+    the rest, used by neither.
+  Rules:
+  - The setups are made after the as-of day's close; the walk starts with the next daily candle
+    (that day's own candle is never used) and ends with the candle of valid_until, the horizon's
+    last close. Daily candles are used whatever the horizon's close basis.
+  - Fill: a limit order fills when the candle reaches its entry (a long's low at or below it, a
+    short's high at or above it); a stop order fills when the candle reaches its entry in the
+    order's direction (a long's high at or above it, a short's low at or below it). A touch is
+    enough. When the open is already past the entry, the order fills at the open (better than the
+    entry for a limit, worse for a stop). A market order fills at the next candle's open, not at the
+    as-of close it was priced at. An unfilled order stays in place until valid_until, even if the
+    price runs to the target first.
+  - After the fill: the stop or the target closes the setup at its price; an open past the stop or
+    the target closes it at that open (a gap through the stop can lose more than 1R). Still open
+    after the last candle: closed at that candle's close (expiry).
+  - Ordering inside a candle is unknown. On the fill candle, a level the price must have crossed
+    after the entry (the entry lies between the open and the level) is hit after the fill; any other
+    level the candle reaches may have come before it. When the candle allows more than one result
+    (stop or target, stop or still open, target or still open), the default is the pessimistic one
+    (stop first, target not yet); --optimistic takes the other. Each setup is played both ways, and
+    'ambiguous' counts those whose result differs.
+  - R = (exit - fill price) / risk for a long, (fill price - exit) / risk for a short, where risk is
+    the setup's own entry-to-stop distance. An order that never fills is 0R. A win is an exit at the
+    target.
+  Caveats:
+  - Mechanical zones and unadjusted probabilities (mechanical.py), as a live `--engine mechanical`
+    run makes them: not Claude's zones or adjustments. The inputs carry no events.
+  - No commissions, spread, slippage, borrowing costs or dividends; prices are split-adjusted and
+    not dividend-adjusted, so a short does not pay the dividend and a long does not receive it.
+  - The ordering inside a daily candle is unknown and counted pessimistically by default
+    (--optimistic gives the other bound). Touch fills are generous for limit orders.
+  - Tickers chosen today are survivors, in what was mostly a rising market for them.
+  - Cases overlap whenever the step is shorter than the horizon, the three setups of a case share
+    one price path, and tickers move together; the bootstrap resamples whole cases and still
+    understates the uncertainty.
+  - This checks the calibration of the stated odds of hypothetical setups. It is not a strategy, not
+    a claim about returns, and not advice.
+
+HORIZON 6-12m: 13866 case(s), 41199 setups, 22673 filled; exits: 7957 target, 11708 stop, 3008 expiry, 18526 unfilled
+  st = stated by the setup (mean), obs = observed. win is among filled setups; R/fill is the mean result of filled setups, R/order counts unfilled ones as 0R.
+    group                  setups  fill st/obs   win st/obs  R/fill st/obs  R/order st/obs  ambig
+    all                     41199      53%/55%      34%/35%    +0.12/+0.11     +0.06/+0.06     0%
+    by side:
+      long                  36353      53%/56%      35%/37%    +0.13/+0.14     +0.07/+0.08     0%
+      short                  4846      46%/46%      20%/21%    -0.04/-0.14     -0.02/-0.06     1%
+    by kind:
+      continuation          25033      58%/60%      36%/35%    +0.15/+0.10     +0.08/+0.06     1%
+      reversal              16166      44%/47%      30%/35%    +0.05/+0.12     +0.02/+0.06     0%
+    by side and kind:
+      long reversal         15024      45%/47%      31%/36%    +0.07/+0.14     +0.03/+0.07     0%
+      long continuation     21329      60%/63%      38%/37%    +0.17/+0.13     +0.10/+0.08     0%
+      short reversal         1142      43%/45%      23%/22%    -0.13/-0.13     -0.05/-0.06     0%
+      short continuation     3704      48%/47%      19%/21%    -0.02/-0.14     -0.01/-0.07     1%
+    by order:
+      limit                 15929      44%/46%      30%/35%    +0.05/+0.13     +0.02/+0.06     0%
+      market                  237    100%/100%      39%/37%    +0.10/+0.11     +0.10/+0.11     0%
+      stop                  25033      58%/60%      36%/35%    +0.15/+0.10     +0.08/+0.06     1%
+    by quality:
+      favourable             1101      56%/56%      16%/11%    +0.38/+0.01     +0.22/+0.01     1%
+      marginal              40093      52%/55%      34%/36%    +0.11/+0.11     +0.06/+0.06     0%
+      unfavourable              5      66%/80%        0%/0%    -0.35/-0.86     -0.23/-0.69    20%
+    by rank:
+      1                     13866      67%/69%      36%/35%    +0.17/+0.15     +0.12/+0.10     0%
+      2                     13743      49%/52%      37%/38%    +0.11/+0.10     +0.05/+0.05     0%
+      3                     13590      41%/44%      27%/32%    +0.03/+0.06     +0.01/+0.03     0%
+    by ticker:
+      AAL                     366      54%/59%      34%/30%    +0.07/-0.08     +0.04/-0.05     0%
+      AAPL                    753      52%/61%      36%/50%    +0.13/+0.58     +0.06/+0.35     0%
+      ABEV3.SA                293      48%/53%      38%/35%    +0.11/-0.09     +0.06/-0.05     0%
+      AIG                     698      60%/47%      27%/23%    +0.12/-0.09     +0.07/-0.04     0%
+      AMAR3.SA                282      52%/51%      21%/21%    +0.05/+0.00     +0.03/+0.00     0%
+      AMER3.SA                304      52%/55%      30%/37%    +0.07/+0.11     +0.04/+0.06     0%
+      AXIA3.SA                564      51%/49%      31%/36%    +0.08/+0.20     +0.04/+0.10     0%
+      B3SA3.SA                159      50%/53%      34%/40%    +0.09/+0.14     +0.05/+0.08     0%
+      BA                      753      54%/54%      35%/43%    +0.12/+0.38     +0.06/+0.21     0%
+      BAC                     750      54%/50%      32%/27%    +0.11/+0.20     +0.07/+0.10     0%
+      BBAS3.SA                561      53%/50%      36%/33%    +0.07/-0.03     +0.04/-0.01     0%
+      BBDC4.SA                279      49%/48%      37%/29%    +0.08/-0.19     +0.04/-0.09     0%
+      BEEF3.SA                293      50%/53%      34%/42%    +0.05/+0.14     +0.03/+0.07     0%
+      BHIA3.SA                305      55%/50%      26%/37%    +0.05/+0.13     +0.03/+0.07     0%
+      BIGGQ                   708      53%/60%      31%/29%    +0.08/-0.07     +0.04/-0.04     0%
+      C                       734      57%/52%      29%/25%    +0.11/-0.08     +0.06/-0.04     0%
+      CAT                     752      55%/61%      36%/45%    +0.12/+0.43     +0.06/+0.26     0%
+      CCL                     752      52%/48%      33%/24%    +0.08/-0.17     +0.04/-0.08     0%
+      CLF                     748      53%/55%      29%/32%    +0.07/+0.12     +0.04/+0.07     0%
+      COGN3.SA                102      48%/56%      23%/42%    +0.11/+0.96     +0.04/+0.53     0%
+      CSNA3.SA                555      52%/54%      30%/31%    +0.06/+0.04     +0.04/+0.02     0%
+      CVCB3.SA                 69      46%/45%       19%/6%    +0.08/-0.75     +0.04/-0.34     0%
+      CVX                     753      52%/53%      36%/40%    +0.15/+0.13     +0.07/+0.07     0%
+      CYRE3.SA                278      51%/52%      36%/41%    +0.08/+0.28     +0.04/+0.14     0%
+      DIS                     752      52%/55%      36%/43%    +0.14/+0.26     +0.07/+0.14     0%
+      ECOR3.SA                196      47%/39%      36%/26%    +0.07/-0.24     +0.03/-0.10     0%
+      EGIE3.SA                489      53%/55%      40%/41%    +0.15/+0.16     +0.08/+0.09     0%
+      EMBJ3.SA                558      51%/56%      35%/44%    +0.10/+0.19     +0.04/+0.11     1%
+      F                       739      54%/54%      35%/37%    +0.07/+0.09     +0.04/+0.05     0%
+      FMCC                    678      57%/58%      29%/29%    +0.08/+0.35     +0.04/+0.20     3%
+      FNMA                    680      54%/59%      27%/23%    +0.07/-0.14     +0.04/-0.08     4%
+      FRCB                     87      42%/49%      22%/19%    +0.12/-0.18     +0.06/-0.09     0%
+      GE                      752      53%/56%      31%/34%    +0.12/+0.13     +0.07/+0.07     0%
+      GNW                     413      52%/42%      27%/18%    +0.10/-0.24     +0.05/-0.10     0%
+      HBOR3.SA                288      49%/58%      26%/33%    +0.07/+0.12     +0.03/+0.07     1%
+      HD                      753      53%/63%      36%/40%    +0.15/+0.19     +0.08/+0.12     0%
+      IBM                     752      51%/55%      38%/34%    +0.14/-0.03     +0.07/-0.02     0%
+      INTC                    753      53%/57%      38%/39%    +0.11/+0.03     +0.06/+0.02     0%
+      ITSA4.SA                564      53%/50%      39%/38%    +0.11/-0.00     +0.05/-0.00     0%
+      ITUB4.SA                529      53%/50%      39%/35%    +0.11/-0.02     +0.05/-0.01     0%
+      JNJ                     753      53%/56%      39%/33%    +0.21/-0.08     +0.11/-0.04     1%
+      JPM                     750      55%/59%      37%/41%    +0.12/+0.21     +0.06/+0.13     1%
+      KO                      752      54%/55%      41%/40%    +0.20/+0.19     +0.10/+0.11     0%
+      KSS                     747      51%/53%      34%/35%    +0.07/-0.12     +0.03/-0.06     0%
+      LIGT3.SA                275      48%/59%      26%/23%    +0.04/-0.29     +0.02/-0.17     2%
+      LUMN                    749      51%/60%      27%/25%    +0.10/+0.04     +0.06/+0.02     3%
+      M                       752      52%/57%      34%/33%    +0.09/-0.01     +0.04/-0.01     0%
+      MBI                     735      55%/58%      33%/30%    +0.07/-0.19     +0.04/-0.11     1%
+      MCD                     753      54%/57%      39%/42%    +0.20/+0.25     +0.10/+0.14     1%
+      MGLU3.SA                140      49%/36%      27%/28%    +0.06/-0.09     +0.05/-0.03     0%
+      MRVE3.SA                297      50%/53%      35%/29%    +0.06/-0.12     +0.03/-0.07     0%
+      MSFT                    752      54%/61%      36%/46%    +0.15/+0.40     +0.08/+0.24     0%
+      NVDA                    606      54%/64%      34%/49%    +0.11/+0.64     +0.05/+0.41     0%
+      PDGR3.SA                142      57%/54%      23%/18%    +0.07/-0.31     +0.06/-0.17     1%
+      PETR4.SA                554      52%/52%      35%/36%    +0.08/+0.08     +0.04/+0.04     0%
+      PFE                     753      51%/58%      35%/31%    +0.15/-0.04     +0.08/-0.02     1%
+      PG                      753      54%/56%      39%/37%    +0.20/+0.11     +0.11/+0.06     2%
+      RADL3.SA                306      50%/56%      36%/40%    +0.12/+0.18     +0.06/+0.10     0%
+      RENT3.SA                372      49%/57%      34%/50%    +0.10/+0.44     +0.04/+0.25     0%
+      RSID3.SA                513      57%/58%      24%/22%    +0.07/-0.05     +0.04/-0.03     1%
+      SBSP3.SA                564      52%/53%      34%/38%    +0.12/+0.26     +0.06/+0.14     0%
+      SLB                     753      53%/53%      34%/35%    +0.10/+0.17     +0.05/+0.09     0%
+      SPY                     752      54%/63%      36%/35%    +0.25/+0.32     +0.13/+0.20     1%
+      T                       753      52%/56%      35%/39%    +0.15/+0.20     +0.09/+0.11     0%
+      TCSA3.SA                315      48%/50%      22%/23%    +0.07/-0.13     +0.04/-0.07     0%
+      USIM5.SA                558      53%/57%      30%/26%    +0.07/-0.12     +0.04/-0.07     0%
+      VALE3.SA                564      49%/51%      31%/34%    +0.10/+0.08     +0.05/+0.04     0%
+      VFC                     753      51%/59%      32%/33%    +0.15/+0.03     +0.08/+0.02     0%
+      VIVT3.SA                563      50%/53%      37%/41%    +0.13/+0.15     +0.07/+0.08     1%
+      VZ                      753      51%/54%      39%/37%    +0.14/+0.10     +0.08/+0.05     0%
+      WEGE3.SA                369      50%/55%      34%/47%    +0.14/+0.45     +0.06/+0.24     0%
+      WMT                     751      53%/57%      38%/40%    +0.17/+0.17     +0.09/+0.09     1%
+      XOM                     752      50%/54%      36%/41%    +0.14/+0.19     +0.07/+0.10     0%
+      XRX                     751      51%/50%      30%/23%    +0.10/-0.09     +0.05/-0.04     1%
+  Brier, fill: 0.211 (always the observed rate 0.247); win: 0.214 (always the observed rate 0.228). 0 is perfect.
+  Bootstrap over cases, 90%: fill 55%-55%, win 35%-36%, R/fill +0.09 to +0.12, R/order +0.05 to +0.07
+  Per ticker, R/order: lowest -0.34, median +0.05, highest +0.53; positive in 45 of 74 tickers.
+  Ambiguous candles changed 0% of the setups; with the optimistic ordering R/order would be +0.07.
+  Reliability, fill:  0-10%: n 813, 0.07->0.14  10-20%: n 2094, 0.15->0.23  20-30%: n 3370, 0.25->0.29  30-40%: n 5645, 0.35->0.38  40-50%: n 6684, 0.45->0.49  50-60%: n 6402, 0.54->0.57  60-70%: n 5645, 0.64->0.64  70-80%: n 5755, 0.75->0.75  80-90%: n 4042, 0.84->0.84  90-100%: n 749, 0.95->0.94
+  Reliability, win if filled:  0-10%: n 2255, 0.04->0.10  10-20%: n 2007, 0.15->0.20  20-30%: n 2475, 0.25->0.27  30-40%: n 6026, 0.36->0.35  40-50%: n 7793, 0.44->0.45  50-60%: n 2117, 0.52->0.50
+  R/o = R per order (st/obs) of the long, short and short continuation setups; cont fill = fill of the continuations;
+  Brier m/c = Brier score of the stated odds / of always forecasting the group's own observed rate.
+    group                  setups  fill st/obs   win st/obs  R/order st/obs     long R/o    short R/o   s.cont R/o  cont fill  Brier fill m/c  Brier win m/c
+    by year of the as-of date:
+      2005                   1330      58%/52%      38%/39%     +0.08/+0.08  +0.09/+0.09  -0.03/-0.11  -0.02/-0.19    66%/61%     0.204/0.250    0.223/0.237
+      2006                   1331      59%/57%      38%/43%     +0.09/+0.24  +0.10/+0.27  -0.04/-0.16  -0.03/-0.20    66%/78%     0.177/0.245    0.224/0.244
+      2007                   1332      58%/68%      35%/29%     +0.09/-0.11  +0.10/-0.11  -0.05/-0.12  -0.03/-0.09    66%/61%     0.244/0.218    0.203/0.208
+      2008                   1309      51%/68%      29%/24%     +0.06/-0.18  +0.08/-0.22  -0.03/+0.19  -0.02/+0.19    55%/48%     0.277/0.218    0.204/0.185
+      2009                   1286      49%/51%      32%/40%     +0.05/+0.15  +0.06/+0.21  -0.02/-0.18  -0.01/-0.16    55%/69%     0.208/0.250    0.219/0.239
+      2010                   1685      50%/47%      33%/34%     +0.05/+0.09  +0.06/+0.10  -0.02/-0.00  -0.01/-0.10    56%/60%     0.184/0.249    0.200/0.225
+      2011                   1776      54%/51%      34%/34%     +0.06/+0.03  +0.07/+0.06  -0.02/-0.13  -0.01/-0.07    59%/55%     0.196/0.250    0.199/0.224
+      2012                   1771      56%/52%      35%/36%     +0.07/+0.12  +0.08/+0.14  -0.02/-0.08  -0.00/-0.05    61%/61%     0.183/0.249    0.203/0.230
+      2013                   1805      56%/54%      35%/39%     +0.08/+0.18  +0.09/+0.22  -0.02/-0.17  -0.01/-0.14    62%/66%     0.186/0.248    0.219/0.238
+      2014                   1839      56%/60%      34%/30%     +0.08/-0.05  +0.09/-0.07  -0.03/+0.08  -0.01/+0.13    62%/62%     0.212/0.240    0.197/0.211
+      2015                   1943      54%/61%      32%/31%     +0.07/-0.01  +0.08/+0.01  -0.03/-0.22  -0.01/-0.28    59%/56%     0.235/0.237    0.216/0.212
+      2016                   1958      52%/50%      36%/43%     +0.06/+0.20  +0.07/+0.25  -0.02/-0.17  -0.01/-0.18    58%/64%     0.201/0.250    0.228/0.245
+      2017                   2218      54%/55%      37%/43%     +0.07/+0.16  +0.08/+0.19  -0.02/-0.10  -0.01/-0.09    61%/67%     0.198/0.247    0.230/0.244
+      2018                   2380      53%/58%      35%/33%     +0.06/-0.01  +0.07/+0.01  -0.02/-0.15  -0.01/-0.18    59%/60%     0.223/0.243    0.220/0.222
+      2019                   2434      51%/66%      32%/34%     +0.06/-0.03  +0.07/-0.05  -0.01/+0.12  -0.01/+0.13    55%/64%     0.241/0.223    0.220/0.223
+      2020                   2463      49%/54%      33%/39%     +0.05/+0.12  +0.06/+0.14  -0.01/+0.04  -0.00/+0.03    52%/62%     0.224/0.248    0.240/0.239
+      2021                   2545      49%/47%      31%/25%     +0.04/-0.02  +0.05/-0.04  -0.02/+0.05  -0.01/+0.07    54%/46%     0.221/0.249    0.177/0.188
+      2022                   2529      50%/51%      30%/28%     +0.05/-0.02  +0.06/-0.02  -0.01/+0.01  -0.00/+0.02    54%/49%     0.214/0.250    0.197/0.199
+      2023                   2484      51%/48%      33%/37%     +0.05/+0.10  +0.06/+0.14  -0.01/-0.13  -0.00/-0.10    54%/57%     0.204/0.250    0.215/0.234
+      2024                   2546      53%/54%      33%/34%     +0.05/+0.06  +0.06/+0.09  -0.01/-0.10  -0.00/-0.15    56%/58%     0.206/0.249    0.213/0.225
+      2025                   2235      53%/58%      36%/46%     +0.05/+0.16  +0.06/+0.20  -0.01/-0.12  -0.01/-0.09    56%/70%     0.201/0.244    0.234/0.249
+    by regime: index's trailing 12-month return:
+      bull                  21768      53%/55%      34%/35%     +0.06/+0.06  +0.07/+0.07  -0.02/-0.06  -0.01/-0.07    59%/60%     0.209/0.248    0.212/0.227
+      flat                  15390      52%/55%      34%/35%     +0.06/+0.06  +0.07/+0.08  -0.02/-0.07  -0.01/-0.06    57%/60%     0.213/0.248    0.216/0.229
+      bear                   4041      49%/56%      31%/35%     +0.05/+0.06  +0.06/+0.08  -0.02/-0.06  -0.01/-0.05    53%/62%     0.219/0.246    0.216/0.228
+    by the index's move over the horizon (known only afterwards):
+      index up              31816      53%/54%      34%/38%     +0.06/+0.10  +0.07/+0.13  -0.02/-0.10  -0.01/-0.10    58%/63%     0.204/0.248    0.221/0.235
+      index down             9383      52%/58%      31%/27%     +0.06/-0.08  +0.07/-0.10  -0.02/+0.08  -0.01/+0.07    57%/50%     0.238/0.244    0.192/0.195
+    by part of the fixed fit / held-out split:
+      fit                   29988      52%/54%      34%/36%     +0.06/+0.07  +0.07/+0.09  -0.02/-0.05  -0.01/-0.06    57%/60%     0.208/0.249    0.214/0.230
+      held-out               5321      54%/62%      32%/29%     +0.07/-0.06  +0.08/-0.06  -0.03/-0.04  -0.01/-0.05    59%/57%     0.236/0.235    0.208/0.207
+      embargo                5890      54%/55%      35%/38%     +0.07/+0.11  +0.08/+0.14  -0.02/-0.16  -0.01/-0.15    60%/65%     0.208/0.248    0.217/0.235
+    by universe group:
+      all                   41199      53%/55%      34%/35%     +0.06/+0.06  +0.07/+0.08  -0.02/-0.06  -0.01/-0.07    58%/60%     0.211/0.247    0.214/0.228
+      original               7412      53%/57%      36%/41%     +0.07/+0.16  +0.08/+0.18  -0.03/-0.07  -0.02/-0.09    59%/67%     0.204/0.245    0.238/0.242
+      us-large               9028      53%/56%      37%/38%     +0.08/+0.08  +0.09/+0.10  -0.04/-0.13  -0.03/-0.15    61%/65%     0.202/0.246    0.227/0.234
+      us-fell-hard          11553      53%/54%      32%/32%     +0.06/+0.02  +0.07/+0.03  -0.02/-0.06  -0.01/-0.04    58%/57%     0.223/0.248    0.202/0.218
+      us-collapsed           2506      55%/55%      29%/26%     +0.04/-0.02  +0.06/+0.00  -0.00/-0.09  +0.01/-0.10    57%/57%     0.214/0.247    0.183/0.194
+      us-delisted             795      52%/59%      30%/28%     +0.04/-0.05  +0.05/-0.06  -0.01/+0.01  -0.00/+0.03    55%/60%     0.219/0.243    0.193/0.201
+      br-large               4993      51%/53%      36%/39%     +0.05/+0.08  +0.06/+0.09  -0.02/-0.09  -0.01/-0.13    56%/61%     0.204/0.249    0.230/0.239
+      br-fell-hard           4912      52%/53%      28%/29%     +0.04/-0.01  +0.05/-0.01  -0.00/-0.00  +0.00/-0.01    52%/51%     0.218/0.249    0.183/0.207
+
+====================================================================================================
+SUBSET [original]: AAPL, BBDC4.SA, ITUB4.SA, JPM, KO, MSFT, NVDA, PETR4.SA, SPY, VALE3.SA, WEGE3.SA, XOM; 2474 case(s), 7412 setups. The same tables for these tickers only.
+====================================================================================================
+
+HORIZON 6-12m: 2474 case(s), 7412 setups, 4215 filled; exits: 1735 target, 1963 stop, 517 expiry, 3197 unfilled
+  st = stated by the setup (mean), obs = observed. win is among filled setups; R/fill is the mean result of filled setups, R/order counts unfilled ones as 0R.
+    group                  setups  fill st/obs   win st/obs  R/fill st/obs  R/order st/obs  ambig
+    all                      7412      53%/57%      36%/41%    +0.14/+0.29     +0.07/+0.16     0%
+    by side:
+      long                   6802      53%/58%      37%/42%    +0.16/+0.31     +0.08/+0.18     0%
+      short                   610      42%/39%      20%/23%    -0.10/-0.19     -0.03/-0.07     1%
+    by kind:
+      continuation           4458      59%/67%      38%/41%    +0.17/+0.28     +0.10/+0.19     0%
+      reversal               2954      43%/42%      31%/40%    +0.07/+0.29     +0.03/+0.12     0%
+    by side and kind:
+      long reversal          2781      43%/41%      32%/42%    +0.09/+0.32     +0.03/+0.13     0%
+      long continuation      4021      61%/70%      39%/42%    +0.18/+0.31     +0.11/+0.22     0%
+      short reversal          173      43%/56%      20%/23%    -0.16/-0.04     -0.07/-0.02     0%
+      short continuation      437      41%/32%      20%/23%    -0.06/-0.29     -0.02/-0.09     1%
+    by order:
+      limit                  2916      42%/42%      31%/40%    +0.06/+0.29     +0.03/+0.12     0%
+      market                   38    100%/100%      42%/42%    +0.16/+0.26     +0.16/+0.26     0%
+      stop                   4458      59%/67%      38%/41%    +0.17/+0.28     +0.10/+0.19     0%
+    by quality:
+      favourable              173      74%/76%      27%/21%    +0.44/+0.41     +0.32/+0.31     1%
+      marginal               7235      52%/56%      36%/42%    +0.13/+0.28     +0.07/+0.16     0%
+      unfavourable              4      65%/75%        0%/0%    -0.36/-0.81     -0.23/-0.61    25%
+    by rank:
+      1                      2474      71%/78%      38%/42%    +0.19/+0.35     +0.13/+0.27     0%
+      2                      2474      47%/54%      39%/42%    +0.14/+0.25     +0.06/+0.13     0%
+      3                      2464      39%/39%      29%/37%    +0.05/+0.22     +0.02/+0.09     0%
+    by ticker:
+      AAPL                    753      52%/61%      36%/50%    +0.13/+0.58     +0.06/+0.35     0%
+      BBDC4.SA                279      49%/48%      37%/29%    +0.08/-0.19     +0.04/-0.09     0%
+      ITUB4.SA                529      53%/50%      39%/35%    +0.11/-0.02     +0.05/-0.01     0%
+      JPM                     750      55%/59%      37%/41%    +0.12/+0.21     +0.06/+0.13     1%
+      KO                      752      54%/55%      41%/40%    +0.20/+0.19     +0.10/+0.11     0%
+      MSFT                    752      54%/61%      36%/46%    +0.15/+0.40     +0.08/+0.24     0%
+      NVDA                    606      54%/64%      34%/49%    +0.11/+0.64     +0.05/+0.41     0%
+      PETR4.SA                554      52%/52%      35%/36%    +0.08/+0.08     +0.04/+0.04     0%
+      SPY                     752      54%/63%      36%/35%    +0.25/+0.32     +0.13/+0.20     1%
+      VALE3.SA                564      49%/51%      31%/34%    +0.10/+0.08     +0.05/+0.04     0%
+      WEGE3.SA                369      50%/55%      34%/47%    +0.14/+0.45     +0.06/+0.24     0%
+      XOM                     752      50%/54%      36%/41%    +0.14/+0.19     +0.07/+0.10     0%
+  Brier, fill: 0.204 (always the observed rate 0.245); win: 0.238 (always the observed rate 0.242). 0 is perfect.
+  Bootstrap over cases, 90%: fill 56%-58%, win 40%-42%, R/fill +0.25 to +0.32, R/order +0.14 to +0.18
+  Per ticker, R/order: lowest -0.09, median +0.12, highest +0.41; positive in 10 of 12 tickers.
+  Ambiguous candles changed 0% of the setups; with the optimistic ordering R/order would be +0.16.
+  Reliability, fill:  0-10%: n 174, 0.07->0.14  10-20%: n 379, 0.15->0.23  20-30%: n 574, 0.25->0.29  30-40%: n 1043, 0.35->0.39  40-50%: n 1249, 0.45->0.51  50-60%: n 1163, 0.54->0.58  60-70%: n 937, 0.64->0.65  70-80%: n 901, 0.75->0.81  80-90%: n 806, 0.84->0.87  90-100%: n 186, 0.94->0.97
+  Reliability, win if filled:  0-10%: n 226, 0.05->0.19  10-20%: n 304, 0.15->0.29  20-30%: n 373, 0.25->0.30  30-40%: n 1404, 0.36->0.41  40-50%: n 1524, 0.44->0.47  50-60%: n 384, 0.52->0.56
+  R/o = R per order (st/obs) of the long, short and short continuation setups; cont fill = fill of the continuations;
+  Brier m/c = Brier score of the stated odds / of always forecasting the group's own observed rate.
+    group                  setups  fill st/obs   win st/obs  R/order st/obs     long R/o    short R/o   s.cont R/o  cont fill  Brier fill m/c  Brier win m/c
+    by year of the as-of date:
+      2005                    216      58%/53%      37%/50%     +0.11/+0.26  +0.12/+0.30  -0.04/-0.29  -0.03/-0.25    68%/71%     0.156/0.249    0.232/0.250
+      2006                    216      58%/60%      36%/45%     +0.11/+0.36  +0.12/+0.39  -0.04/-0.24  -0.02/-0.29    67%/91%     0.159/0.240    0.218/0.248
+      2007                    216      58%/72%      37%/37%     +0.12/+0.03  +0.12/+0.04  -0.02/-0.50  -0.02/-0.50    68%/78%     0.198/0.201    0.220/0.232
+      2008                    215      53%/68%      32%/21%     +0.07/-0.18  +0.09/-0.20  -0.04/-0.04  -0.03/-0.10    59%/45%     0.280/0.218    0.205/0.167
+      2009                    249      47%/48%      38%/48%     +0.04/+0.25  +0.05/+0.31  -0.02/-0.05  -0.01/-0.13    52%/59%     0.202/0.249    0.264/0.250
+      2010                    326      51%/49%      37%/45%     +0.05/+0.24  +0.06/+0.26  -0.03/+0.10  -0.02/-0.11    56%/56%     0.190/0.250    0.236/0.247
+      2011                    350      54%/50%      37%/32%     +0.06/-0.03  +0.07/-0.00  -0.04/-0.25  -0.02/-0.08    61%/51%     0.204/0.250    0.225/0.217
+      2012                    349      55%/49%      39%/37%     +0.07/+0.04  +0.08/+0.06  -0.02/-0.17  -0.01/-0.06    62%/55%     0.184/0.250    0.220/0.234
+      2013                    360      53%/53%      38%/32%     +0.08/+0.07  +0.09/+0.09  -0.02/-0.35  -0.01/-0.39    60%/70%     0.168/0.249    0.216/0.217
+      2014                    360      55%/65%      34%/35%     +0.08/+0.04  +0.09/+0.02  -0.07/+0.25  -0.02/+0.04    62%/70%     0.230/0.227    0.213/0.228
+      2015                    378      52%/60%      32%/37%     +0.08/+0.19  +0.09/+0.21  -0.07/-0.11  -0.03/-0.38    57%/56%     0.245/0.239    0.258/0.234
+      2016                    386      52%/54%      38%/57%     +0.07/+0.44  +0.08/+0.48  -0.03/-0.06  -0.02/-0.10    57%/78%     0.195/0.248    0.276/0.245
+      2017                    405      51%/60%      39%/59%     +0.07/+0.43  +0.09/+0.51  -0.04/-0.21  -0.03/-0.21    61%/82%     0.167/0.240    0.268/0.242
+      2018                    417      54%/59%      37%/34%     +0.08/+0.05  +0.09/+0.06  -0.04/-0.11  -0.03/-0.10    60%/63%     0.205/0.242    0.238/0.225
+      2019                    431      51%/67%      33%/40%     +0.07/+0.09  +0.08/+0.05  -0.03/+0.52  -0.03/+0.70    57%/72%     0.238/0.220    0.249/0.239
+      2020                    432      50%/62%      35%/48%     +0.06/+0.24  +0.07/+0.26  -0.02/-0.06  -0.02/+0.09    54%/79%     0.229/0.235    0.268/0.250
+      2021                    432      49%/52%      34%/32%     +0.06/+0.05  +0.07/+0.06  -0.03/-0.08  -0.02/-0.14    56%/58%     0.214/0.250    0.204/0.218
+      2022                    430      50%/52%      32%/29%     +0.06/+0.03  +0.07/+0.05  -0.02/-0.20  -0.01/-0.37    53%/51%     0.208/0.250    0.203/0.204
+      2023                    419      51%/50%      37%/51%     +0.06/+0.30  +0.06/+0.34  -0.02/-0.15  -0.01/-0.09    55%/67%     0.209/0.250    0.255/0.250
+      2024                    429      55%/56%      39%/40%     +0.07/+0.13  +0.08/+0.15  -0.01/-0.23  -0.01/-0.26    61%/63%     0.197/0.246    0.240/0.240
+      2025                    396      53%/59%      38%/53%     +0.07/+0.32  +0.08/+0.36  -0.02/-0.18  -0.01/-0.11    60%/79%     0.188/0.243    0.260/0.249
+    by regime: index's trailing 12-month return:
+      bull                   3890      53%/57%      37%/41%     +0.08/+0.16  +0.08/+0.17  -0.04/-0.05  -0.02/-0.11    60%/68%     0.197/0.245    0.235/0.241
+      flat                   2750      53%/56%      36%/42%     +0.07/+0.16  +0.08/+0.19  -0.03/-0.08  -0.02/-0.04    58%/66%     0.210/0.246    0.241/0.243
+      bear                    772      49%/57%      34%/42%     +0.05/+0.19  +0.06/+0.24  -0.02/-0.13  -0.01/-0.16    53%/64%     0.220/0.245    0.246/0.243
+    by the index's move over the horizon (known only afterwards):
+      index up               5728      52%/56%      37%/45%     +0.07/+0.23  +0.08/+0.26  -0.03/-0.10  -0.02/-0.09    59%/71%     0.195/0.246    0.251/0.248
+      index down             1684      53%/59%      33%/28%     +0.07/-0.06  +0.08/-0.07  -0.04/+0.03  -0.02/-0.13    59%/51%     0.235/0.243    0.198/0.201
+    by part of the fixed fit / held-out split:
+      fit                    5296      52%/56%      36%/42%     +0.07/+0.17  +0.08/+0.19  -0.03/-0.09  -0.02/-0.07    59%/67%     0.200/0.247    0.239/0.244
+      held-out                995      53%/64%      33%/34%     +0.08/+0.07  +0.09/+0.07  -0.06/+0.05  -0.02/-0.14    59%/60%     0.245/0.230    0.230/0.224
+      embargo                1121      52%/56%      38%/43%     +0.08/+0.21  +0.08/+0.24  -0.02/-0.11  -0.01/-0.18    59%/72%     0.189/0.247    0.244/0.246
