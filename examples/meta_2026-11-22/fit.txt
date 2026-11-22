@@ -1,0 +1,45 @@
+== 1-2w: 86110 fit setups, 3245 dates
+  items 2 and 3 on their own (Spearman, every case):
+    rv5 ~ next vol         +0.602
+    rv21 ~ next vol        +0.705
+    rv63 ~ next vol        +0.725
+    rv5_63 ~ next vol      +0.088
+    rv21_63 ~ next vol     +0.074
+    bb_pct ~ next vol      +0.134
+    range10_63 ~ next vol  +0.111
+    turnover ~ next skew   +0.019
+    ret21 ~ next skew      -0.068
+    ret126 ~ next skew     -0.116
+    ret252 ~ next skew     -0.123
+    skew126 ~ next skew    +0.046
+    dd63 ~ next skew       -0.161
+    to_high252 ~ next skew -0.196
+    to_low252 ~ next skew  -0.036
+  tau 0.00: kept  18622/ 74544 (25%, long 75%) net -0.005 (t -0.7; gross +0.013, opt +0.039) vs all -0.038 diff +0.033 (t +6.8) [+0.041/+0.043/+0.014]
+  tau 0.02: kept   5765/ 74544 (8%, long 79%) net -0.010 (t -0.9; gross +0.008, opt +0.032) vs all -0.038 diff +0.028 (t +2.8) [+0.019/+0.038/+0.018]
+  tau 0.05: kept    952/ 74544 (1%, long 85%) net -0.003 (t -0.1; gross +0.019, opt +0.060) vs all -0.038 diff +0.035 (t +1.5) [-0.010/+0.047/+0.100]
+  tau 0.10: kept     72/ 74544 (0%, long 85%) net +0.014 (t +0.1; gross +0.046, opt +0.074) vs all -0.038 diff +0.052 (t +0.5) [+0.122/-0.102/-0.001]
+  chosen tau 0.0 -> does not pass
+== 1-3m: 39715 fit setups, 2019 dates
+  items 2 and 3 on their own (Spearman, every case):
+    rv5 ~ next vol         +0.625
+    rv21 ~ next vol        +0.756
+    rv63 ~ next vol        +0.791
+    rv5_63 ~ next vol      +0.051
+    rv21_63 ~ next vol     +0.046
+    bb_pct ~ next vol      +0.093
+    range10_63 ~ next vol  +0.074
+    turnover ~ next skew   +0.017
+    ret21 ~ next skew      -0.069
+    ret126 ~ next skew     -0.115
+    ret252 ~ next skew     -0.124
+    skew126 ~ next skew    +0.050
+    dd63 ~ next skew       -0.163
+    to_high252 ~ next skew -0.200
+    to_low252 ~ next skew  -0.037
+  tau 0.00: kept  23655/ 34546 (68%, long 99%) net +0.009 (t +0.7; gross +0.031, opt +0.055) vs all -0.001 diff +0.010 (t +2.5) [+0.020/+0.011/+0.003]
+  tau 0.02: kept  16702/ 34546 (48%, long 99%) net +0.007 (t +0.5; gross +0.029, opt +0.053) vs all -0.001 diff +0.008 (t +1.3) [+0.021/+0.007/-0.006]
+  tau 0.05: kept   8198/ 34546 (24%, long 99%) net +0.016 (t +0.9; gross +0.039, opt +0.066) vs all -0.001 diff +0.017 (t +1.3) [+0.025/-0.002/+0.015]
+  tau 0.10: kept   3733/ 34546 (11%, long 98%) net +0.014 (t +0.5; gross +0.039, opt +0.066) vs all -0.001 diff +0.015 (t +0.6) [+0.016/+0.034/-0.021]
+  chosen tau 0.05 -> does not pass
+frozen: none (the fresh universe stays unread)

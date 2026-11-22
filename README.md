@@ -1694,6 +1694,24 @@ Code and output: [`examples/meta_2026-11-22/`](examples/meta_2026-11-22/).
 
 **Items 2 and 3 on their own**, reported on the fit part and never used to choose anything: Spearman's correlation of each volatility feature with the realised volatility of the next 10 (or 63) days, and of each crash-risk feature with the skewness of the next 63 days' daily returns, on every case.
 
+#### Result: the model ranked the setups better, but its picks still lost; not adopted, the fresh universe stays unread
+
+Run on 22 Nov 2026 (`meta.py fit`, output in `fit.txt` and `FROZEN.json`; 13 seconds once the candles were cached). Out-of-sample predictions for the fit years 2010-2026, walk-forward by year with the embargo; 74,544 setups at `1-2w` and 34,546 at `1-3m`.
+
+| Horizon | τ chosen | Kept | Net R/order kept (t) | All setups | Difference (t) | Blocks 2010-12 / 13-19 / 20-26 | Passes |
+|---|---|---|---|---|---|---|---|
+| `1-2w` | 0 | 25% | −0.005 (−0.7) | −0.038 | +0.033 (6.8) | +0.041 / +0.043 / +0.014 | no: test 1 (net not above 0) |
+| `1-3m` | 0.05 | 24% | +0.016 (0.9) | −0.001 | +0.017 (1.3) | +0.025 / −0.002 / +0.015 | no: tests 1, 2, 3 |
+
+What it shows:
+
+- **At `1-2w` the model found something real but small: which setups lose less.** It beat all setups by +0.033 R in every block, with t 6.8, which no earlier study came close to. Taking the kept and dropped setups apart, about half of that is cost: the kept setups have wider stops (median risk 3.3% of the price against 2.3%), on more volatile stocks, so the 0.20% round trip costs 0.018 R instead of 0.042. The other half is gross R, +0.013 against −0.007. The features the model leaned on most were the entry distance and the risk as a share of the price (permutation importance, a diagnostic only), not the crash-risk or the expansion features. What it learned is mostly "a stop a few percent away is too tight to pay its costs", which the placement study's minimum-risk variants (rules 5) had already tried as a fixed rule without passing.
+- **It still did not reach zero.** The best quarter of the setups made −0.005 R net per order. A selection that only loses less is not adopted.
+- **At `1-3m` it did not separate the setups reliably.** The kept setups were all long, as before, and one block of years went the wrong way.
+- **Items 2 and 3 on their own behaved as the literature says, and showed why they do not help here.** Recent volatility predicts the next weeks' volatility well (Spearman +0.70 to +0.79 for the 21- and 63-day figures), but the *expansion* signals (5-day against 63-day volatility, Bollinger width, range compression) are weak (+0.05 to +0.13). Crash risk shows up in the expected direction: a stock near its 52-week high, or after a strong year, tends to have more negatively skewed returns in the next three months (−0.20 and −0.12). Detrended volume, without shares outstanding, says almost nothing (+0.02). Both predict the *shape* of the next move, not its direction, and a setup with a stop and a target profits from direction.
+
+So meta-labelling is the first method to rank the setups' outcomes out of sample, but not enough to make the kept ones pay their costs. A follow-up with a cost-aware rule (for instance, at `1-2w` only setups whose risk is at least a given share of the price) would be a new hypothesis that this result suggested, and would need its own protocol and the fresh universe.
+
 ## Scoring the saved setups
 
 The [setup backtest](#backtest-of-the-trade-setups) replays today's rules on past dates. `score_entries.py` checks the setups that real runs actually wrote, before the prices existed: the forward, out-of-sample check. Every run keeps its `entries.json` in the run folder and, next to the saved projection, in `projections/`.
@@ -1897,7 +1915,7 @@ stock_predict_zones/
 ├── .claude/skills/reversal-zones-projection/
 │   ├── SKILL.md                    step 2: the skill
 │   └── scripts/rz.py               its helper: levels, simulation, validation, saving, outcomes
-├── examples/                       one complete run: input, projection and charts; reports of the value test and the setup backtest; segmentation_2026-11-20/ (the segment search); zone_rule_2026-11-21/ (the zone-rule study), placement_2026-11-21/ (stop and target placement, not adopted), fixed_target_2026-11-22/ (a fixed R target at 1-3m, not adopted), patterns_2026-11-22/ (candlestick and chart patterns, none passed), trend_2026-11-22/ (trading with the trend, not adopted; fresh_universe.txt, still unread), meta_2026-11-22/ (meta-labelling the setups)
+├── examples/                       one complete run: input, projection and charts; reports of the value test and the setup backtest; segmentation_2026-11-20/ (the segment search); zone_rule_2026-11-21/ (the zone-rule study), placement_2026-11-21/ (stop and target placement, not adopted), fixed_target_2026-11-22/ (a fixed R target at 1-3m, not adopted), patterns_2026-11-22/ (candlestick and chart patterns, none passed), trend_2026-11-22/ (trading with the trend, not adopted; fresh_universe.txt, still unread), meta_2026-11-22/ (meta-labelling the setups, not adopted)
 ├── prompts/
 │   ├── trade_entries.md            prompt: three ranked trade setups from one run
 │   └── trade_entries.schema.json   JSON Schema of its reply
