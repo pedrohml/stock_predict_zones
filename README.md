@@ -1712,6 +1712,18 @@ What it shows:
 
 So meta-labelling is the first method to rank the setups' outcomes out of sample, but not enough to make the kept ones pay their costs. A follow-up with a cost-aware rule (for instance, at `1-2w` only setups whose risk is at least a given share of the price) would be a new hypothesis that this result suggested, and would need its own protocol and the fresh universe.
 
+### A minimum risk per setup, as a protection: protocol (written on 22 Nov 2026, before any evaluation)
+
+Taking the setups' losses apart showed that the worst ones are the tight ones: a limit order close to the price, a stop close to the entry, a quiet stock. In the fifth of the `1-2w` setups with the smallest risk (under 1.6% of the price) the 0.20% round trip costs 0.08 R per order, and that fifth makes 46% of the horizon's net loss, while the gross R is near zero in every fifth. A rule that discards such setups cannot create an edge, but it may stop the list from showing setups that lose to costs alone. The criterion is therefore different from the edge studies above: **the rule must make the setups lose less, not make them profitable**. Code and output: [`examples/minrisk_2026-11-22/`](examples/minrisk_2026-11-22/).
+
+**Rule**: before the pick, discard every valid setup whose risk (entry to stop, as rounded) is below a share `m` of the entry price; the best three of the rest are kept as now (rules 6 otherwise unchanged, odds and correction included). Candidates: `m` ∈ {1%, 1.5%, 2%, 3%, 4%}, chosen per horizon.
+
+**Data**: `1-2w` every 10 trading days and `1-3m` every 20, pessimistic ordering; the fit part of `backtest_universe.txt` to choose, the fresh universe (`examples/trend_2026-11-22/fresh_universe.txt`, version 1, still unread) to judge, all its years. Statistic: mean net R per order (0.20% round trip in R) and its difference with rules 6 on the same cases, standard errors clustered by as-of month.
+
+**Choice on the fit part, per horizon**: among the candidates whose difference is positive with t ≥ 3 and positive in each block of fit years (2005-2012, 2013-2019, 2020-2026), and that keep at least two thirds of rules 6's orders, the one with the highest net R per order. Written to `FROZEN.json` before the fresh universe is run. A horizon with no such candidate keeps rules 6.
+
+**Judgement, once, on the fresh universe**, per frozen horizon: adopted when the difference with rules 6 is positive with t ≥ 2 and the gap between stated and observed R per order is no more than 0.02 above rules 6's. If adopted, it becomes rules 7: `MIN_RISK` in `trade_entries.py`, the template, the README's backtest tables and `EDGE_BAND` re-measured on the fit part. `CORRECTION` is fitted over every valid setup, so it stays.
+
 ## Scoring the saved setups
 
 The [setup backtest](#backtest-of-the-trade-setups) replays today's rules on past dates. `score_entries.py` checks the setups that real runs actually wrote, before the prices existed: the forward, out-of-sample check. Every run keeps its `entries.json` in the run folder and, next to the saved projection, in `projections/`.
@@ -1915,7 +1927,7 @@ stock_predict_zones/
 ├── .claude/skills/reversal-zones-projection/
 │   ├── SKILL.md                    step 2: the skill
 │   └── scripts/rz.py               its helper: levels, simulation, validation, saving, outcomes
-├── examples/                       one complete run: input, projection and charts; reports of the value test and the setup backtest; segmentation_2026-11-20/ (the segment search); zone_rule_2026-11-21/ (the zone-rule study), placement_2026-11-21/ (stop and target placement, not adopted), fixed_target_2026-11-22/ (a fixed R target at 1-3m, not adopted), patterns_2026-11-22/ (candlestick and chart patterns, none passed), trend_2026-11-22/ (trading with the trend, not adopted; fresh_universe.txt, still unread), meta_2026-11-22/ (meta-labelling the setups, not adopted)
+├── examples/                       one complete run: input, projection and charts; reports of the value test and the setup backtest; segmentation_2026-11-20/ (the segment search); zone_rule_2026-11-21/ (the zone-rule study), placement_2026-11-21/ (stop and target placement, not adopted), fixed_target_2026-11-22/ (a fixed R target at 1-3m, not adopted), patterns_2026-11-22/ (candlestick and chart patterns, none passed), trend_2026-11-22/ (trading with the trend, not adopted; fresh_universe.txt, still unread), meta_2026-11-22/ (meta-labelling the setups, not adopted), minrisk_2026-11-22/ (a minimum risk per setup)
 ├── prompts/
 │   ├── trade_entries.md            prompt: three ranked trade setups from one run
 │   └── trade_entries.schema.json   JSON Schema of its reply
