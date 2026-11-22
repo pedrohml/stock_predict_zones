@@ -58,7 +58,7 @@ Zones are listed nearest first. For a zone, the **near edge** is the one closest
 - Stop: that zone's near edge, moved `buffer` further away from the entry.
 - Target: the far edge of the next zone outward (`detail.next`).
 
-Prices: `risk = |entry − stop|` and `reward = |target − entry|`, rounded to the rows' precision; `ratio = reward / risk`. A setup is discarded when its prices are out of order (a long needs `stop < entry < target`, a short `target < entry < stop`), when its entry, stop or target rounds to zero or below, when its entry is on the wrong side of the current price for its order type, when `risk` rounds to zero, when the input's `horizon` is `1-2w` and `risk` is below 2% of the entry (`risk < 0.02 × entry`, a stop too tight to pay a trade's costs), when `ratio` is below 1 (the reward is smaller than the risk), or when its `fill` (below) is under 0.05: an order that almost never fills has an edge per order of about zero and would otherwise rank above every setup with a negative one.
+Prices: `risk = |entry − stop|` and `reward = |target − entry|`, rounded to the rows' precision; `ratio = reward / risk`. A setup is discarded when its prices are out of order (a long needs `stop < entry < target`, a short `target < entry < stop`), when its entry, stop or target rounds to zero or below, when its entry is on the wrong side of the current price for its order type, when `risk` rounds to zero, when the input's `horizon` is `1-2w` and `risk` is below 2% of the entry (`risk < 0.02 × entry`, a stop too tight to pay a trade's costs), when `ratio` is below 1 (the reward is smaller than the risk), when the input's `horizon` is `1-2w` and the setup is a continuation or its order is `market` (kinds that lost at that horizon), or when its `fill` (below) is under 0.05: an order that almost never fills has an edge per order of about zero and would otherwise rank above every setup with a negative one.
 
 Odds, counted on 20,000 simulated price paths of the projection's own simulation (`rz.py sim`'s paths, same seed and drift), refined to daily steps with simulated daily highs and lows:
 
@@ -93,13 +93,13 @@ No position size, leverage, or instruction to buy or sell. `why` describes the s
 
 ## Output
 
-Reply with one JSON object and nothing else: no prose before or after, no code fence. Keys, ids, enum values and their order stay exactly as below; `rules` is 8. Free-text values (`anchor`, `basis`, `why`, `watch`, `limits`, `method`, `note`) are written in the language named by `input.reply.language`. Prices keep the precision of the candle rows; probabilities, `ratio` and `edge` have two decimals.
+Reply with one JSON object and nothing else: no prose before or after, no code fence. Keys, ids, enum values and their order stay exactly as below; `rules` is 9. Free-text values (`anchor`, `basis`, `why`, `watch`, `limits`, `method`, `note`) are written in the language named by `input.reply.language`. Prices keep the precision of the candle rows; probabilities, `ratio` and `edge` have two decimals.
 
 The example shows the shape, computed from a real run. Your numbers come from `<setups>`.
 
 {
   "task": "trade_entries",
-  "rules": 8,
+  "rules": 9,
   "asset": { "ticker": "PETR4.SA", "currency": "BRL" },
   "as_of": { "time": "2026-11-18T15:15-03:00", "price": 42.77 },
   "valid_until": "2027-02-12",

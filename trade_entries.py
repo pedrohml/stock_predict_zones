@@ -31,7 +31,7 @@ ROOT = Path(__file__).resolve().parent
 TEMPLATE = ROOT / "prompts" / "trade_entries.md"
 SCHEMA = ROOT / "prompts" / "trade_entries.schema.json"
 RZ_PATH = ROOT / ".claude" / "skills" / "reversal-zones-projection" / "scripts" / "rz.py"
-RULES = 8   # version of the rules; 1 (until 19 Nov 2026) took fill and win from reach and turn by formulas,
+RULES = 9   # version of the rules; 1 (until 19 Nov 2026) took fill and win from reach and turn by formulas,
             # 2 (19 Nov 2026) also swapped the third setup for the other side when all three shared one
             # and labelled quality with one band of ±0.05 R at every horizon, 3 (until 20 Nov 2026) stated
             # the path counts uncorrected (no CORRECTION), with bands 0.35 / 0.09 / 0.32; 4 (GARCH paths,
@@ -40,7 +40,8 @@ RULES = 8   # version of the rules; 1 (until 19 Nov 2026) took fill and win from
             # CORRECTION and bands 0.29 / 0.09 / 0.32; 6 sets them on the zones of backtest.py's
             # current rule (1.5 widths, at least two candidates per cluster), CORRECTION refitted;
             # 7 (22 Nov 2026) also discards a 1-2w setup whose risk is under 2% of its entry (MIN_RISK);
-            # 8 keeps only setups whose reward is at least their risk (MIN_RATIO 1, until then 0.5)
+            # 8 keeps only setups whose reward is at least their risk (MIN_RATIO 1, until then 0.5);
+            # 9 (22 Nov 2026) also discards 1-2w continuations and market orders (EXCLUDED)
 
 # The path estimate (paths(), odds()). A change to any of these is a new RULES number: an
 # entries file is checked by recomputing it.
@@ -55,7 +56,8 @@ SPREAD = 0.65
 # of |stated - observed| mean R per fill of the picked setups, under the pessimistic and the
 # optimistic ordering, rounded up to 0.01: at 1-2w and 1-3m under rules 8 (with CORRECTION, market
 # orders left as counted, MIN_RISK and MIN_RATIO), on the fit part of the long setup backtest
-# (README, "Rules version 8: reward at least the risk"; rules 7 had 0.16 and 0.05); at 6-12m, not corrected, the rules 3 band from
+# (README, "Rules version 8: reward at least the risk"; rules 7 had 0.16 and 0.05); measured again
+# at 1-2w under rules 9 (EXCLUDED), still 0.15; at 6-12m, not corrected, the rules 3 band from
 # the first two years of the three-year backtest (README, "Backtest of the trade setups"), kept as
 # rules 5 kept it. An edge inside the band cannot be told from zero: `marginal`. A horizon the
 # backtest does not cover (today) gets the widest band.
@@ -99,6 +101,13 @@ MIN_RISK = {"1-2w": 0.02}
 # zero below and above 1 alike (README, "Rules version 8: reward at least the risk"). A higher
 # ratio means a target reached less often, not a better expectation.
 MIN_RATIO = 1.0
+# Kinds of setup (a `setup` or an `order` value) discarded at a horizon before the ranking (rules 9).
+# At 1-2w the continuations lost where the reversals did not, after the odds and the correction:
+# dropping them (and market orders, almost never picked there) raised gross R per order by 0.010
+# (t 9) on the fit part of the long setup backtest and by 0.011 (t 9) on the fresh universe, judged
+# once (README, "A stop sized by volatility, and dropping the offending kinds of setup"). At 1-3m
+# the same filter made the setups worse (continuations are most of its picks), so it is not applied.
+EXCLUDED = {"1-2w": ("continuation", "market")}
 MIN_FILL = 0.05      # a setup whose order fills on fewer paths says nothing (its edge rounds to zero and would rank first)
 TOLERANCE = 0.011        # one hundredth, for a rounding that fell the other way
 RANK_TOLERANCE = 0.021   # two setups this close in edge.per_order may swap places
@@ -395,8 +404,11 @@ def setups(source, proj, sim=None):
     price, unit = proj["as_of"]["price"], units(proj, digits)
     buffer, found, played, width = unit["buffer"], [], {"sim": sim}, band(source)
     minimum = MIN_RISK.get(source.get("horizon"), 0.0)
+    excluded = EXCLUDED.get(source.get("horizon"), ())
 
     def add(side, kind, zone_id, order, entry, stop, target, detail):
+        if kind in excluded or order in excluded:   # a kind of setup not listed at this horizon (rules 9)
+            return
         ordered = stop < entry < target if side == "long" else target < entry < stop
         if not ordered:
             return
@@ -650,7 +662,8 @@ EARLIER = {1: "its odds came from reach and turn by formulas, not from simulated
            6: "it kept 1-2w setups whose risk is under 2% of the entry (rules 7 discards them, and its 1-2w "
               "band is ±0.16 R)",
            7: "it kept setups whose reward is under their risk, down to a ratio of 0.5 (rules 8 keeps a ratio "
-              "of at least 1)"}
+              "of at least 1)",
+           8: "it kept 1-2w continuations and market orders (rules 9 discards them at 1-2w)"}
 PRICES = {"entry", "stop", "target", "risk", "reward"}   # checked to the rows' precision, the rest to 0.011
 
 

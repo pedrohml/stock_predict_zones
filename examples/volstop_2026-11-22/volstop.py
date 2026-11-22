@@ -283,7 +283,8 @@ def judge(fit_path, fresh_path):
     print("for reference, every variant on the fresh tickers:")
     for horizon in frozen:
         for variant in VARIANTS:
-            print("   " + line(compare(df, horizon, variant)))
+            c = compare(df, horizon, variant)
+            print("   " + (line(c) if c else f"{horizon:5} {variant:15} no orders"))
     json.dump(out, open(os.path.join(HERE, "judge.json"), "w"), indent=1, default=float)
 
 

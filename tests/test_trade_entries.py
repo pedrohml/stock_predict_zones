@@ -144,16 +144,17 @@ def test_an_entries_file_of_rules_2_is_named_as_such(input_data, projection_data
     old = copy.deepcopy(entries_data)
     old["rules"] = 2
     bad = trade_entries.problems(input_data, projection_data, old)
-    assert len(bad) == 1 and "earlier version of the rules (rules 2, now 8)" in bad[0] and "other side" in bad[0]
+    assert len(bad) == 1 and "earlier version of the rules (rules 2, now 9)" in bad[0] and "other side" in bad[0]
 
 
 @pytest.mark.parametrize("version, why", [(3, "uncorrected path counts"), (4, "never shipped"),
-                                          (5, "zones of the earlier zone rule"), (6, "under 2% of the entry"), (7, "ratio of 0.5")])
-def test_an_entries_file_of_rules_3_to_7_is_named_as_such(input_data, projection_data, entries_data, version, why):
+                                          (5, "zones of the earlier zone rule"), (6, "under 2% of the entry"), (7, "ratio of 0.5"),
+                                          (8, "continuations and market orders")])
+def test_an_entries_file_of_rules_3_to_8_is_named_as_such(input_data, projection_data, entries_data, version, why):
     old = copy.deepcopy(entries_data)
     old["rules"] = version
     bad = trade_entries.problems(input_data, projection_data, old)
-    assert len(bad) == 1 and f"(rules {version}, now 8)" in bad[0] and why in bad[0]
+    assert len(bad) == 1 and f"(rules {version}, now 9)" in bad[0] and why in bad[0]
 
 
 def test_half_up_rounding_of_the_buffer(example):
@@ -619,3 +620,20 @@ def test_a_reward_under_the_risk_is_no_setup(input_data, projection_data, monkey
     before = trade_entries.setups(input_data, projection_data)
     assert any(item["ratio"] < 1 for item in before)                      # the fixture has such setups
     assert [i["id"] for i in before if i["ratio"] >= 1] == [i["id"] for i in kept]
+
+
+def test_continuations_and_market_orders_are_no_setup_at_1_2w(example, monkeypatch):
+    """Rules 9: at 1-2w continuations and market orders are discarded; other horizons keep them."""
+    assert trade_entries.EXCLUDED == {"1-2w": ("continuation", "market")}
+    source, proj = example
+    short_horizon = copy.deepcopy(source)
+    short_horizon["horizon"] = "1-2w"
+    kept = trade_entries.setups(short_horizon, proj)
+    assert kept and all(i["setup"] != "continuation" and i["order"] != "market" for i in kept)
+    monkeypatch.setattr(trade_entries, "EXCLUDED", {})
+    every = trade_entries.setups(short_horizon, proj)
+    assert any(i["setup"] == "continuation" for i in every)              # the example has some to drop
+    assert [i["id"] for i in every if i["setup"] != "continuation" and i["order"] != "market"] == [i["id"] for i in kept]
+    at_1_3m = trade_entries.setups(source, proj)
+    monkeypatch.setattr(trade_entries, "EXCLUDED", {"1-2w": ("continuation", "market")})
+    assert at_1_3m == trade_entries.setups(source, proj)

@@ -1,0 +1,24 @@
+1-2w  base+nomkt+nocont orders  42506 ( 93%) long  62% fill  32% R/o st +0.003 obs +0.016 (opt +0.048) vs base +0.005 diff +0.011 t +9.3 [+0.012/+0.011/+0.009] gap 0.013 (base 0.012) net -0.007 (base -0.018) -> ADOPTED
+   fresh tickers, fit years: 1-2w  base+nomkt+nocont orders  32085 ( 93%) long  62% fill  32% R/o st +0.003 obs +0.014 (opt +0.046) vs base +0.004 diff +0.010 t +7.6 [+0.012/+0.011/+0.009] gap 0.011 (base 0.010) net -0.009 (base -0.020)
+   fresh tickers, held-out years: 1-2w  base+nomkt+nocont orders  10211 ( 93%) long  62% fill  33% R/o st +0.003 obs +0.023 (opt +0.057) vs base +0.011 diff +0.012 t +6.1 [+0.013/+0.011/nan] gap 0.020 (base 0.017) net +0.003 (base -0.010)
+for reference, every variant on the fresh tickers:
+   1-2w  base            orders  45841 (100%) long  60% fill  33% R/o st -0.007 obs +0.005 (opt +0.042) vs base +0.005 diff +0.000 t +0.0 [+0.000/+0.000/+0.000] gap 0.012 (base 0.012) net -0.018 (base -0.018)
+   1-2w  base+nomkt      orders  45840 (100%) long  60% fill  32% R/o st -0.007 obs +0.005 (opt +0.042) vs base +0.005 diff +0.000 t +0.1 [+0.000/-0.001/+0.001] gap 0.012 (base 0.012) net -0.018 (base -0.018)
+   1-2w  base+nocont     orders  42532 ( 93%) long  62% fill  32% R/o st +0.003 obs +0.015 (opt +0.048) vs base +0.005 diff +0.010 t +11.3 [+0.011/+0.013/+0.008] gap 0.012 (base 0.012) net -0.007 (base -0.018)
+   1-2w  base+nomkt+nocont orders  42506 ( 93%) long  62% fill  32% R/o st +0.003 obs +0.016 (opt +0.048) vs base +0.005 diff +0.011 t +9.3 [+0.012/+0.011/+0.009] gap 0.013 (base 0.012) net -0.007 (base -0.018)
+   1-2w  v0.5            orders  47256 (103%) long  59% fill  33% R/o st -0.002 obs +0.009 (opt +0.045) vs base +0.005 diff +0.004 t +3.4 [+0.006/+0.003/+0.003] gap 0.011 (base 0.012) net -0.015 (base -0.018)
+   1-2w  v0.5+nomkt      orders  47255 (103%) long  59% fill  32% R/o st -0.003 obs +0.009 (opt +0.045) vs base +0.005 diff +0.004 t +3.3 [+0.007/+0.002/+0.004] gap 0.012 (base 0.012) net -0.014 (base -0.018)
+   1-2w  v0.5+nocont     orders  45275 ( 99%) long  59% fill  33% R/o st +0.003 obs +0.013 (opt +0.047) vs base +0.005 diff +0.009 t +6.6 [+0.011/+0.009/+0.006] gap 0.010 (base 0.012) net -0.010 (base -0.018)
+   1-2w  v0.5+nomkt+nocont orders  45247 ( 99%) long  59% fill  32% R/o st +0.003 obs +0.014 (opt +0.047) vs base +0.005 diff +0.009 t +6.3 [+0.012/+0.008/+0.007] gap 0.011 (base 0.012) net -0.009 (base -0.018)
+   1-2w  v1              orders  47251 (103%) long  59% fill  33% R/o st -0.003 obs +0.010 (opt +0.045) vs base +0.005 diff +0.005 t +3.8 [+0.006/+0.004/+0.003] gap 0.012 (base 0.012) net -0.014 (base -0.018)
+   1-2w  v1+nomkt        orders  47250 (103%) long  59% fill  32% R/o st -0.003 obs +0.009 (opt +0.045) vs base +0.005 diff +0.004 t +3.3 [+0.007/+0.002/+0.004] gap 0.012 (base 0.012) net -0.014 (base -0.018)
+   1-2w  v1+nocont       orders  45270 ( 99%) long  59% fill  32% R/o st +0.003 obs +0.014 (opt +0.047) vs base +0.005 diff +0.009 t +6.8 [+0.011/+0.010/+0.007] gap 0.011 (base 0.012) net -0.009 (base -0.018)
+   1-2w  v1+nomkt+nocont orders  45247 ( 99%) long  59% fill  32% R/o st +0.003 obs +0.014 (opt +0.047) vs base +0.005 diff +0.009 t +6.3 [+0.012/+0.008/+0.007] gap 0.011 (base 0.012) net -0.009 (base -0.018)
+   1-2w  v1.5            orders    313 (  1%) long  54% fill  42% R/o st -0.032 obs -0.017 (opt +0.128) vs base +0.005 diff -0.022 t -0.4 [+0.098/-0.129/+0.053] gap 0.016 (base 0.012) net -0.046 (base -0.018)
+   1-2w  v1.5+nomkt      orders    313 (  1%) long  54% fill  42% R/o st -0.032 obs -0.017 (opt +0.128) vs base +0.005 diff -0.022 t -0.4 [+0.098/-0.129/+0.053] gap 0.016 (base 0.012) net -0.046 (base -0.018)
+   1-2w  v1.5+nocont     orders    234 (  1%) long  53% fill  41% R/o st +0.002 obs -0.014 (opt +0.138) vs base +0.005 diff -0.019 t -0.4 [+0.069/-0.108/+0.080] gap 0.015 (base 0.012) net -0.043 (base -0.018)
+   1-2w  v1.5+nomkt+nocont orders    234 (  1%) long  53% fill  41% R/o st +0.002 obs -0.014 (opt +0.138) vs base +0.005 diff -0.019 t -0.4 [+0.069/-0.108/+0.080] gap 0.015 (base 0.012) net -0.043 (base -0.018)
+   1-2w  v2              no orders
+   1-2w  v2+nomkt        no orders
+   1-2w  v2+nocont       no orders
+   1-2w  v2+nomkt+nocont no orders
