@@ -1869,6 +1869,16 @@ The question, as the user put it: from the current candle and the X before it, c
 
 **Judgement, once, on universe v2** ([`fresh_universe_v2.txt`](examples/kinds_2026-11-22/fresh_universe_v2.txt), unread, all its years): the frozen model's kept trades must beat that universe's base rate for the side with t ≥ 2. Passing would show that candle shapes carry direction; it would not by itself be a rule of the setups, which would need its own design.
 
+#### Result: no configuration passed; the candles' shape did not foresee direction; universe v2 stays unread
+
+Fit part ([`fit.txt`](examples/triple_2026-11-22/fit.txt), [`FROZEN.json`](examples/triple_2026-11-22/FROZEN.json): nothing frozen), about 47,000 out-of-sample samples per configuration, 2010-2026.
+
+- **No configuration passed.** Across the 54 configurations and four thresholds (216 tests), the largest t of a difference with the base rate was 2.6: `X 10`, `N 5`, a 3-ATR target, long, τ 0.05, +0.016 R per trade. With 216 tries, a t of that size is about what chance alone gives. The few large differences (short, 1-ATR target, τ 0.20: +0.178 R) keep 1% of the samples or fewer, with t under 3.
+- **The base rates are the market's drift, not a pattern.** Without any model, long trades average +0.03 to +0.12 R and shorts −0.03 to −0.07 R, more so the larger the target and the longer the limit (long, 3 ATR, 20 days: +0.117; target reached in 24% of cases). The share of targets reached falls as the target grows (1 ATR in 5 days: 44%; 2 ATR: 18%; 3 ATR: 6%), as on a random walk.
+- **Targets of 2 and 3 ATR did not change the answer.** The model separated large moves from small ones no better than it separated up from down.
+
+Taken with the candlestick and chart patterns, meta-labelling and trend studies above, the answer on this universe is that the shape of the last 5 to 20 daily candles, normalised by the ATR, does not tell which way the next 5 to 20 days will go. Nothing changes in the rules, and universe v2 was not run: **it is still unread**.
+
 ## Scoring the saved setups
 
 The [setup backtest](#backtest-of-the-trade-setups) replays today's rules on past dates. `score_entries.py` checks the setups that real runs actually wrote, before the prices existed: the forward, out-of-sample check. Every run keeps its `entries.json` in the run folder and, next to the saved projection, in `projections/`.
