@@ -1,0 +1,42 @@
+{
+ "1-2w": {
+  "setups": 20628,
+  "measurable": 14736,
+  "cases": 5383,
+  "first_as_of": "2023-12-18",
+  "last_as_of": "2026-11-06",
+  "ambiguous": 316,
+  "ambiguous_share": 0.021444082519001085,
+  "resolved": 251,
+  "resolved_share": 0.7943037974683544,
+  "resolved_favour_share": 0.06772908366533864,
+  "resolved_against_share": 0.7768924302788844,
+  "r_daily_pessimistic": 0.006006840390879478,
+  "r_daily_optimistic": 0.04427748371335505,
+  "r_hourly_low": 0.007414176167209553,
+  "r_hourly_high": 0.01586564875135722,
+  "position_low": 0.036773245865547685,
+  "position_high": 0.25760759434863917,
+  "stated": 0.0029485613463626496
+ },
+ "1-3m": {
+  "setups": 14249,
+  "measurable": 5199,
+  "cases": 1734,
+  "first_as_of": "2023-12-18",
+  "last_as_of": "2026-08-25",
+  "ambiguous": 60,
+  "ambiguous_share": 0.01154068090017311,
+  "resolved": 49,
+  "resolved_share": 0.8166666666666667,
+  "resolved_favour_share": 0.5306122448979592,
+  "resolved_against_share": 0.20408163265306123,
+  "r_daily_pessimistic": 0.0016498557414887458,
+  "r_daily_optimistic": 0.020160126947489903,
+  "r_hourly_low": 0.013422696672437001,
+  "r_hourly_high": 0.017195710713598766,
+  "position_low": 0.6360166633934257,
+  "position_high": 0.8398501998755128,
+  "stated": 0.028699749951913826
+ }
+}

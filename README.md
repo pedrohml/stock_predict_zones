@@ -1794,6 +1794,15 @@ The setup backtest plays every setup on daily candles. When one candle reaches b
 
 **Reported**, per horizon: the share of setups that are ambiguous; of those, the share resolved by the hourly candles and the share resolved in the setup's favour; and the mean R per order of all measured setups under the daily pessimistic ordering, the daily optimistic ordering, and the daily walk with each ambiguous setup replaced by its hourly result (as a range when the hour itself is still ambiguous). The answer is where that last number falls between the two daily ones.
 
+#### Result: at `1-2w` the pessimistic ordering is close to the truth; at `1-3m` the truth leans optimistic, on a small sample
+
+Output: [`report.txt`](examples/intraday_2026-11-22/report.txt). Hourly candles from 18 Dec 2023, as-of dates to 6 Nov 2026 (`1-2w`) and 25 Aug 2026 (`1-3m`), all 76 tickers.
+
+- **`1-2w`**: 14,736 of 20,628 setups measurable (the rest had a day whose hourly open, high or low disagreed with the daily candle). Only 2.1% are ambiguous, yet they make the whole gap between the orderings, because each one is a full stop against a full target: R per order +0.006 pessimistic, +0.044 optimistic. The hours resolved 79% of them, **78% as the pessimistic ordering said** and 7% in the setup's favour. With the hours, R per order is +0.007 to +0.016, 4% to 26% of the way from the pessimistic to the optimistic number. A limit order filled on a day the price falls through the zone usually meets its stop the same day: the fall that fills it carries on. **The pessimistic reading of the `1-2w` backtest is close to right**; the optimistic one overstates it by about 0.03 R per order.
+- **`1-3m`**: only 5,199 of 14,249 setups measurable (a three-month window more often holds a day the hourly candles disagree on), 1.2% ambiguous (60 setups). Of the 49 the hours resolved, 53% went in the setup's favour and 20% as the pessimistic ordering said. R per order +0.002 pessimistic, +0.020 optimistic, +0.013 to +0.017 with the hours (64% to 84% of the way): **at `1-3m` the truth leans to the optimistic side**, but 60 setups are too few to move a number of the rules, and the window covers less than three years.
+
+Nothing in the rules or in the stated odds changes: the odds are counted on paths with the pessimistic ordering at `1-2w` as well, so the backtest's pessimistic column stays the one to read at that horizon.
+
 ### Kinds of setup at `1-3m` and `6-12m`: protocol (written on 22 Nov 2026, before any evaluation)
 
 Rules 9 left out the `1-2w` continuations, which lost where the reversals did not. At `1-3m` the same filter made the setups worse, and `6-12m` was never tested. This study asks whether dropping one side and kind of setup helps at those two horizons. Code and output: [`examples/kinds_2026-11-22/`](examples/kinds_2026-11-22/).

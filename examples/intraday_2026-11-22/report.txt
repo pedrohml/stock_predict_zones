@@ -1,0 +1,9 @@
+1-2w: 14736 of 20628 setups measurable (5383 cases, as-of 2023-12-18 to 2026-11-06)
+  ambiguous on daily candles: 316 (2.1%); resolved by the hours: 251 (79%), of which in the setup's favour 7%, as the pessimistic ordering said 78%
+  R per order: stated +0.0029; daily pessimistic +0.0060, daily optimistic +0.0443, with the hours +0.0074 to +0.0159 (at 4% to 26% of the way from pessimistic to optimistic)
+    reversal: 14736 setups, ambiguous 2.1%
+1-3m: 5199 of 14249 setups measurable (1734 cases, as-of 2023-12-18 to 2026-08-25)
+  ambiguous on daily candles: 60 (1.2%); resolved by the hours: 49 (82%), of which in the setup's favour 53%, as the pessimistic ordering said 20%
+  R per order: stated +0.0287; daily pessimistic +0.0016, daily optimistic +0.0202, with the hours +0.0134 to +0.0172 (at 64% to 84% of the way from pessimistic to optimistic)
+    continuation: 2506 setups, ambiguous 2.0%
+    reversal: 2693 setups, ambiguous 0.3%
