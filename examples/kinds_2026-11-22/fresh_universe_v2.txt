@@ -1,0 +1,22 @@
+# A second fresh ticker universe for out-of-sample judgements (README, "Kinds of setup at 1-3m and 6-12m").
+# Written on 22 Nov 2026, before any of these symbols' prices were downloaded or looked at. None is in
+# backtest_universe.txt or in examples/trend_2026-11-22/fresh_universe.txt (version 1, read twice).
+# Chosen by rule, not by outcome: large caps of US sectors not in either earlier universe, names
+# remembered as having fallen hard at some point (survivor bias remains: every name is still quoted),
+# B3 large caps not in either universe, and large caps of France, Canada, Australia and the UK.
+# Names known to have been delisted or merged away (Walgreens, BRF, JBS's B3 line, US Steel) were left
+# out because Yahoo has no current history for them, not for their prices.
+# A symbol is dropped or cut only for data reasons, each written down here before any result is read.
+version: 2
+
+[us-large] US large caps of sectors and names not in the earlier universes.
+AMZN GOOGL META ADBE CRM NKE SBUX MO LLY BMY AMGN GILD MDT UNP CSX RTX AXP MET ALL NEE D EOG KMB CL GIS
+
+[us-fell-hard] US names with crashes or long declines (streaming, payments, offshore drilling, PCs, retail, disks, toys).
+NFLX PYPL RIG HPQ BBY GAP WDC MAT
+
+[br] B3 large caps not in the earlier universes.
+BBSE3.SA GGBR4.SA GOAU4.SA CMIG4.SA LREN3.SA ENEV3.SA CPFE3.SA HYPE3.SA UGPA3.SA RAIL3.SA
+
+[intl] Large caps of France, Canada, Australia and the UK.
+MC.PA TTE.PA AIR.PA SAN.PA RY.TO ENB.TO BHP.AX ULVR.L
