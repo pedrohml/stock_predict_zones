@@ -1621,6 +1621,26 @@ What it shows:
 - **The chart patterns are rare and noisy.** Head and shoulders and double tops or bottoms fired some 300 to 500 times each in 20 years on the fit part; the one A figure near the bar (head and shoulders, bearish, +1.6%, t 2.1) failed t ≥ 3, and a bearish chart pattern almost never met a short setup at `1-3m`, where rules 6 picks are nearly all long.
 - So the setups gain nothing from these two families as defined here. A different definition (other tolerances, a volume condition, a filter by trend) would be a new search, with a new protocol and the same t ≥ 3 bar; the tolerances above were fixed before the data was looked at and are not tuned after it.
 
+### Trading with the trend, judged on fresh tickers: protocol (written on 22 Nov 2026, before any evaluation)
+
+Every study above found the same thing behind its fit-part gains: the direction of the market, mostly long setups in rising years. The oldest trader's rule against that is to trade only with the stock's own trend. The segmentation above already cut the *picked* setups by "close above its 200-day average" and by 12-month return and found nothing that held at `1-2w` or `1-3m`. This study asks a different question: **re-pick** the three setups from the valid ones that agree with the trend, so that a counter-trend pick is replaced instead of dropped. It is judged on tickers never used before, because the held-out years have been read four times. Code and output: [`examples/trend_2026-11-22/`](examples/trend_2026-11-22/).
+
+**Trend at the as-of close**, from the daily closes up to that day:
+
+| Variant | Allowed side |
+|---|---|
+| `sma200` | long when the close is above its 200-day average, short when below |
+| `mom12` | long when the return from 252 to 21 trading days ago is positive, short when not |
+| `both` | the side both agree on; no setup when they disagree |
+
+The setups are rules 6's `setups()`, odds and correction included, filtered to the allowed side and then `pick()`ed (the best three by edge per order, distinct entries). The `base` variant is rules 6 unchanged, on the same cases. Cases without 252 days of history get no trend and are left out of every variant.
+
+**Data**: `1-2w` every 10 trading days and `1-3m` every 20, 2005-2026, the pessimistic ordering inside a candle. The fit part is the fit part of `backtest_universe.txt` (version 1). The judgement uses `examples/trend_2026-11-22/fresh_universe.txt` (version 1, 51 tickers: US large caps of other sectors, US names that fell hard, B3 large caps, and large caps of Germany, the Netherlands, Switzerland, Japan and the UK), over all its years. A fresh symbol is dropped only for data reasons, written into that file before any result is read.
+
+**Choice on the fit part, per horizon.** Statistic: mean net R per order (0.20% round trip in R, as above), and its difference with `base`; standard errors cluster by as-of month. A variant passes when (1) its net R per order is above 0, (2) the difference is at least +0.02 with t ≥ 3, (3) the difference is positive in each block of fit years (2005-2012, 2013-2019, 2020-2026), and (4) it keeps at least a third of `base`'s orders. Among the passing variants of a horizon, the one with the highest net R per order is frozen (`FROZEN.json`) before the fresh tickers are run.
+
+**Judgement, once, on the fresh universe**, per frozen horizon: adopted only if its net R per order is above 0 and its difference with `base` is above 0 with t ≥ 2. The gap between stated and observed R per order is reported next to it, because the correction was fitted without the filter. The fresh tickers trade in the same years as the fit tickers, so a shared market move is not removed. A pass would therefore be followed by the held-out years of the fresh universe as a second check before any rules change.
+
 ## Scoring the saved setups
 
 The [setup backtest](#backtest-of-the-trade-setups) replays today's rules on past dates. `score_entries.py` checks the setups that real runs actually wrote, before the prices existed: the forward, out-of-sample check. Every run keeps its `entries.json` in the run folder and, next to the saved projection, in `projections/`.
@@ -1824,7 +1844,7 @@ stock_predict_zones/
 ├── .claude/skills/reversal-zones-projection/
 │   ├── SKILL.md                    step 2: the skill
 │   └── scripts/rz.py               its helper: levels, simulation, validation, saving, outcomes
-├── examples/                       one complete run: input, projection and charts; reports of the value test and the setup backtest; segmentation_2026-11-20/ (the segment search); zone_rule_2026-11-21/ (the zone-rule study), placement_2026-11-21/ (stop and target placement, not adopted), fixed_target_2026-11-22/ (a fixed R target at 1-3m, not adopted), patterns_2026-11-22/ (candlestick and chart patterns, none passed)
+├── examples/                       one complete run: input, projection and charts; reports of the value test and the setup backtest; segmentation_2026-11-20/ (the segment search); zone_rule_2026-11-21/ (the zone-rule study), placement_2026-11-21/ (stop and target placement, not adopted), fixed_target_2026-11-22/ (a fixed R target at 1-3m, not adopted), patterns_2026-11-22/ (candlestick and chart patterns, none passed), trend_2026-11-22/ (trading with the trend, judged on a fresh universe)
 ├── prompts/
 │   ├── trade_entries.md            prompt: three ranked trade setups from one run
 │   └── trade_entries.schema.json   JSON Schema of its reply

@@ -1,0 +1,20 @@
+# A fresh ticker universe for out-of-sample judgements (README, "Trading with the trend").
+# Written on 22 Nov 2026, before any of these symbols' prices were downloaded or looked at. None is in
+# backtest_universe.txt. Chosen by rule, not by outcome: large caps of sectors per market, plus names
+# remembered as having fallen hard at some point (to limit survivor bias, which remains: every name
+# was picked in 2026 and is still quoted), plus large caps of three other markets.
+# A symbol is dropped only for data reasons (no history, broken or unadjusted prices, a technical
+# failure of the pipeline on its exchange), each written down here before any result is read.
+version: 1
+
+[us-large] US large caps of sectors not in the first universe's picks.
+UNH MRK ABT PEP COST LOW TGT ORCL CSCO QCOM TXN HON MMM UPS DE LMT GS MS WFC USB COP OXY DUK SO
+
+[us-fell-hard] US names with crashes or long declines (memory chips, miners, energy, consumer, office).
+MU AMD FCX APA HAL DVN NWL PBI
+
+[br] B3 large caps not in the first universe.
+PETR3.SA BRAP4.SA TAEE11.SA CPLE6.SA KLBN11.SA TOTS3.SA EQTL3.SA CSAN3.SA SANB11.SA MULT3.SA ALPA4.SA
+
+[intl] Large caps of Germany, the Netherlands, Switzerland, Japan and the UK.
+SAP.DE SIE.DE ASML.AS NESN.SW 7203.T 6758.T HSBA.L BP.L
