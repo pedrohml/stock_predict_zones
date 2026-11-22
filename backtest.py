@@ -46,11 +46,17 @@ DEFAULT_YEARS = 3
 AS_OF_TIME = (23, 0)   # each case is made after that day's close: session "closed"
 SCENARIOS = ("breakdown", "breakout", "range", "whipsaw")
 
-RULE = ("Zone rule (choose_zones): width = the mean of the two typical_zone_width numbers of "
+WIDTH_FACTOR = 1.5   # the zone width is this many times the mean of the two typical_zone_width numbers
+MIN_MEMBERS = 2      # a cluster of fewer candidates is not a zone
+# Both since 22 Nov 2026 (setup rules 6), chosen on the fit part of the long setup backtest and
+# judged once on its held-out part (README, "A stronger zone rule"); before: 1 and 1.
+
+RULE = ("Zone rule (choose_zones): width = 1.5 times the mean of the two typical_zone_width numbers of "
         "`rz.py levels`. Candidates are the prices `levels` reports as evidence: pivot lows and highs, "
         "the lows and highs of the last three candles, the retracement levels and the two ends of the "
         "dominant swing; those below the price serve supports, those above it resistances. Walking outward from the price, a candidate within one width "
-        "of the first member of the current cluster joins it; each cluster's level is the mean of "
+        "of the first member of the current cluster joins it; a cluster of fewer than two candidates is "
+        "dropped. Each remaining cluster's level is the mean of "
         "its members, and its zone is one width centred there, cut at the price and pushed outward "
         "so it never overlaps the zone before it. The nearest clusters are kept. A side with too "
         "few clusters is filled with one-width zones, one width apart, beyond the last one.")
@@ -179,8 +185,9 @@ def candidates(facts):
 
 
 def zone_width(facts, places=2):
-    """One zone's width: the mean of the two typical_zone_width numbers, at least one tick."""
-    return max(round(sum(facts["typical_zone_width"]) / 2, places), 10 ** -places)
+    """One zone's width: WIDTH_FACTOR x the mean of the two typical_zone_width numbers (that mean
+    rounded first, then the product), at least one tick."""
+    return max(round(round(sum(facts["typical_zone_width"]) / 2, places) * WIDTH_FACTOR, places), 10 ** -places)
 
 
 def clustered_zones(facts, supports=3, resistances=3, places=2):
@@ -202,6 +209,7 @@ def clustered_zones(facts, supports=3, resistances=3, places=2):
                 clusters[-1].append(level)
             else:
                 clusters.append([level])
+        clusters = [members for members in clusters if len(members) >= MIN_MEMBERS]
         beyond = lambda x, y: sign * (x - y) > 0     # x lies further from the price than y
         zones, edge = [], price                  # `edge`: the far edge of the last zone so far
         for members in clusters[:count]:

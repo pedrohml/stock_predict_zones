@@ -126,6 +126,34 @@ def sound(zones, price):
         assert edges == sorted(edges, reverse=side == "s")
 
 
+@pytest.fixture
+def geometry(monkeypatch):
+    """The placement tests below, written for one width and single-candidate clusters (the rule
+    before 22 Nov 2026): the two parameters set back, so they test the geometry alone."""
+    monkeypatch.setattr(bt, "WIDTH_FACTOR", 1.0)
+    monkeypatch.setattr(bt, "MIN_MEMBERS", 1)
+
+
+def test_zone_rule_parameters():
+    # the rule adopted on 22 Nov 2026 (README, "A stronger zone rule")
+    assert (bt.WIDTH_FACTOR, bt.MIN_MEMBERS) == (1.5, 2)
+    assert bt.zone_width(facts(width=(1.0, 2.0))) == 2.25            # 1.5 x the mean 1.5
+    assert bt.zone_width(facts(width=(0.0, 0.0))) == 0.01            # at least one tick
+
+
+def test_zones_drop_single_candidate_clusters():
+    # width 2.25: 48 and 47.6 cluster (two members); 44 stands alone and is dropped; 40 is a pivot
+    # and the swing's end (two members). Above: 52 and 52.4, then 56 dropped, then 60 twice.
+    z = bt.clustered_zones(facts(lows=(48.0, 47.6, 44.0, 40.0), highs=(52.0, 52.4, 56.0, 60.0)))
+    assert [len(x["members"]) for x in z["supports"]] == [2, 2, 0]
+    assert [len(x["members"]) for x in z["resistances"]] == [2, 2, 0]
+    assert z["supports"][0]["zone"] == [46.67, 48.92] and z["resistances"][0]["zone"] == [51.08, 53.33]
+    assert z["supports"][1]["zone"] == [38.88, 41.12]                  # 44 made no zone
+    assert z["supports"][2]["zone"] == [34.38, 36.63]                  # filler, one width beyond
+    sound(bt.choose_zones(facts(lows=(48.0, 47.6, 44.0, 40.0), highs=(52.0, 52.4, 56.0, 60.0))), 50.0)
+
+
+@pytest.mark.usefixtures("geometry")
 def test_zones_cluster_nearby_candidates():
     z = bt.choose_zones(facts(lows=(48.0, 47.6, 44.0, 40.0), highs=(52.0, 52.4, 56.0, 60.0)))
     # width 1.5: 48 and 47.6 are one cluster at 47.8, 52 and 52.4 one at 52.2
@@ -134,6 +162,7 @@ def test_zones_cluster_nearby_candidates():
     sound(z, 50.0)
 
 
+@pytest.mark.usefixtures("geometry")
 def test_zones_are_cut_at_the_price_and_pushed_apart():
     z = bt.choose_zones(facts(lows=(49.8, 48.0), highs=(50.4, 52.0), width=(1.0, 2.0)))
     assert z["supports"][0] == [49.05, 50.0]          # cut at the price
@@ -145,6 +174,7 @@ def test_zones_are_cut_at_the_price_and_pushed_apart():
     sound(z, 50.0)
 
 
+@pytest.mark.usefixtures("geometry")
 def test_zones_fill_a_side_without_candidates():
     z = bt.choose_zones(facts(lows=(45.0,), highs=()), supports=2, resistances=3)
     assert z["resistances"] == [[51.5, 53.0], [54.5, 56.0], [57.5, 59.0]]

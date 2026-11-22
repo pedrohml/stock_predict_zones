@@ -48,16 +48,20 @@ def test_rz_baseline_is_unchanged(example):
                    2: "43e71b8c20709db1ad8798b4a6bdc3ba0505a816ffd532afe0e095ccf371a882"}
 
 
+# The next two pins moved once, deliberately, on 22 Nov 2026 with the zone rule (backtest.WIDTH_FACTOR
+# 1.5, MIN_MEMBERS 2; README, "A stronger zone rule"): with those two set back to 1 and 1 the
+# mechanical output reproduced the earlier pin byte for byte, before mechanical.py's method text named
+# the two-candidate minimum. No path model may move them.
 def test_mechanical_projection_is_unchanged():
     text = mechanical.render(mechanical.build(json.loads((FIXTURES / "input.json").read_text(encoding="utf-8"))))
-    assert sha(text) == "4be9413a8be0c3fe84fc0204d1d4565880d6cae9da955a7748de64c7cce72a0f"
+    assert sha(text) == "f46da97979b4c992700b26d817e39e2d842b87efb73eca64409ceb9145b86499"
 
 
 def test_backtest_report_is_unchanged(monkeypatch):
     monkeypatch.setattr(bt, "download", lambda ticker, start: {**DATA, "rows": [r for r in ROWS if r[0] >= start.isoformat()]})
     report = bt.run(["AAA"], "1-3m", date(2024, 1, 1), date(2024, 6, 1), paths=2000, today=date(2026, 11, 19),
                     progress=False)
-    assert sha(bt.render(report)) == "e99c34a731e47a3cd26afb050a41ca3c799878c3f89d9861abdc1d2272698f80"
+    assert sha(bt.render(report)) == "866cbcef0164bc6fb9bb6e8725eab8350bf3ddde86e3d46d96c4c224eace0b72"
 
 
 def test_the_rules_never_use_garch_paths(example, monkeypatch):

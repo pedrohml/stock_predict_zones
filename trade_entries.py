@@ -31,11 +31,14 @@ ROOT = Path(__file__).resolve().parent
 TEMPLATE = ROOT / "prompts" / "trade_entries.md"
 SCHEMA = ROOT / "prompts" / "trade_entries.schema.json"
 RZ_PATH = ROOT / ".claude" / "skills" / "reversal-zones-projection" / "scripts" / "rz.py"
-RULES = 5   # version of the rules; 1 (until 19 Nov 2026) took fill and win from reach and turn by formulas,
+RULES = 6   # version of the rules; 1 (until 19 Nov 2026) took fill and win from reach and turn by formulas,
             # 2 (19 Nov 2026) also swapped the third setup for the other side when all three shared one
             # and labelled quality with one band of ±0.05 R at every horizon, 3 (until 20 Nov 2026) stated
             # the path counts uncorrected (no CORRECTION), with bands 0.35 / 0.09 / 0.32; 4 (GARCH paths,
-            # garch_paths()) was evaluated and never shipped
+            # garch_paths()) was evaluated and never shipped; 5 (until 22 Nov 2026) set its prices on
+            # the zones of the earlier zone rule (one width, single-candidate clusters), with its own
+            # CORRECTION and bands 0.29 / 0.09 / 0.32; 6 sets them on the zones of backtest.py's
+            # current rule (1.5 widths, at least two candidates per cluster), CORRECTION refitted
 
 # The path estimate (paths(), odds()). A change to any of these is a new RULES number: an
 # entries file is checked by recomputing it.
@@ -48,13 +51,13 @@ DAYS = {"1D": 1, "1W": 5, "1M": 21}   # trading days per candle of the close bas
 SPREAD = 0.65
 # quality: edge.if_filled against the model's measured error at the horizon. Each band is the larger
 # of |stated - observed| mean R per fill of the picked setups, under the pessimistic and the
-# optimistic ordering, rounded up to 0.01: at 1-2w and 1-3m under rules 5 (with CORRECTION, market orders
-# left as counted), on the
-# fit part of the long setup backtest (README, "An empirical correction of the odds, per horizon,
-# side and kind"); at 6-12m, not corrected, the rules 3 band from the first two years of the
-# three-year backtest (README, "Backtest of the trade setups"). An edge inside the band cannot be
-# told from zero: `marginal`. A horizon the backtest does not cover (today) gets the widest band.
-EDGE_BAND = {"1-2w": 0.29, "1-3m": 0.09, "6-12m": 0.32}
+# optimistic ordering, rounded up to 0.01: at 1-2w and 1-3m under rules 6 (with CORRECTION, market
+# orders left as counted, the zones of backtest.py's current rule), on the fit part of the long
+# setup backtest (README, "A stronger zone rule"); at 6-12m, not corrected, the rules 3 band from
+# the first two years of the three-year backtest (README, "Backtest of the trade setups"), kept as
+# rules 5 kept it. An edge inside the band cannot be told from zero: `marginal`. A horizon the
+# backtest does not cover (today) gets the widest band.
+EDGE_BAND = {"1-2w": 0.17, "1-3m": 0.05, "6-12m": 0.32}
 # The correction of the path odds (rules 5). The paths know nothing of the zones, and the long
 # setup backtest (README, "An empirical correction of the odds, per horizon, side and kind")
 # found errors that keep their sign across years and regimes: continuations overstated, reversals
@@ -66,17 +69,19 @@ EDGE_BAND = {"1-2w": 0.29, "1-3m": 0.09, "6-12m": 0.32}
 # n / (n + 100), n the cases in the group (all over 26,000, so barely), and rounded to 0.01. A
 # market order's fill stays 1. Each horizon was then judged once on the held-out part by a
 # criterion fixed beforehand: 1-2w and 1-3m passed; 6-12m did not (its fitted shifts are in the
-# README) and, like a horizon without a backtest (today), is not corrected. Part of the rules:
+# README) and, like a horizon without a backtest (today), is not corrected. Rules 6 refitted the
+# shifts the same way on the zones of backtest.py's current rule (README, "A stronger zone rule";
+# fit part only, then judged once on the held-out part with the rule). Part of the rules:
 # changing a number means a new RULES number.
 CORRECTION = {   # (horizon, side, kind): log-odds shifts of fill and win, R added to edge.if_filled
-    ("1-2w", "long", "reversal"): {"fill": 0.16, "win": 0.26, "edge": 0.18},
-    ("1-2w", "long", "continuation"): {"fill": 0.23, "win": -0.06, "edge": -0.09},
-    ("1-2w", "short", "reversal"): {"fill": 0.22, "win": 0.22, "edge": 0.17},
-    ("1-2w", "short", "continuation"): {"fill": 0.15, "win": -0.15, "edge": -0.15},
-    ("1-3m", "long", "reversal"): {"fill": 0.01, "win": 0.11, "edge": 0.07},
-    ("1-3m", "long", "continuation"): {"fill": 0.24, "win": -0.13, "edge": -0.11},
-    ("1-3m", "short", "reversal"): {"fill": 0.23, "win": -0.01, "edge": 0.02},
-    ("1-3m", "short", "continuation"): {"fill": -0.01, "win": -0.24, "edge": -0.19},
+    ("1-2w", "long", "reversal"): {"fill": 0.17, "win": 0.37, "edge": 0.16},
+    ("1-2w", "long", "continuation"): {"fill": 0.20, "win": -0.15, "edge": -0.16},
+    ("1-2w", "short", "reversal"): {"fill": 0.19, "win": 0.32, "edge": 0.15},
+    ("1-2w", "short", "continuation"): {"fill": 0.16, "win": -0.13, "edge": -0.21},
+    ("1-3m", "long", "reversal"): {"fill": 0.05, "win": 0.18, "edge": 0.08},
+    ("1-3m", "long", "continuation"): {"fill": 0.22, "win": -0.12, "edge": -0.09},
+    ("1-3m", "short", "reversal"): {"fill": 0.19, "win": 0.02, "edge": 0.02},
+    ("1-3m", "short", "continuation"): {"fill": 0.02, "win": -0.11, "edge": -0.17},
 }
 MIN_FILL = 0.05      # a setup whose order fills on fewer paths says nothing (its edge rounds to zero and would rank first)
 TOLERANCE = 0.011        # one hundredth, for a rounding that fell the other way
@@ -619,7 +624,10 @@ EARLIER = {1: "its odds came from reach and turn by formulas, not from simulated
               "used one band of ±0.05 R at every horizon",
            3: "its odds were the uncorrected path counts (rules 5 corrects fill, win and edge at 1-2w and 1-3m "
               "by the error the backtest measured per side and kind, and narrows the 1-2w band)",
-           4: "rules 4 (GARCH paths) was evaluated and never shipped"}
+           4: "rules 4 (GARCH paths) was evaluated and never shipped",
+           5: "its prices came from the zones of the earlier zone rule (one width, single-candidate clusters), "
+              "with the correction and bands fitted on them (rules 6 uses zones 1.5 widths wide of at least two "
+              "candidates, with a refitted correction)"}
 PRICES = {"entry", "stop", "target", "risk", "reward"}   # checked to the rows' precision, the rest to 0.011
 
 

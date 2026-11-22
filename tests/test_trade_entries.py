@@ -143,15 +143,16 @@ def test_an_entries_file_of_rules_2_is_named_as_such(input_data, projection_data
     old = copy.deepcopy(entries_data)
     old["rules"] = 2
     bad = trade_entries.problems(input_data, projection_data, old)
-    assert len(bad) == 1 and "earlier version of the rules (rules 2, now 5)" in bad[0] and "other side" in bad[0]
+    assert len(bad) == 1 and "earlier version of the rules (rules 2, now 6)" in bad[0] and "other side" in bad[0]
 
 
-@pytest.mark.parametrize("version, why", [(3, "uncorrected path counts"), (4, "never shipped")])
-def test_an_entries_file_of_rules_3_or_4_is_named_as_such(input_data, projection_data, entries_data, version, why):
+@pytest.mark.parametrize("version, why", [(3, "uncorrected path counts"), (4, "never shipped"),
+                                          (5, "zones of the earlier zone rule")])
+def test_an_entries_file_of_rules_3_4_or_5_is_named_as_such(input_data, projection_data, entries_data, version, why):
     old = copy.deepcopy(entries_data)
     old["rules"] = version
     bad = trade_entries.problems(input_data, projection_data, old)
-    assert len(bad) == 1 and f"(rules {version}, now 5)" in bad[0] and why in bad[0]
+    assert len(bad) == 1 and f"(rules {version}, now 6)" in bad[0] and why in bad[0]
 
 
 def test_half_up_rounding_of_the_buffer(example):
@@ -284,8 +285,8 @@ def test_an_entries_file_of_the_earlier_rules_is_named_as_such(input_data, proje
 # ---- quality: the edge against the model's measured error at the horizon -----------
 
 def test_the_quality_band_follows_the_horizon():
-    assert trade_entries.band({"horizon": "1-2w"}) == 0.29
-    assert trade_entries.band({"horizon": "1-3m"}) == 0.09
+    assert trade_entries.band({"horizon": "1-2w"}) == 0.17
+    assert trade_entries.band({"horizon": "1-3m"}) == 0.05
     assert trade_entries.band({"horizon": "6-12m"}) == 0.32
     widest = max(trade_entries.EDGE_BAND.values())
     assert trade_entries.band({"horizon": "today"}) == widest and trade_entries.band({}) == widest
@@ -301,15 +302,15 @@ def test_the_label_is_recomputed_for_the_horizon(example, monkeypatch):
     """The same edges get other labels under another band, and check recomputes them."""
     source, proj = example
     reply = trade_entries.build(source, proj)
-    assert [e["quality"] for e in reply["entries"]] == ["marginal", "marginal", "marginal"]   # band 0.09
-    assert "±0.09 R" in " ".join(reply["confidence"]["limits"])
-    monkeypatch.setitem(trade_entries.EDGE_BAND, "1-3m", 0.04)
+    assert [e["quality"] for e in reply["entries"]] == ["favourable", "marginal", "marginal"]   # band 0.05
+    assert "±0.05 R" in " ".join(reply["confidence"]["limits"])
+    monkeypatch.setitem(trade_entries.EDGE_BAND, "1-3m", 0.07)
     assert trade_entries.problems(source, proj, reply) == [
-        "long-S3-reversal.quality: marginal, expected favourable"]
+        "long-S3-reversal.quality: favourable, expected marginal"]
     again = trade_entries.build(source, proj)
-    assert [e["quality"] for e in again["entries"]] == ["favourable", "marginal", "marginal"]
+    assert [e["quality"] for e in again["entries"]] == ["marginal", "marginal", "marginal"]
     assert trade_entries.problems(source, proj, again) == []
-    assert "±0.04 R" in " ".join(again["confidence"]["limits"])
+    assert "±0.07 R" in " ".join(again["confidence"]["limits"])
 
 
 def test_every_language_explains_the_band_without_advice():

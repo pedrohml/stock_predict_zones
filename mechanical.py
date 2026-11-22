@@ -81,9 +81,9 @@ TEXT = {
             "research": "the input asked for research ({research}); the mechanical engine does none, so there "
                         "are no drivers and the events are only the input's",
             "short": "only {n} candles in the main series, fewer than {min}"},
-        "method": "Mechanical engine, no language model. Zones: backtest.py's fixed rule (clusters of pivots, "
-                  "last-three-candle extremes, retracements and swing ends lying within one zone width, "
-                  "{width}, of each other; the nearest {supports} below and {resistances} above the price). "
+        "method": "Mechanical engine, no language model. Zones: backtest.py's fixed rule (clusters of at least "
+                  "two pivots, last-three-candle extremes, retracements and swing ends lying within one zone "
+                  "width, {width}, of each other; the nearest {supports} below and {resistances} above the price). "
                   "Probabilities: rz.py sim method {method}, copied unadjusted: {paths} simulated paths of "
                   "{closes} {basis} closes (fat-tailed, {drift}, volatility {start} per candle decaying to "
                   "{end}{forming}, no scheduled shocks). Strength: strong for three or more kinds of evidence "
@@ -141,8 +141,8 @@ TEXT = {
                         "drivers e os eventos são só os da entrada",
             "short": "apenas {n} candles na série principal, menos que {min}"},
         "method": "Motor mecânico, sem modelo de linguagem. Zonas: a regra fixa de backtest.py (agrupamentos de "
-                  "pivôs, extremos dos três últimos candles, retrações e pontas da perna a até uma largura de "
-                  "zona, {width}, uns dos outros; os {supports} mais próximos abaixo e os {resistances} acima do "
+                  "ao menos dois pivôs, extremos dos três últimos candles, retrações e pontas da perna a até uma "
+                  "largura de zona, {width}, uns dos outros; os {supports} mais próximos abaixo e os {resistances} acima do "
                   "preço). Probabilidades: rz.py sim método {method}, copiadas sem ajuste: {paths} caminhos "
                   "simulados de {closes} fechamentos {basis} (caudas gordas, {drift}, volatilidade de {start} "
                   "por candle caindo para {end}{forming}, sem choques agendados). Força: strong para três ou "

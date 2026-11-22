@@ -24,7 +24,7 @@ TICKERS = ("NVDA", "AAPL", "MSFT", "SPY", "JPM", "XOM", "PETR4.SA", "VALE3.SA", 
 def task(args):
     name, horizon, ticker, today = args
     rule = harness.rule_of(name)
-    if name != "base":
+    if True:   # "base" too: since the adoption, backtest.clustered_zones is the candidate itself
         backtest.clustered_zones = lambda facts, s=3, r=3, places=2: harness.zones(facts, rule, s, r, places)
     report = backtest.run([ticker], horizon, today=date.fromisoformat(today), progress=False)
     return name, horizon, report["records"]

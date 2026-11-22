@@ -66,7 +66,7 @@ Odds, counted on 20,000 simulated price paths of the projection's own simulation
 - `win_if_filled`: the share of the filled paths that reach the target before the stop. A day that reaches both counts as the stop, and on the fill day a stop touched that day counts against the setup.
 - `edge.if_filled`: the mean result of the filled paths in units of risk: −1 at the stop, `+ratio` at the target, the last close against the entry when the setup is still open at `valid_until`.
 - `edge.per_order = fill × edge.if_filled`: the same, counting the orders that never fill as zero.
-- `quality`: `edge.if_filled` against the model's measured error at the input's `horizon`, a band of ±0.29 at `1-2w`, ±0.09 at `1-3m`, ±0.32 at `6-12m` and ±0.32 at any other horizon. `favourable` when the edge is at or above the band, `unfavourable` at or below minus the band, `marginal` inside it: an edge that cannot be told from zero. The band is how far the stated mean edge missed the observed one in a backtest; it is not a measure of how good a setup is.
+- `quality`: `edge.if_filled` against the model's measured error at the input's `horizon`, a band of ±0.17 at `1-2w`, ±0.05 at `1-3m`, ±0.32 at `6-12m` and ±0.32 at any other horizon. `favourable` when the edge is at or above the band, `unfavourable` at or below minus the band, `marginal` inside it: an edge that cannot be told from zero. The band is how far the stated mean edge missed the observed one in a backtest; it is not a measure of how good a setup is.
 - `detail.loss` and `detail.open` are the shares of the filled paths that end at the stop and still open; `win_if_filled + loss + open = 1`.
 - **The backtest correction** (`detail.corrected` is true): at the `1-2w` and `1-3m` horizons the path counts are corrected for each side and kind (reversal, continuation) by the average error a backtest of these rules measured on past dates. a market order is left as counted (the shifts were fitted on limit and stop orders); for the others `fill` and `win_if_filled` are moved by a fixed shift in log-odds, `edge.if_filled` by a fixed number of R, and `detail.loss` and `detail.open` are scaled so the three shares still add up to one; `edge.per_order`, `quality` and the ranking use the corrected numbers. The 5% minimum `fill` is judged on the paths' own count, before the correction. At `6-12m` and any other horizon nothing is corrected.
 
@@ -93,13 +93,13 @@ No position size, leverage, or instruction to buy or sell. `why` describes the s
 
 ## Output
 
-Reply with one JSON object and nothing else: no prose before or after, no code fence. Keys, ids, enum values and their order stay exactly as below; `rules` is 5. Free-text values (`anchor`, `basis`, `why`, `watch`, `limits`, `method`, `note`) are written in the language named by `input.reply.language`. Prices keep the precision of the candle rows; probabilities, `ratio` and `edge` have two decimals.
+Reply with one JSON object and nothing else: no prose before or after, no code fence. Keys, ids, enum values and their order stay exactly as below; `rules` is 6. Free-text values (`anchor`, `basis`, `why`, `watch`, `limits`, `method`, `note`) are written in the language named by `input.reply.language`. Prices keep the precision of the candle rows; probabilities, `ratio` and `edge` have two decimals.
 
 The example shows the shape, computed from a real run. Your numbers come from `<setups>`.
 
 {
   "task": "trade_entries",
-  "rules": 5,
+  "rules": 6,
   "asset": { "ticker": "PETR4.SA", "currency": "BRL" },
   "as_of": { "time": "2026-11-18T15:15-03:00", "price": 42.77 },
   "valid_until": "2027-02-12",
@@ -116,9 +116,9 @@ The example shows the shape, computed from a real run. Your numbers come from `<
       "stop": { "price": 34.34, "anchor": "S3 far edge 35.04 − buffer 0.70" },
       "target": { "price": 43.23, "anchor": "R1 near edge" },
       "payoff": { "risk": 2.51, "reward": 6.38, "ratio": 2.54 },
-      "odds": { "fill": 0.44, "win_if_filled": 0.19, "basis": "20,000 simulated paths, corrected by the backtest's measured error for this horizon, side and kind: the order fills in 44%; of the fills, 19% reach the target first, 57% the stop, 23% are still open at valid_until" },
-      "edge": { "if_filled": 0.05, "per_order": 0.02 },
-      "quality": "marginal",
+      "odds": { "fill": 0.45, "win_if_filled": 0.20, "basis": "20,000 simulated paths, corrected by the backtest's measured error for this horizon, side and kind: the order fills in 45%; of the fills, 20% reach the target first, 57% the stop, 23% are still open at valid_until" },
+      "edge": { "if_filled": 0.06, "per_order": 0.03 },
+      "quality": "favourable",
       "why": "If S3 holds and the price turns back to R1, the reward is 2.54 times the risk; the target comes first in about one fill in five, so the payoff rests on the large ratio.",
       "watch": ["S1 40.65–42.52 lies between entry and target", "S2 37.40–38.80 lies between entry and target", "2026-12-21 ex-dividend: the drop works against a long and can jump the stop"]
     },
@@ -131,10 +131,10 @@ The example shows the shape, computed from a real run. Your numbers come from `<
       "stop": { "price": 36.70, "anchor": "S2 far edge 37.40 − buffer 0.70" },
       "target": { "price": 43.23, "anchor": "R1 near edge" },
       "payoff": { "risk": 2.10, "reward": 4.43, "ratio": 2.11 },
-      "odds": { "fill": 0.61, "win_if_filled": 0.29, "basis": "20,000 simulated paths, corrected by the backtest's measured error for this horizon, side and kind: the order fills in 61%; of the fills, 29% reach the target first, 63% the stop, 8% are still open at valid_until" },
-      "edge": { "if_filled": 0.02, "per_order": 0.01 },
+      "odds": { "fill": 0.62, "win_if_filled": 0.31, "basis": "20,000 simulated paths, corrected by the backtest's measured error for this horizon, side and kind: the order fills in 62%; of the fills, 31% reach the target first, 62% the stop, 7% are still open at valid_until" },
+      "edge": { "if_filled": 0.03, "per_order": 0.02 },
       "quality": "marginal",
-      "why": "If S2 holds and the price turns back to R1, the reward is 2.11 times the risk; by the stated odds the target comes before the stop in 29% of the fills.",
+      "why": "If S2 holds and the price turns back to R1, the reward is 2.11 times the risk; by the stated odds the target comes before the stop in 31% of the fills.",
       "watch": ["S1 40.65–42.52 lies between entry and target", "2026-12-21 ex-dividend: the drop works against a long and can jump the stop"]
     },
     {
@@ -146,8 +146,8 @@ The example shows the shape, computed from a real run. Your numbers come from `<
       "stop": { "price": 42.53, "anchor": "R1 near edge 43.23 − buffer 0.70" },
       "target": { "price": 49.60, "anchor": "R2 far edge" },
       "payoff": { "risk": 3.16, "reward": 3.91, "ratio": 1.24 },
-      "odds": { "fill": 0.75, "win_if_filled": 0.43, "basis": "20,000 simulated paths, corrected by the backtest's measured error for this horizon, side and kind: the order fills in 75%; of the fills, 43% reach the target first, 52% the stop, 5% are still open at valid_until" },
-      "edge": { "if_filled": -0.02, "per_order": -0.01 },
+      "odds": { "fill": 0.74, "win_if_filled": 0.43, "basis": "20,000 simulated paths, corrected by the backtest's measured error for this horizon, side and kind: the order fills in 74%; of the fills, 43% reach the target first, 51% the stop, 5% are still open at valid_until" },
+      "edge": { "if_filled": 0.00, "per_order": 0.00 },
       "quality": "marginal",
       "why": "If R1 breaks and the price carries on to R2, the reward is 1.24 times the risk; the stop comes first a little more often than the target by the stated odds.",
       "watch": ["2026-12-21 ex-dividend: the drop works against a long and can jump the stop"]
@@ -160,7 +160,7 @@ The example shows the shape, computed from a real run. Your numbers come from `<
       "the odds are counted on random price paths with the projection's volatility and drift; the paths know nothing of the zones, so the odds describe the setups' distances, not an effect of a zone holding or breaking",
       "fills, stops and targets are judged on simulated daily highs and lows, a day reaching both the stop and the target counted as the stop; the projection's own reach and turn are for weekly closes",
       "a backtest of these rules on the mechanical engine compared the odds with outcomes on average, before costs, not for this setup; the projection's own confidence is low",
-      "quality compares edge.if_filled with the model's measured error at 1-3m, ±0.09 R: marginal means the edge cannot be told from zero, favourable or unfavourable only that it lies outside that error; none of the three is a recommendation",
+      "quality compares edge.if_filled with the model's measured error at 1-3m, ±0.05 R: marginal means the edge cannot be told from zero, favourable or unfavourable only that it lies outside that error; none of the three is a recommendation",
       "at 1-3m the odds are the path counts corrected by the average error a backtest measured per side and kind: an average over many past setups, not knowledge of this one, with that backtest's limits (survivor tickers, no costs, a pessimistic order of events inside a day)",
       "every setup kept is long, because these ranked highest by the stated edge per order; the list is not balanced by side, and a one-sided list is not a forecast of direction or a recommendation",
       "the 2026-12-21 ex-dividend drop is not in the simulation"
