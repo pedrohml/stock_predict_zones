@@ -5,6 +5,16 @@
 # was picked in 2026 and is still quoted), plus large caps of three other markets.
 # A symbol is dropped only for data reasons (no history, broken or unadjusted prices, a technical
 # failure of the pipeline on its exchange), each written down here before any result is read.
+#
+# Data checks of 22 Nov 2026 (day-over-day close ratio above 1.6 or below 1/1.6 since 2003, rows with
+# open = high = low = close), before any setup was made:
+# - CPLE6.SA dropped: Yahoo's download fails (TypeError inside yfinance).
+# - EQTL3.SA@2010-08-26.. cut from 2010-08-26: x0.21 the day after its first row (2008) and x0.6 in Aug 2010, which look
+#   like unadjusted splits.
+# - Kept as real moves: MS +87% on 13 Oct 2008 (the Mitsubishi UFJ investment), OXY, APA, HAL on 9 Mar 2020
+#   (the oil crash), PBI +81% on 26 Jan 2021 (a short squeeze), CSAN3 on 26 Oct 2026 (the Ibovespa's -14%
+#   day, kept in the first universe too).
+# - TAEE11.SA has many stale rows (one price repeated); backtest_entries.py's stale rule skips those cases.
 version: 1
 
 [us-large] US large caps of sectors not in the first universe's picks.
@@ -14,7 +24,7 @@ UNH MRK ABT PEP COST LOW TGT ORCL CSCO QCOM TXN HON MMM UPS DE LMT GS MS WFC USB
 MU AMD FCX APA HAL DVN NWL PBI
 
 [br] B3 large caps not in the first universe.
-PETR3.SA BRAP4.SA TAEE11.SA CPLE6.SA KLBN11.SA TOTS3.SA EQTL3.SA CSAN3.SA SANB11.SA MULT3.SA ALPA4.SA
+PETR3.SA BRAP4.SA TAEE11.SA KLBN11.SA TOTS3.SA EQTL3.SA@2010-08-26.. CSAN3.SA SANB11.SA MULT3.SA ALPA4.SA
 
 [intl] Large caps of Germany, the Netherlands, Switzerland, Japan and the UK.
 SAP.DE SIE.DE ASML.AS NESN.SW 7203.T 6758.T HSBA.L BP.L
