@@ -1589,6 +1589,38 @@ Standard errors cluster by as-of month (the windows overlap). A pattern and dire
 
 **Held-out, once:** every passing pattern and direction is judged on `--part held-out` by the same statistic with t ≥ 2. Nothing is chosen after that, and a pattern that holds would only then be proposed as a rule, with its own `RULES` number. If nothing passes the fit part the held-out part is not read. If it is read, it is the held-out part's fifth use, and a pass would be weak evidence; a later rule would need fresh tickers or later dates.
 
+#### Result: no pattern passed the fit part; the held-out part was not read
+
+Run on 22 Nov 2026 (`patterns.py fit`, output in `fit.txt` and `FROZEN.json`): 51,343 pattern events on 76 tickers, 2005-2026, of which every pattern and direction had at least 300 on the fit part; the setups of rules 6 at `1-2w` (every 10 trading days) and `1-3m` (every 20). None of the 16 patterns and directions met either question's bar, so `FROZEN.json` is empty, `held_out.json` does not exist, and the held-out part is still on its fourth use.
+
+Fit part, A = mean return in the pattern's direction minus the universe's mean over the same days, net of 0.20%; B = net R per order of the setups agreeing with the pattern, against all setups (−0.036 at `1-2w`, +0.005 at `1-3m`):
+
+| Pattern | Dir. | Events | A excess (t) | B setups | B net | B diff (t) |
+|---|---|---|---|---|---|---|
+| engulfing | bull | 6,191 | −0.29% (−2.8) | 5,978 | −0.028 | +0.007 (0.6) |
+| engulfing | bear | 8,140 | −0.41% (−4.8) | 4,071 | −0.072 | −0.036 (−2.9) |
+| hammer / shooting star | bull | 4,580 | −0.44% (−3.4) | 4,256 | −0.028 | +0.008 (0.5) |
+| hammer / shooting star | bear | 4,299 | −0.53% (−4.1) | 2,072 | −0.073 | −0.037 (−2.1) |
+| morning / evening star | bull | 2,034 | −0.27% (−1.3) | 2,084 | −0.049 | −0.014 (−0.8) |
+| morning / evening star | bear | 1,925 | −0.21% (−1.1) | 969 | −0.077 | −0.041 (−1.6) |
+| piercing / dark cloud | bull | 444 | −0.33% (−1.1) | 437 | +0.011 | +0.046 (1.4) |
+| piercing / dark cloud | bear | 573 | −0.17% (−0.5) | 306 | −0.097 | −0.062 (−1.3) |
+| three soldiers / crows | bull | 801 | +0.10% (0.3) | 689 | +0.023 | +0.059 (1.5) |
+| three soldiers / crows | bear | 1,259 | −0.36% (−1.1) | 514 | +0.022 | +0.058 (1.7) |
+| head and shoulders | bull | 471 | −0.88% (−0.9) | 350 | −0.004 | −0.009 (−0.1) |
+| head and shoulders | bear | 451 | +1.57% (2.1) | 3 | | |
+| double top / bottom | bull | 352 | +0.64% (0.4) | 264 | +0.042 | +0.038 (0.6) |
+| double top / bottom | bear | 315 | −3.10% (−1.8) | 5 | | |
+| triangle breakout | bull | 3,800 | +0.20% (0.4) | 2,555 | +0.030 | +0.025 (1.3) |
+| triangle breakout | bear | 3,271 | −0.46% (−0.9) | 25 | | |
+
+What it shows:
+
+- **The candle patterns carry no edge in their own direction.** Before costs their excess return is between about −0.3% and +0.3% over ten days; after 0.20% every one is at or below zero. The bearish ones lean the wrong way: after a bearish engulfing or a shooting star the stock did slightly *better* than the universe over the next ten days, the short-term reversal the README's ranking listed as a separate idea. That is not a pass either: it was not a question asked here, and the effect is a fraction of the cost.
+- **Agreeing with a candle pattern did not improve the setups.** The short setups that agreed with a bearish pattern were worse than the average setup (engulfing −0.036 R, t −2.9), the long ones that agreed with a bullish pattern no better. The largest positive differences (piercing, three soldiers) rest on a few hundred setups with t below 2 and signs that change between the year blocks.
+- **The chart patterns are rare and noisy.** Head and shoulders and double tops or bottoms fired some 300 to 500 times each in 20 years on the fit part; the one A figure near the bar (head and shoulders, bearish, +1.6%, t 2.1) failed t ≥ 3, and a bearish chart pattern almost never met a short setup at `1-3m`, where rules 6 picks are nearly all long.
+- So the setups gain nothing from these two families as defined here. A different definition (other tolerances, a volume condition, a filter by trend) would be a new search, with a new protocol and the same t ≥ 3 bar; the tolerances above were fixed before the data was looked at and are not tuned after it.
+
 ## Scoring the saved setups
 
 The [setup backtest](#backtest-of-the-trade-setups) replays today's rules on past dates. `score_entries.py` checks the setups that real runs actually wrote, before the prices existed: the forward, out-of-sample check. Every run keeps its `entries.json` in the run folder and, next to the saved projection, in `projections/`.
@@ -1792,7 +1824,7 @@ stock_predict_zones/
 ├── .claude/skills/reversal-zones-projection/
 │   ├── SKILL.md                    step 2: the skill
 │   └── scripts/rz.py               its helper: levels, simulation, validation, saving, outcomes
-├── examples/                       one complete run: input, projection and charts; reports of the value test and the setup backtest; segmentation_2026-11-20/ (the segment search); zone_rule_2026-11-21/ (the zone-rule study), placement_2026-11-21/ (stop and target placement, not adopted), fixed_target_2026-11-22/ (a fixed R target at 1-3m, not adopted), patterns_2026-11-22/ (candlestick and chart patterns)
+├── examples/                       one complete run: input, projection and charts; reports of the value test and the setup backtest; segmentation_2026-11-20/ (the segment search); zone_rule_2026-11-21/ (the zone-rule study), placement_2026-11-21/ (stop and target placement, not adopted), fixed_target_2026-11-22/ (a fixed R target at 1-3m, not adopted), patterns_2026-11-22/ (candlestick and chart patterns, none passed)
 ├── prompts/
 │   ├── trade_entries.md            prompt: three ranked trade setups from one run
 │   └── trade_entries.schema.json   JSON Schema of its reply
