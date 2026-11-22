@@ -1753,6 +1753,23 @@ The long run under rules 8 ([`examples/backtest_entries_2026-11-22_rules8_long.t
 
 The stated odds stayed as close to the outcomes as under rules 6 and 7 (whose held-out misses at `1-3m` and `6-12m` were the same size and sign: those years fell short of the simulation's drift), so `CORRECTION` is unchanged. The bands were re-measured on the fit part as before: ±0.15 R at `1-2w` (rules 7: 0.16), ±0.06 R at `1-3m` (0.05); `6-12m` keeps 0.32. At `1-2w` the stated edge per order of the picks is now slightly negative on average: once the tight and the low-ratio setups are gone, what is left has no positive edge even by its own odds, which `confidence.limits` says in each file where it applies.
 
+### A stop sized by volatility, and dropping the offending kinds of setup: protocol (written on 22 Nov 2026, before any evaluation)
+
+Two ways to remove setups that lose, tested together on the same paths. Code and output: [`examples/volstop_2026-11-22/`](examples/volstop_2026-11-22/).
+
+1. **A minimum risk in units of the stock's own volatility**, instead of the fixed 2% of the price of rules 7. One candle's move is `move = price × structure.volatility.assumed[0]` (the daily volatility at `1-2w`, the weekly at `1-3m`; the same number `units()` derives the buffer from). A setup is discarded when its risk is below `k × move`, with `k` ∈ {0.5, 1, 1.5, 2}. At `1-2w` this **replaces** the 2% minimum; at `1-3m`, which has none, it is added.
+2. **Dropping whole kinds of setup** that the offenders' analysis pointed at: market orders (`nomkt`), continuations (`nocont`), or both (`nomkt+nocont`).
+
+Every combination of a minimum (none, or one of the four `k`) with a kind filter (none or one of the three) is a candidate: 19 candidates per horizon besides rules 8 itself. "None" at `1-2w` keeps the 2% of rules 7. Every other rule of rules 8 stays (reward at least the risk, odds, correction, the pick of the best three of what is left).
+
+**Statistic**: as the user asked, costs are ignored. The statistic is the mean gross R per order (pessimistic intra-candle ordering) and its difference with rules 8 on the same cases, with standard errors clustered by as-of month. Net R (0.20% round trip) and the optimistic ordering are printed for reference only.
+
+**Data**: `1-2w` every 10 trading days and `1-3m` every 20; the fit part of `backtest_universe.txt` (76 tickers, 2005-2026) to choose. To judge: the fresh universe (`examples/trend_2026-11-22/fresh_universe.txt`, version 1), all its years. **This is the second reading of the fresh universe** (the first was the minimum-risk study above). The held-out years of the first universe are not read.
+
+**Choice on the fit part, per horizon**: among the candidates whose difference with rules 8 is positive with t ≥ 3 and positive in each block of fit years (2005-2012, 2013-2019, 2020-2026), and that keep at least half of rules 8's orders, the one with the highest gross R per order. It is written to `FROZEN.json` before the fresh universe is run. A horizon with no such candidate keeps rules 8, and the fresh universe is not run for it.
+
+**Judgement, once, on the fresh universe**, per frozen horizon: adopted when the difference with rules 8 is positive with t ≥ 2 and the gap between stated and observed R per order is no more than 0.02 above rules 8's. If adopted, it becomes rules 9, with `EDGE_BAND` re-measured on the fit part. `CORRECTION` is fitted over every valid setup, so it stays.
+
 ## Scoring the saved setups
 
 The [setup backtest](#backtest-of-the-trade-setups) replays today's rules on past dates. `score_entries.py` checks the setups that real runs actually wrote, before the prices existed: the forward, out-of-sample check. Every run keeps its `entries.json` in the run folder and, next to the saved projection, in `projections/`.
