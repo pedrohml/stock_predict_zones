@@ -1527,6 +1527,40 @@ The placement study above found, on the fit part, that a wider stop with a fixed
 
 **The held-out part has been read three times before** (the rules 5 correction, the segmentation, the zone rule). This is its fourth use, at one horizon, for one candidate. A pass here is weaker evidence than the earlier ones, and the result says so.
 
+#### Result: chosen on the fit part, not adopted on the held-out part
+
+Run on 22 Nov 2026 with [`run.py`](examples/fixed_target_2026-11-22/run.py) and [`judge.py`](examples/fixed_target_2026-11-22/judge.py) (output in `fit.txt`, `FROZEN.json`, `held_out.txt`, `judge.json`): 13,243 fit cases and 3,493 held-out cases at `1-3m`. Rules 6's own correction, refitted on the shorter grid, came back within a few hundredths of the shipped one (long reversal +0.08 / +0.17 / +0.08 against +0.05 / +0.18 / +0.08).
+
+Fit part, the three picks (net after the 0.20% round trip; difference against rules 6 with t):
+
+| Variant | Fill st/obs | Win st/obs | R/order st/obs | Net R/order | vs rules 6 (t) | Gap | Risk, % of price | Passes |
+|---|---|---|---|---|---|---|---|---|
+| rules 6 (k 0.25, zone) | 56% / 56% | 36% / 36% | +0.031 / +0.029 | +0.005 | | 0.002 | 5.5% | |
+| k 0.25, 2 R | 74% / 74% | 31% / 32% | +0.060 / +0.066 | +0.034 | +0.029 (2.6) | 0.006 | 5.4% | yes |
+| k 0.25, 3 R | 75% / 75% | 20% / 20% | +0.088 / +0.095 | +0.063 | +0.058 (3.7) | 0.007 | 5.4% | yes |
+| k 1, zone | 60% / 59% | 46% / 46% | +0.041 / +0.040 | +0.023 | +0.019 (5.5) | 0.001 | 8.5% | no (net) |
+| k 1, 2 R | 76% / 76% | 24% / 24% | +0.086 / +0.096 | +0.075 | +0.070 (5.2) | 0.010 | 8.3% | yes |
+| **k 1, 3 R** | 76% / 76% | 11% / 11% | +0.102 / +0.111 | **+0.090** | +0.086 (5.1) | 0.009 | 8.3% | yes, chosen |
+| k 1.5, zone | 55% / 54% | 44% / 44% | +0.038 / +0.036 | +0.024 | +0.019 (4.7) | 0.002 | 10.5% | no (net) |
+| k 1.5, 2 R | 76% / 76% | 17% / 17% | +0.086 / +0.094 | +0.078 | +0.073 (5.4) | 0.009 | 10.4% | yes |
+| k 1.5, 3 R | 76% / 76% | 6% / 7% | +0.096 / +0.103 | +0.086 | +0.082 (5.2) | 0.007 | 10.4% | yes |
+
+Held-out part, run once, the frozen candidate (stop 1 move beyond the zone, target 3 R) against rules 6 on the same cases:
+
+| Rule | Setups | Fill st/obs | Win st/obs | R/order st/obs (opt.) | Net R/order | Gap | Brier fill (constant) | Brier win (constant) |
+|---|---|---|---|---|---|---|---|---|
+| rules 6 | 10,461 | 55% / 55% | 35% / 34% | +0.031 / −0.010 (+0.023) | −0.033 | 0.041 | 0.216 (0.247) | 0.206 (0.224) |
+| k 1, 3 R | 10,446 | 74% / 75% | 10% / 8% | +0.098 / +0.008 (+0.013) | −0.011 | 0.089 | 0.157 (0.189) | 0.074 (0.075) |
+
+Tests: 1 net R +0.022 with t 0.7, **fail**; 2 gap 0.041 → 0.089, **fail**; 3 odds honest on average (fill −0.003, win +0.014), pass; 4 Brier no worse than the constant, pass. **Not adopted; the rules stay version 6.**
+
+What it shows:
+
+- **The fixed target turned the setups into long holds.** Under the candidate the picks were 100% long on the fit part and 99% on the held-out part, and about half of the filled setups ended at expiry rather than at the stop or the target (the 3 R target was reached by 11% of the fills). Its fit-part gain (+0.11 R per order for longs) was the fit years' rise over three months; on the held-out years (2008, 2009, 2014-2016) the same longs made +0.01.
+- **Its stated edge did not follow.** Stated +0.10 R per order on both parts, observed +0.11 on the fit part and +0.01 held out: the correction learned the fit years' drift, which is the error the README's earlier sections found at `6-12m`.
+- **Honest on average is not enough.** The odds passed tests 3 and 4, because with one ratio for every setup there is little left to get wrong. That is the same reason the placement study's Brier test failed them, seen from the other side.
+- This was the held-out part's fourth use. A pass would have been weak evidence; a fail is still informative, because the failure has a plain cause (direction) that the fit part could not show.
+
 ## Scoring the saved setups
 
 The [setup backtest](#backtest-of-the-trade-setups) replays today's rules on past dates. `score_entries.py` checks the setups that real runs actually wrote, before the prices existed: the forward, out-of-sample check. Every run keeps its `entries.json` in the run folder and, next to the saved projection, in `projections/`.
@@ -1730,7 +1764,7 @@ stock_predict_zones/
 ├── .claude/skills/reversal-zones-projection/
 │   ├── SKILL.md                    step 2: the skill
 │   └── scripts/rz.py               its helper: levels, simulation, validation, saving, outcomes
-├── examples/                       one complete run: input, projection and charts; reports of the value test and the setup backtest; segmentation_2026-11-20/ (the segment search); zone_rule_2026-11-21/ (the zone-rule study), placement_2026-11-21/ (stop and target placement, not adopted)
+├── examples/                       one complete run: input, projection and charts; reports of the value test and the setup backtest; segmentation_2026-11-20/ (the segment search); zone_rule_2026-11-21/ (the zone-rule study), placement_2026-11-21/ (stop and target placement, not adopted), fixed_target_2026-11-22/ (a fixed R target at 1-3m, not adopted)
 ├── prompts/
 │   ├── trade_entries.md            prompt: three ranked trade setups from one run
 │   └── trade_entries.schema.json   JSON Schema of its reply

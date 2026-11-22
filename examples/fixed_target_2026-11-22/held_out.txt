@@ -1,0 +1,5 @@
+1-3m: 3493 held-out cases (every 20 trading days)
+  rules 6                n  10461 fill 55%/55% win 35%/34% R/o +0.031/-0.010 (opt +0.023) net -0.033 gap 0.041 Bf 0.216(0.247) Bw 0.206(0.224) risk 5.90% net% -0.118% ratio 1.63 band 0.08
+  k1-3R                  n  10446 fill 74%/75% win 10%/8% R/o +0.098/+0.008 (opt +0.013) net -0.011 gap 0.089 Bf 0.157(0.189) Bw 0.074(0.075) risk 8.94% net% +0.141% ratio 3.00 band 0.13 | vs r5 +0.022 t +0.7 blocks -0.001/+0.032/+nan | fill st-obs -0.003 win st-obs +0.014
+  tests: 1 net FAIL, 2 gap FAIL, 3 honest pass, 4 brier pass
+  decision: not adopted
