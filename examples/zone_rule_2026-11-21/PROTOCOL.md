@@ -35,3 +35,10 @@ the frozen candidate is **`w1.5_m2`: zones 1.5 times the current width, and a cl
 least two members**. FROZEN.json holds it with its refitted CORRECTION (1-2w, 1-3m) and bands
 (1-2w 0.17, 1-3m 0.05; 6-12m keeps 0.32, not corrected, as under rules 5). The held-out run is
 `harness.py collect held-out DATA` then `analyse.py judge DATA`, once.
+
+## Held-out result and adoption (22 Nov 2026)
+`held_out.txt` / `judge.json`: every test passed at every horizon, so the rule was adopted
+(backtest.WIDTH_FACTOR 1.5, MIN_MEMBERS 2; setup rules 6 with FROZEN.json's CORRECTION and bands).
+Since then `backtest.clustered_zones` is the adopted rule, so `calib.py` replaces it by
+`harness.zones()` for every rule name, "base" (the earlier rule) included, and `harness.zones()`
+under `w1.5_m2` equals the shipped rule.
