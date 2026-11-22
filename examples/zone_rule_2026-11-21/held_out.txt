@@ -1,0 +1,24 @@
+1-2w: held-out part, 16331 cases with setups under both rules
+  current      n  48993  fill 0.528/0.523  win 0.301/0.302  R/ord st +0.005 obs +0.004 opt +0.148 net -0.059  gap 0.001  Bf 0.2063(0.2495) Bw 0.1974(0.2108) zones 5.41 width 1.95%
+  w1.5_m2      n  48979  fill 0.401/0.397  win 0.271/0.272  R/ord st +0.004 obs +0.002 opt +0.063 net -0.034  gap 0.002  Bf 0.1879(0.2394) Bw 0.1774(0.1981) zones 5.08 width 2.91%
+  net difference +0.0255 (se 0.0056, t +4.6); gap 0.0006 -> 0.0020; gap pass, brier_fill pass, brier_win pass, net pass
+    long reversal: current 34615 st +0.012 obs +0.006 | candidate 31597 st +0.012 obs +0.009
+    long continuation: current 16 st -0.163 obs +0.575 | candidate 304 st -0.105 obs -0.205
+    short reversal: current 14348 st -0.013 obs +0.001 | candidate 16794 st -0.008 obs -0.005
+    short continuation: current 14 st -0.151 obs -0.529 | candidate 284 st -0.098 obs -0.176
+1-3m: held-out part, 6962 cases with setups under both rules
+  current      n  20886  fill 0.600/0.620  win 0.368/0.357  R/ord st +0.012 obs -0.018 opt +0.034 net -0.052  gap 0.031  Bf 0.2092(0.2356) Bw 0.2137(0.2295) zones 5.44 width 4.23%
+  w1.5_m2      n  20844  fill 0.549/0.555  win 0.353/0.341  R/ord st +0.031 obs +0.001 opt +0.033 net -0.022  gap 0.030  Bf 0.2157(0.2469) Bw 0.2068(0.2246) zones 5.11 width 6.33%
+  net difference +0.0303 (se 0.0093, t +3.3); gap 0.0305 -> 0.0297; gap pass, brier_fill pass, brier_win pass, net pass
+    long reversal: current 14825 st +0.021 obs +0.002 | candidate 10656 st +0.029 obs +0.003
+    long continuation: current 4933 st -0.004 obs -0.065 | candidate 9843 st +0.035 obs +0.002
+    short reversal: current 986 st -0.036 obs -0.090 | candidate 263 st -0.020 obs -0.072
+    short continuation: current 142 st -0.024 obs -0.005 | candidate 82 st -0.024 obs -0.103
+6-12m: held-out part, 1789 cases with setups under both rules
+  current      n   5367  fill 0.703/0.732  win 0.454/0.378  R/ord st +0.073 obs -0.092 opt -0.063 net -0.118  gap 0.165  Bf 0.1850(0.1962) Bw 0.2317(0.2351) zones 5.46 width 6.03%
+  w1.5_m2      n   5344  fill 0.606/0.643  win 0.404/0.355  R/ord st +0.081 obs -0.054 opt -0.045 net -0.070  gap 0.134  Bf 0.2081(0.2295) Bw 0.2213(0.2290) zones 5.18 width 9.02%
+  net difference +0.0472 (se 0.0207, t +2.3); gap 0.1648 -> 0.1344; gap pass, brier_fill pass, brier_win pass
+    long reversal: current 1819 st +0.047 obs -0.033 | candidate 1782 st +0.041 obs -0.013
+    long continuation: current 3436 st +0.088 obs -0.126 | candidate 3376 st +0.107 obs -0.081
+    short reversal: current 10 st -0.009 obs +0.462 | candidate 51 st -0.073 obs +0.156
+    short continuation: current 102 st +0.015 obs -0.038 | candidate 135 st +0.004 obs -0.000
