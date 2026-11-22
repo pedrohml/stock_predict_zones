@@ -1508,6 +1508,25 @@ What it shows:
 
 The limits of the whole backtest apply: survivor tickers chosen in 2026, overlapping cases, mechanical zones and unadjusted probabilities, an assumed cost level, no borrowing costs or dividends, and a pessimistic order of events inside a day. This was a search over hypothetical setups. It is not a strategy, and its negative result is not advice either.
 
+### A fixed R target at `1-3m`: protocol (written on 22 Nov 2026, before any evaluation)
+
+The placement study above found, on the fit part, that a wider stop with a fixed 2 or 3 R target raised net R per order at `1-3m` by 0.09 to 0.12, and failed only its Brier test: with one ratio for every setup the stated win odds are nearly alike, so they cannot beat the constant forecast by much even when they are right on average. This study asks the narrower question that test did not: is such a placement better net of costs while its odds stay honest on average? It is run on rules 6 (the new zones), at `1-3m` only, on a shorter grid.
+
+**The family, fixed beforehand** (the placement harness, [`examples/placement_2026-11-21/harness.py`](examples/placement_2026-11-21/harness.py), variants 0, 3, 4, 10, 13, 14, 15, 18, 19): the stop at k = 0.25 (rules 6), 1 or 1.5 `move` beyond its zone edge, times the target at the next zone's edge (rules 6), 2 R or 3 R. Nine variants including rules 6 itself. Everything else is rules 6's. For every variant `CORRECTION` is refitted on its own fit rows by the rules 5 method (market orders uncorrected), and its quality band measured the same way.
+
+**The shorter grid.** `1-3m` as-of dates every 20 trading days (the long run uses 10), from 2005-01-03 to 2026-08-14, the 76 tickers of universe version 1: about half the long run's cases. The fit part (`part == "fit"`) chooses, the held-out part (`part == "held-out"`) judges once.
+
+**Choosing, on the fit part only.** The candidate is the variant with the highest net R per order among those that pass tests 1 to 4 below on the fit part, with the difference positive in each of the three blocks of fit years (2005-12, 2013-19, 2020-26). If none passes, nothing is frozen and the held-out part is not read.
+
+**Adoption criterion, never to be changed after it.** The frozen candidate against rules 6 on the same held-out cases, the three picked setups, pessimistic ordering inside a day:
+
+1. **Net R per order higher:** net of a 0.20% round trip (charged on filled setups, in R: 0.002 × entry / risk; an unfilled order is 0R), by at least 0.02, with t ≥ 2 for the difference (error clustered by as-of month).
+2. **Calibration of the edge kept:** |mean stated `edge.per_order` − mean observed R per order (gross)| no more than 0.01 above rules 6's.
+3. **Odds honest on average:** |mean stated `fill` − observed fill rate| ≤ 0.03, and the same for `win_if_filled` among filled setups.
+4. **Odds no worse than no odds:** for `fill` and for `win_if_filled` separately, the candidate's Brier score is at most 0.002 above that of the constant forecast (its own observed rate). This replaces the placement study's test 3, which required the odds to separate setups as well as rules 5's did.
+
+**The held-out part has been read three times before** (the rules 5 correction, the segmentation, the zone rule). This is its fourth use, at one horizon, for one candidate. A pass here is weaker evidence than the earlier ones, and the result says so.
+
 ## Scoring the saved setups
 
 The [setup backtest](#backtest-of-the-trade-setups) replays today's rules on past dates. `score_entries.py` checks the setups that real runs actually wrote, before the prices existed: the forward, out-of-sample check. Every run keeps its `entries.json` in the run folder and, next to the saved projection, in `projections/`.
