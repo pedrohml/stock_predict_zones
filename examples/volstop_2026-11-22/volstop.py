@@ -156,13 +156,13 @@ def cases(task):
     return rows
 
 
-def run(out_path, universe_path, part, jobs):
+def run(out_path, universe_path, part, jobs, horizons=("1-2w", "1-3m")):
     uni = be.read_universe(universe_path)
     pool = ProcessPoolExecutor(jobs, mp_context=multiprocessing.get_context("spawn"))
     with open(out_path, "w", newline="") as handle:
         writer = csv.DictWriter(handle, FIELDS)
         writer.writeheader()
-        for horizon in ("1-2w", "1-3m"):
+        for horizon in horizons:
             pending = []
             for ticker in uni["tickers"]:
                 try:
@@ -281,7 +281,7 @@ def judge(fit_path, fresh_path):
                 print(f"   fresh tickers, {part} years: " + line(p))
         out.append(c)
     print("for reference, every variant on the fresh tickers:")
-    for horizon in ("1-2w", "1-3m"):
+    for horizon in frozen:
         for variant in VARIANTS:
             print("   " + line(compare(df, horizon, variant)))
     json.dump(out, open(os.path.join(HERE, "judge.json"), "w"), indent=1, default=float)
@@ -293,8 +293,9 @@ if __name__ == "__main__":
         p = argparse.ArgumentParser()
         p.add_argument("cmd"); p.add_argument("out"); p.add_argument("universe")
         p.add_argument("--part"); p.add_argument("--jobs", type=int, default=14)
+        p.add_argument("--horizons", nargs="+", default=["1-2w", "1-3m"])   # the fresh universe: frozen horizons only
         a = p.parse_args()
-        t0 = time.time(); run(a.out, a.universe, a.part, a.jobs); print(f"{time.time() - t0:.0f}s")
+        t0 = time.time(); run(a.out, a.universe, a.part, a.jobs, tuple(a.horizons)); print(f"{time.time() - t0:.0f}s")
     elif cmd == "selftest":
         selftest(sys.argv[2])
     elif cmd == "fit":
