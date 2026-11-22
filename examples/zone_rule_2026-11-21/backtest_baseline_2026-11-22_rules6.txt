@@ -1,0 +1,2366 @@
+backtest.py under the zone rule of rules 6 (width x1.5, two members), run on 22 Nov 2026, default dates and steps:
+  uv run python backtest.py NVDA AAPL MSFT SPY JPM XOM PETR4.SA VALE3.SA ITUB4.SA BBDC4.SA ABEV3.SA WEGE3.SA --horizon H
+(test 4 of README "A stronger zone rule" compared both rules on 21 Nov 2026 with calib.py; these are the shipped code's own reports, one day later)
+
+==================== 1-2w ====================
+BACKTEST of the baseline probabilities, horizon 1-2w
+  NVDA, AAPL, MSFT, SPY, JPM, XOM, PETR4.SA, VALE3.SA, ITUB4.SA, BBDC4.SA, ABEV3.SA, WEGE3.SA; as-of dates 2023-11-01 to 2026-11-01, every 5 trading day(s), after the close
+  sim method 2 (drift 5% a year)
+  1806 case(s) scored
+  Zone rule (choose_zones): width = 1.5 times the mean of the two typical_zone_width numbers of
+    `rz.py levels`. Candidates are the prices `levels` reports as evidence: pivot lows and highs,
+    the lows and highs of the last three candles, the retracement levels and the two ends of the
+    dominant swing; those below the price serve supports, those above it resistances. Walking
+    outward from the price, a candidate within one width of the first member of the current cluster
+    joins it; a cluster of fewer than two candidates is dropped. Each remaining cluster's level is
+    the mean of its members, and its zone is one width centred there, cut at the price and pushed
+    outward so it never overlaps the zone before it. The nearest clusters are kept. A side with too
+    few clusters is filled with one-width zones, one width apart, beyond the last one.
+  This is the unadjusted baseline (rz.py sim) on mechanically chosen zones: not the zones or the
+    adjusted probabilities of a real projection, and no events, dividends or earnings shocks.
+  Cases overlap whenever the step is shorter than the horizon, and the entries of one case share one
+    price path, so the forecasts are far from independent; n overstates the evidence.
+  Tickers chosen today are survivors. Prices are split-adjusted to today's scale and not dividend-
+    adjusted, so a large dividend shows up as a drop the simulation did not include.
+  Calibration compares probabilities with events. It is not a measure of returns and does not show
+    that the method works or fails.
+
+OVERALL
+  1806 case(s), 34685 forecast probabilities (Brier: 0 is perfect)
+  reach: 13013 forecasts, 37% happened; Brier 0.168, always 50% 0.250, always the base rate 0.233
+    forecast      n  mean forecast  observed
+    0-10%      2697           0.04      0.06
+    10-20%     1891           0.14      0.15
+    20-30%     1527           0.24      0.26
+    30-40%     1201           0.34      0.33
+    40-50%      770           0.45      0.45
+    50-60%     1876           0.55      0.55
+    60-70%     1196           0.64      0.63
+    70-80%     1130           0.76      0.76
+    80-90%      725           0.81      0.82
+  turn: 14448 forecasts, 21% happened; Brier 0.151, always 50% 0.250, always the base rate 0.166
+    forecast      n  mean forecast  observed
+    0-10%      2953           0.05      0.06
+    10-20%     3578           0.15      0.14
+    20-30%     4694           0.24      0.23
+    30-40%     1874           0.35      0.34
+    40-50%     1143           0.43      0.44
+    50-60%      183           0.53      0.54
+    60-70%       22           0.62      0.73
+    70-80%        1           0.70      1.00
+  scenario (all four): 7224 forecasts, 25% happened; Brier 0.147, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%      2223           0.01      0.02
+    10-20%      702           0.15      0.17
+    20-30%     1412           0.25      0.25
+    30-40%     1311           0.34      0.33
+    40-50%      602           0.44      0.45
+    50-60%      422           0.54      0.54
+    60-70%      307           0.64      0.65
+    70-80%      194           0.74      0.69
+    80-90%       44           0.82      0.70
+    90-100%       7           0.94      0.86
+  scenario breakdown: 1806 forecasts, 19% happened; Brier 0.149, always the base rate 0.155
+    forecast      n  mean forecast  observed
+    0-10%       289           0.04      0.04
+    10-20%      379           0.15      0.16
+    20-30%      680           0.25      0.21
+    30-40%      427           0.33      0.27
+    40-50%       30           0.42      0.40
+    50-60%        1           0.50      0.00
+  scenario breakout: 1806 forecasts, 28% happened; Brier 0.192, always the base rate 0.202
+    forecast      n  mean forecast  observed
+    0-10%       128           0.06      0.03
+    10-20%      305           0.15      0.17
+    20-30%      654           0.25      0.29
+    30-40%      612           0.34      0.34
+    40-50%      105           0.42      0.51
+    50-60%        2           0.53      0.50
+  scenario range: 1806 forecasts, 52% happened; Brier 0.236, always the base rate 0.250
+    forecast      n  mean forecast  observed
+    0-10%         1           0.09      0.00
+    10-20%       17           0.16      0.41
+    20-30%       78           0.26      0.28
+    30-40%      272           0.35      0.38
+    40-50%      467           0.45      0.44
+    50-60%      419           0.54      0.54
+    60-70%      307           0.64      0.65
+    70-80%      194           0.74      0.69
+    80-90%       44           0.82      0.70
+    90-100%       7           0.94      0.86
+  scenario whipsaw: 1806 forecasts, 1% happened; Brier 0.011, always the base rate 0.011
+    forecast      n  mean forecast  observed
+    0-10%      1805           0.00      0.01
+    10-20%        1           0.11      0.00
+
+AAPL
+  151 case(s), 2895 forecast probabilities (Brier: 0 is perfect)
+  reach: 1083 forecasts, 36% happened; Brier 0.170, always 50% 0.250, always the base rate 0.232
+    forecast      n  mean forecast  observed
+    0-10%       255           0.04      0.04
+    10-20%      138           0.14      0.22
+    20-30%      120           0.24      0.23
+    30-40%       86           0.34      0.33
+    40-50%       65           0.45      0.52
+    50-60%      150           0.55      0.51
+    60-70%      120           0.64      0.64
+    70-80%       92           0.75      0.71
+    80-90%       57           0.82      0.81
+  turn: 1208 forecasts, 21% happened; Brier 0.149, always 50% 0.250, always the base rate 0.165
+    forecast      n  mean forecast  observed
+    0-10%       273           0.04      0.04
+    10-20%      273           0.15      0.16
+    20-30%      371           0.24      0.22
+    30-40%      157           0.35      0.33
+    40-50%      101           0.43      0.46
+    50-60%       32           0.53      0.50
+    60-70%        1           0.65      0.00
+  scenario (all four): 604 forecasts, 25% happened; Brier 0.145, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%       197           0.01      0.01
+    10-20%       67           0.15      0.27
+    20-30%      110           0.25      0.24
+    30-40%       93           0.34      0.32
+    40-50%       45           0.45      0.44
+    50-60%       34           0.54      0.53
+    60-70%       25           0.64      0.60
+    70-80%       28           0.73      0.71
+    80-90%        5           0.81      0.60
+  scenario breakdown: 151 forecasts, 18% happened; Brier 0.142, always the base rate 0.147
+    forecast      n  mean forecast  observed
+    0-10%        35           0.04      0.00
+    10-20%       30           0.14      0.30
+    20-30%       50           0.24      0.18
+    30-40%       32           0.33      0.25
+    40-50%        4           0.45      0.25
+  scenario breakout: 151 forecasts, 28% happened; Brier 0.190, always the base rate 0.204
+    forecast      n  mean forecast  observed
+    0-10%        11           0.06      0.00
+    10-20%       33           0.16      0.18
+    20-30%       53           0.25      0.28
+    30-40%       43           0.34      0.40
+    40-50%       11           0.43      0.46
+  scenario range: 151 forecasts, 53% happened; Brier 0.240, always the base rate 0.249
+    forecast      n  mean forecast  observed
+    10-20%        4           0.15      0.75
+    20-30%        7           0.26      0.29
+    30-40%       18           0.35      0.28
+    40-50%       30           0.45      0.47
+    50-60%       34           0.54      0.53
+    60-70%       25           0.64      0.60
+    70-80%       28           0.73      0.71
+    80-90%        5           0.81      0.60
+  scenario whipsaw: 151 forecasts, 1% happened; Brier 0.006, always the base rate 0.007
+    forecast      n  mean forecast  observed
+    0-10%       151           0.01      0.01
+
+ABEV3.SA
+  150 case(s), 2909 forecast probabilities (Brier: 0 is perfect)
+  reach: 1109 forecasts, 36% happened; Brier 0.160, always 50% 0.250, always the base rate 0.231
+    forecast      n  mean forecast  observed
+    0-10%       258           0.04      0.06
+    10-20%      150           0.14      0.15
+    20-30%      117           0.24      0.21
+    30-40%      104           0.34      0.29
+    40-50%       62           0.45      0.45
+    50-60%      169           0.55      0.56
+    60-70%       78           0.63      0.68
+    70-80%      111           0.76      0.74
+    80-90%       60           0.81      0.85
+  turn: 1200 forecasts, 20% happened; Brier 0.145, always 50% 0.250, always the base rate 0.163
+    forecast      n  mean forecast  observed
+    0-10%       282           0.04      0.06
+    10-20%      285           0.14      0.13
+    20-30%      401           0.24      0.25
+    30-40%      132           0.35      0.30
+    40-50%       83           0.43      0.52
+    50-60%       14           0.53      0.50
+    60-70%        3           0.61      1.00
+  scenario (all four): 600 forecasts, 25% happened; Brier 0.137, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%       191           0.01      0.01
+    10-20%       68           0.15      0.13
+    20-30%      107           0.25      0.23
+    30-40%       96           0.34      0.32
+    40-50%       46           0.45      0.41
+    50-60%       40           0.55      0.72
+    60-70%       30           0.64      0.73
+    70-80%       17           0.73      0.53
+    80-90%        5           0.81      0.80
+  scenario breakdown: 150 forecasts, 17% happened; Brier 0.139, always the base rate 0.139
+    forecast      n  mean forecast  observed
+    0-10%        23           0.04      0.04
+    10-20%       34           0.15      0.18
+    20-30%       54           0.25      0.17
+    30-40%       38           0.33      0.24
+    40-50%        1           0.42      0.00
+  scenario breakout: 150 forecasts, 21% happened; Brier 0.157, always the base rate 0.164
+    forecast      n  mean forecast  observed
+    0-10%        18           0.05      0.00
+    10-20%       34           0.16      0.09
+    20-30%       45           0.24      0.24
+    30-40%       45           0.34      0.33
+    40-50%        8           0.42      0.25
+  scenario range: 150 forecasts, 62% happened; Brier 0.245, always the base rate 0.236
+    forecast      n  mean forecast  observed
+    20-30%        8           0.25      0.62
+    30-40%       13           0.36      0.54
+    40-50%       37           0.45      0.46
+    50-60%       40           0.55      0.72
+    60-70%       30           0.64      0.73
+    70-80%       17           0.73      0.53
+    80-90%        5           0.81      0.80
+  scenario whipsaw: 150 forecasts, 1% happened; Brier 0.007, always the base rate 0.007
+    forecast      n  mean forecast  observed
+    0-10%       150           0.00      0.01
+
+BBDC4.SA
+  150 case(s), 2869 forecast probabilities (Brier: 0 is perfect)
+  reach: 1069 forecasts, 36% happened; Brier 0.163, always 50% 0.250, always the base rate 0.229
+    forecast      n  mean forecast  observed
+    0-10%       226           0.05      0.07
+    10-20%      172           0.14      0.14
+    20-30%      115           0.24      0.18
+    30-40%       89           0.34      0.32
+    40-50%       65           0.45      0.41
+    50-60%      164           0.55      0.52
+    60-70%       93           0.64      0.70
+    70-80%       92           0.76      0.74
+    80-90%       53           0.81      0.83
+  turn: 1200 forecasts, 21% happened; Brier 0.150, always 50% 0.250, always the base rate 0.167
+    forecast      n  mean forecast  observed
+    0-10%       261           0.05      0.05
+    10-20%      289           0.14      0.13
+    20-30%      357           0.24      0.24
+    30-40%      159           0.35      0.35
+    40-50%      119           0.43      0.45
+    50-60%       12           0.53      0.42
+    60-70%        3           0.64      1.00
+  scenario (all four): 600 forecasts, 25% happened; Brier 0.133, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%       175           0.01      0.02
+    10-20%       82           0.15      0.12
+    20-30%      113           0.24      0.17
+    30-40%       92           0.34      0.33
+    40-50%       49           0.45      0.53
+    50-60%       38           0.54      0.58
+    60-70%       29           0.64      0.66
+    70-80%       20           0.75      0.90
+    80-90%        1           0.84      1.00
+    90-100%       1           0.98      1.00
+  scenario breakdown: 150 forecasts, 19% happened; Brier 0.142, always the base rate 0.152
+    forecast      n  mean forecast  observed
+    0-10%        15           0.03      0.00
+    10-20%       43           0.14      0.14
+    20-30%       58           0.24      0.15
+    30-40%       31           0.33      0.35
+    40-50%        3           0.41      0.67
+  scenario breakout: 150 forecasts, 21% happened; Brier 0.154, always the base rate 0.168
+    forecast      n  mean forecast  observed
+    0-10%        10           0.06      0.10
+    10-20%       37           0.15      0.11
+    20-30%       49           0.24      0.18
+    30-40%       43           0.34      0.26
+    40-50%       11           0.45      0.64
+  scenario range: 150 forecasts, 58% happened; Brier 0.215, always the base rate 0.244
+    forecast      n  mean forecast  observed
+    10-20%        2           0.15      0.00
+    20-30%        6           0.23      0.17
+    30-40%       18           0.35      0.44
+    40-50%       35           0.45      0.49
+    50-60%       38           0.54      0.58
+    60-70%       29           0.64      0.66
+    70-80%       20           0.75      0.90
+    80-90%        1           0.84      1.00
+    90-100%       1           0.98      1.00
+  scenario whipsaw: 150 forecasts, 2% happened; Brier 0.020, always the base rate 0.020
+    forecast      n  mean forecast  observed
+    0-10%       150           0.00      0.02
+
+ITUB4.SA
+  150 case(s), 2891 forecast probabilities (Brier: 0 is perfect)
+  reach: 1091 forecasts, 36% happened; Brier 0.159, always 50% 0.250, always the base rate 0.232
+    forecast      n  mean forecast  observed
+    0-10%       266           0.04      0.06
+    10-20%      143           0.14      0.15
+    20-30%      115           0.25      0.28
+    30-40%       95           0.34      0.28
+    40-50%       66           0.45      0.39
+    50-60%      166           0.55      0.56
+    60-70%       87           0.64      0.67
+    70-80%       95           0.76      0.78
+    80-90%       58           0.81      0.88
+  turn: 1200 forecasts, 21% happened; Brier 0.150, always 50% 0.250, always the base rate 0.165
+    forecast      n  mean forecast  observed
+    0-10%       292           0.04      0.06
+    10-20%      249           0.14      0.13
+    20-30%      398           0.24      0.26
+    30-40%      138           0.35      0.33
+    40-50%      107           0.43      0.39
+    50-60%       13           0.52      0.69
+    60-70%        3           0.62      1.00
+  scenario (all four): 600 forecasts, 25% happened; Brier 0.141, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%       194           0.01      0.03
+    10-20%       65           0.15      0.17
+    20-30%      109           0.25      0.23
+    30-40%      104           0.34      0.30
+    40-50%       37           0.44      0.49
+    50-60%       34           0.55      0.56
+    60-70%       28           0.64      0.71
+    70-80%       22           0.74      0.73
+    80-90%        6           0.83      0.67
+    90-100%       1           0.92      1.00
+  scenario breakdown: 150 forecasts, 14% happened; Brier 0.128, always the base rate 0.120
+    forecast      n  mean forecast  observed
+    0-10%        30           0.04      0.07
+    10-20%       32           0.15      0.16
+    20-30%       57           0.25      0.16
+    30-40%       31           0.33      0.16
+  scenario breakout: 150 forecasts, 28% happened; Brier 0.189, always the base rate 0.202
+    forecast      n  mean forecast  observed
+    0-10%        14           0.05      0.00
+    10-20%       33           0.15      0.18
+    20-30%       47           0.25      0.34
+    30-40%       51           0.34      0.33
+    40-50%        5           0.42      0.60
+  scenario range: 150 forecasts, 56% happened; Brier 0.227, always the base rate 0.246
+    forecast      n  mean forecast  observed
+    20-30%        5           0.27      0.00
+    30-40%       22           0.35      0.41
+    40-50%       32           0.45      0.47
+    50-60%       34           0.55      0.56
+    60-70%       28           0.64      0.71
+    70-80%       22           0.74      0.73
+    80-90%        6           0.83      0.67
+    90-100%       1           0.92      1.00
+  scenario whipsaw: 150 forecasts, 2% happened; Brier 0.019, always the base rate 0.020
+    forecast      n  mean forecast  observed
+    0-10%       150           0.00      0.02
+
+JPM
+  151 case(s), 2895 forecast probabilities (Brier: 0 is perfect)
+  reach: 1083 forecasts, 37% happened; Brier 0.169, always 50% 0.250, always the base rate 0.233
+    forecast      n  mean forecast  observed
+    0-10%       207           0.05      0.06
+    10-20%      164           0.14      0.15
+    20-30%      154           0.25      0.24
+    30-40%       87           0.34      0.37
+    40-50%       59           0.45      0.46
+    50-60%      157           0.55      0.57
+    60-70%      100           0.64      0.61
+    70-80%      100           0.75      0.74
+    80-90%       55           0.82      0.82
+  turn: 1208 forecasts, 21% happened; Brier 0.149, always 50% 0.250, always the base rate 0.166
+    forecast      n  mean forecast  observed
+    0-10%       221           0.05      0.06
+    10-20%      335           0.14      0.13
+    20-30%      369           0.24      0.20
+    30-40%      175           0.35      0.41
+    40-50%       92           0.43      0.42
+    50-60%       15           0.54      0.67
+    60-70%        1           0.61      0.00
+  scenario (all four): 604 forecasts, 25% happened; Brier 0.154, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%       178           0.01      0.02
+    10-20%       52           0.15      0.15
+    20-30%      149           0.25      0.27
+    30-40%       88           0.33      0.34
+    40-50%       57           0.45      0.44
+    50-60%       38           0.54      0.47
+    60-70%       25           0.63      0.60
+    70-80%       15           0.75      0.60
+    80-90%        1           0.80      1.00
+    90-100%       1           0.96      1.00
+  scenario breakdown: 151 forecasts, 17% happened; Brier 0.149, always the base rate 0.142
+    forecast      n  mean forecast  observed
+    0-10%        23           0.03      0.09
+    10-20%       25           0.15      0.16
+    20-30%       68           0.25      0.21
+    30-40%       32           0.33      0.19
+    40-50%        2           0.43      0.00
+    50-60%        1           0.50      0.00
+  scenario breakout: 151 forecasts, 32% happened; Brier 0.209, always the base rate 0.217
+    forecast      n  mean forecast  observed
+    0-10%         4           0.06      0.25
+    10-20%       26           0.16      0.12
+    20-30%       76           0.25      0.32
+    30-40%       40           0.33      0.45
+    40-50%        5           0.43      0.40
+  scenario range: 151 forecasts, 50% happened; Brier 0.249, always the base rate 0.250
+    forecast      n  mean forecast  observed
+    10-20%        1           0.16      1.00
+    20-30%        5           0.27      0.40
+    30-40%       16           0.35      0.38
+    40-50%       50           0.45      0.46
+    50-60%       37           0.54      0.49
+    60-70%       25           0.63      0.60
+    70-80%       15           0.75      0.60
+    80-90%        1           0.80      1.00
+    90-100%       1           0.96      1.00
+  scenario whipsaw: 151 forecasts, 1% happened; Brier 0.007, always the base rate 0.007
+    forecast      n  mean forecast  observed
+    0-10%       151           0.00      0.01
+
+MSFT
+  151 case(s), 2889 forecast probabilities (Brier: 0 is perfect)
+  reach: 1077 forecasts, 37% happened; Brier 0.173, always 50% 0.250, always the base rate 0.233
+    forecast      n  mean forecast  observed
+    0-10%       223           0.04      0.05
+    10-20%      150           0.14      0.18
+    20-30%      123           0.25      0.28
+    30-40%      103           0.34      0.31
+    40-50%       63           0.45      0.41
+    50-60%      156           0.55      0.56
+    60-70%      100           0.63      0.56
+    70-80%       90           0.75      0.78
+    80-90%       69           0.81      0.77
+  turn: 1208 forecasts, 21% happened; Brier 0.151, always 50% 0.250, always the base rate 0.166
+    forecast      n  mean forecast  observed
+    0-10%       238           0.04      0.05
+    10-20%      281           0.15      0.14
+    20-30%      402           0.24      0.22
+    30-40%      164           0.34      0.38
+    40-50%      103           0.43      0.41
+    50-60%       18           0.54      0.33
+    60-70%        2           0.61      0.50
+  scenario (all four): 604 forecasts, 25% happened; Brier 0.145, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%       188           0.01      0.02
+    10-20%       50           0.15      0.20
+    20-30%      114           0.25      0.21
+    30-40%      125           0.34      0.34
+    40-50%       57           0.45      0.44
+    50-60%       26           0.54      0.61
+    60-70%       22           0.63      0.59
+    70-80%       18           0.73      0.72
+    80-90%        4           0.81      1.00
+  scenario breakdown: 151 forecasts, 18% happened; Brier 0.140, always the base rate 0.147
+    forecast      n  mean forecast  observed
+    0-10%        28           0.04      0.00
+    10-20%       29           0.15      0.17
+    20-30%       49           0.25      0.20
+    30-40%       41           0.33      0.27
+    40-50%        4           0.42      0.25
+  scenario breakout: 151 forecasts, 29% happened; Brier 0.191, always the base rate 0.206
+    forecast      n  mean forecast  observed
+    0-10%         9           0.05      0.00
+    10-20%       18           0.16      0.22
+    20-30%       58           0.26      0.22
+    30-40%       53           0.34      0.36
+    40-50%       13           0.44      0.61
+  scenario range: 151 forecasts, 51% happened; Brier 0.229, always the base rate 0.250
+    forecast      n  mean forecast  observed
+    10-20%        3           0.16      0.33
+    20-30%        7           0.25      0.14
+    30-40%       31           0.35      0.42
+    40-50%       40           0.45      0.40
+    50-60%       26           0.54      0.61
+    60-70%       22           0.63      0.59
+    70-80%       18           0.73      0.72
+    80-90%        4           0.81      1.00
+  scenario whipsaw: 151 forecasts, 2% happened; Brier 0.020, always the base rate 0.019
+    forecast      n  mean forecast  observed
+    0-10%       151           0.01      0.02
+
+NVDA
+  151 case(s), 2911 forecast probabilities (Brier: 0 is perfect)
+  reach: 1099 forecasts, 38% happened; Brier 0.172, always 50% 0.250, always the base rate 0.237
+    forecast      n  mean forecast  observed
+    0-10%       214           0.05      0.09
+    10-20%      160           0.14      0.14
+    20-30%      135           0.25      0.27
+    30-40%      111           0.34      0.30
+    40-50%       66           0.46      0.46
+    50-60%      152           0.55      0.59
+    60-70%       95           0.63      0.63
+    70-80%      101           0.76      0.75
+    80-90%       65           0.81      0.86
+  turn: 1208 forecasts, 21% happened; Brier 0.155, always 50% 0.250, always the base rate 0.164
+    forecast      n  mean forecast  observed
+    0-10%       231           0.05      0.09
+    10-20%      314           0.15      0.15
+    20-30%      417           0.24      0.24
+    30-40%      142           0.34      0.29
+    40-50%       88           0.42      0.40
+    50-60%       15           0.54      0.53
+    60-70%        1           0.60      0.00
+  scenario (all four): 604 forecasts, 25% happened; Brier 0.155, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%       187           0.01      0.01
+    10-20%       49           0.15      0.18
+    20-30%      118           0.25      0.29
+    30-40%      119           0.34      0.29
+    40-50%       48           0.44      0.54
+    50-60%       39           0.55      0.59
+    60-70%       31           0.64      0.48
+    70-80%       12           0.73      0.58
+    80-90%        1           0.80      0.00
+  scenario breakdown: 151 forecasts, 19% happened; Brier 0.148, always the base rate 0.155
+    forecast      n  mean forecast  observed
+    0-10%        27           0.04      0.04
+    10-20%       30           0.15      0.17
+    20-30%       56           0.25      0.21
+    30-40%       37           0.33      0.27
+    40-50%        1           0.40      1.00
+  scenario breakout: 151 forecasts, 32% happened; Brier 0.214, always the base rate 0.219
+    forecast      n  mean forecast  observed
+    0-10%         9           0.08      0.00
+    10-20%       18           0.16      0.22
+    20-30%       58           0.25      0.34
+    30-40%       58           0.34      0.31
+    40-50%        8           0.42      0.88
+  scenario range: 151 forecasts, 48% happened; Brier 0.252, always the base rate 0.249
+    forecast      n  mean forecast  observed
+    10-20%        1           0.15      0.00
+    20-30%        4           0.26      0.50
+    30-40%       24           0.35      0.29
+    40-50%       39           0.44      0.46
+    50-60%       39           0.55      0.59
+    60-70%       31           0.64      0.48
+    70-80%       12           0.73      0.58
+    80-90%        1           0.80      0.00
+  scenario whipsaw: 151 forecasts, 1% happened; Brier 0.007, always the base rate 0.007
+    forecast      n  mean forecast  observed
+    0-10%       151           0.00      0.01
+
+PETR4.SA
+  150 case(s), 2886 forecast probabilities (Brier: 0 is perfect)
+  reach: 1086 forecasts, 38% happened; Brier 0.174, always 50% 0.250, always the base rate 0.234
+    forecast      n  mean forecast  observed
+    0-10%       209           0.04      0.06
+    10-20%      154           0.14      0.15
+    20-30%      136           0.24      0.23
+    30-40%      106           0.34      0.43
+    40-50%       66           0.45      0.39
+    50-60%      157           0.55      0.53
+    60-70%      103           0.64      0.64
+    70-80%       94           0.76      0.76
+    80-90%       61           0.81      0.80
+  turn: 1200 forecasts, 21% happened; Brier 0.153, always 50% 0.250, always the base rate 0.166
+    forecast      n  mean forecast  observed
+    0-10%       230           0.04      0.05
+    10-20%      305           0.15      0.16
+    20-30%      418           0.24      0.23
+    30-40%      148           0.35      0.32
+    40-50%       81           0.43      0.43
+    50-60%       16           0.53      0.56
+    60-70%        2           0.61      1.00
+  scenario (all four): 600 forecasts, 25% happened; Brier 0.145, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%       187           0.01      0.03
+    10-20%       52           0.15      0.12
+    20-30%      113           0.25      0.25
+    30-40%      115           0.34      0.36
+    40-50%       55           0.43      0.36
+    50-60%       32           0.54      0.50
+    60-70%       28           0.65      0.68
+    70-80%       14           0.73      0.79
+    80-90%        3           0.85      1.00
+    90-100%       1           0.93      1.00
+  scenario breakdown: 150 forecasts, 23% happened; Brier 0.169, always the base rate 0.175
+    forecast      n  mean forecast  observed
+    0-10%        21           0.03      0.10
+    10-20%       30           0.15      0.13
+    20-30%       56           0.25      0.25
+    30-40%       41           0.33      0.34
+    40-50%        2           0.41      0.00
+  scenario breakout: 150 forecasts, 28% happened; Brier 0.183, always the base rate 0.202
+    forecast      n  mean forecast  observed
+    0-10%        16           0.06      0.00
+    10-20%       20           0.15      0.10
+    20-30%       48           0.25      0.23
+    30-40%       56           0.34      0.46
+    40-50%       10           0.41      0.30
+  scenario range: 150 forecasts, 47% happened; Brier 0.210, always the base rate 0.249
+    forecast      n  mean forecast  observed
+    10-20%        2           0.17      0.00
+    20-30%        9           0.25      0.33
+    30-40%       18           0.36      0.06
+    40-50%       43           0.44      0.40
+    50-60%       32           0.54      0.50
+    60-70%       28           0.65      0.68
+    70-80%       14           0.73      0.79
+    80-90%        3           0.85      1.00
+    90-100%       1           0.93      1.00
+  scenario whipsaw: 150 forecasts, 2% happened; Brier 0.019, always the base rate 0.020
+    forecast      n  mean forecast  observed
+    0-10%       150           0.01      0.02
+
+SPY
+  151 case(s), 2883 forecast probabilities (Brier: 0 is perfect)
+  reach: 1071 forecasts, 36% happened; Brier 0.160, always 50% 0.250, always the base rate 0.230
+    forecast      n  mean forecast  observed
+    0-10%       207           0.05      0.03
+    10-20%      171           0.14      0.15
+    20-30%      130           0.25      0.22
+    30-40%       96           0.34      0.27
+    40-50%       72           0.45      0.47
+    50-60%      123           0.55      0.55
+    60-70%      117           0.64      0.62
+    70-80%      101           0.74      0.76
+    80-90%       54           0.82      0.81
+  turn: 1208 forecasts, 21% happened; Brier 0.148, always 50% 0.250, always the base rate 0.168
+    forecast      n  mean forecast  observed
+    0-10%       224           0.05      0.04
+    10-20%      324           0.14      0.12
+    20-30%      368           0.24      0.23
+    30-40%      180           0.35      0.37
+    40-50%      101           0.43      0.47
+    50-60%        9           0.52      0.78
+    60-70%        2           0.64      0.50
+  scenario (all four): 604 forecasts, 25% happened; Brier 0.150, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%       185           0.01      0.02
+    10-20%       51           0.15      0.23
+    20-30%      127           0.25      0.23
+    30-40%      110           0.34      0.35
+    40-50%       51           0.44      0.45
+    50-60%       43           0.55      0.42
+    60-70%       24           0.66      0.75
+    70-80%       12           0.73      0.75
+    80-90%        1           0.80      0.00
+  scenario breakdown: 151 forecasts, 17% happened; Brier 0.141, always the base rate 0.138
+    forecast      n  mean forecast  observed
+    0-10%        31           0.05      0.03
+    10-20%       33           0.15      0.18
+    20-30%       57           0.24      0.25
+    30-40%       26           0.34      0.15
+    40-50%        4           0.43      0.00
+  scenario breakout: 151 forecasts, 27% happened; Brier 0.191, always the base rate 0.198
+    forecast      n  mean forecast  observed
+    0-10%         3           0.07      0.00
+    10-20%       15           0.16      0.27
+    20-30%       63           0.25      0.19
+    30-40%       57           0.34      0.33
+    40-50%       12           0.41      0.42
+    50-60%        1           0.55      1.00
+  scenario range: 151 forecasts, 55% happened; Brier 0.254, always the base rate 0.247
+    forecast      n  mean forecast  observed
+    0-10%         1           0.09      0.00
+    10-20%        2           0.15      1.00
+    20-30%        7           0.26      0.43
+    30-40%       27           0.36      0.59
+    40-50%       35           0.45      0.51
+    50-60%       42           0.55      0.41
+    60-70%       24           0.66      0.75
+    70-80%       12           0.73      0.75
+    80-90%        1           0.80      0.00
+  scenario whipsaw: 151 forecasts, 1% happened; Brier 0.013, always the base rate 0.013
+    forecast      n  mean forecast  observed
+    0-10%       150           0.01      0.01
+    10-20%        1           0.11      0.00
+
+VALE3.SA
+  150 case(s), 2881 forecast probabilities (Brier: 0 is perfect)
+  reach: 1081 forecasts, 38% happened; Brier 0.168, always 50% 0.250, always the base rate 0.234
+    forecast      n  mean forecast  observed
+    0-10%       206           0.04      0.07
+    10-20%      159           0.14      0.14
+    20-30%      131           0.24      0.28
+    30-40%      110           0.34      0.29
+    40-50%       54           0.45      0.50
+    50-60%      181           0.55      0.51
+    60-70%       86           0.64      0.65
+    70-80%       86           0.76      0.80
+    80-90%       68           0.81      0.84
+  turn: 1200 forecasts, 21% happened; Brier 0.155, always 50% 0.250, always the base rate 0.168
+    forecast      n  mean forecast  observed
+    0-10%       228           0.05      0.06
+    10-20%      306           0.15      0.15
+    20-30%      412           0.24      0.26
+    30-40%      149           0.35      0.31
+    40-50%       95           0.43      0.47
+    50-60%       10           0.54      0.30
+  scenario (all four): 600 forecasts, 25% happened; Brier 0.151, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%       179           0.01      0.01
+    10-20%       49           0.15      0.20
+    20-30%      123           0.25      0.28
+    30-40%      123           0.34      0.28
+    40-50%       56           0.44      0.46
+    50-60%       34           0.54      0.56
+    60-70%       20           0.63      0.70
+    70-80%       11           0.74      0.73
+    80-90%        5           0.82      0.40
+  scenario breakdown: 150 forecasts, 23% happened; Brier 0.170, always the base rate 0.179
+    forecast      n  mean forecast  observed
+    0-10%        17           0.04      0.06
+    10-20%       26           0.15      0.19
+    20-30%       71           0.25      0.24
+    30-40%       32           0.33      0.31
+    40-50%        4           0.41      0.50
+  scenario breakout: 150 forecasts, 27% happened; Brier 0.193, always the base rate 0.196
+    forecast      n  mean forecast  observed
+    0-10%        12           0.06      0.00
+    10-20%       22           0.16      0.23
+    20-30%       45           0.25      0.36
+    30-40%       64           0.34      0.23
+    40-50%        7           0.42      0.57
+  scenario range: 150 forecasts, 49% happened; Brier 0.237, always the base rate 0.250
+    forecast      n  mean forecast  observed
+    10-20%        1           0.16      0.00
+    20-30%        7           0.26      0.29
+    30-40%       27           0.35      0.33
+    40-50%       45           0.44      0.44
+    50-60%       34           0.54      0.56
+    60-70%       20           0.63      0.70
+    70-80%       11           0.74      0.73
+    80-90%        5           0.82      0.40
+  scenario whipsaw: 150 forecasts, 1% happened; Brier 0.006, always the base rate 0.007
+    forecast      n  mean forecast  observed
+    0-10%       150           0.01      0.01
+
+WEGE3.SA
+  150 case(s), 2887 forecast probabilities (Brier: 0 is perfect)
+  reach: 1087 forecasts, 36% happened; Brier 0.179, always 50% 0.250, always the base rate 0.231
+    forecast      n  mean forecast  observed
+    0-10%       220           0.04      0.07
+    10-20%      161           0.14      0.16
+    20-30%      130           0.24      0.26
+    30-40%       96           0.34      0.38
+    40-50%       78           0.45      0.42
+    50-60%      139           0.55      0.52
+    60-70%      110           0.64      0.62
+    70-80%       94           0.75      0.69
+    80-90%       59           0.81      0.75
+  turn: 1200 forecasts, 20% happened; Brier 0.148, always 50% 0.250, always the base rate 0.161
+    forecast      n  mean forecast  observed
+    0-10%       248           0.05      0.07
+    10-20%      298           0.15      0.15
+    20-30%      394           0.24      0.21
+    30-40%      164           0.35      0.32
+    40-50%       82           0.43      0.43
+    50-60%       12           0.54      0.67
+    60-70%        1           0.65      1.00
+    70-80%        1           0.70      1.00
+  scenario (all four): 600 forecasts, 25% happened; Brier 0.151, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%       180           0.01      0.02
+    10-20%       68           0.15      0.18
+    20-30%      118           0.25      0.23
+    30-40%      104           0.34      0.35
+    40-50%       51           0.43      0.51
+    50-60%       31           0.54      0.42
+    60-70%       26           0.65      0.73
+    70-80%       13           0.73      0.61
+    80-90%        8           0.83      0.62
+    90-100%       1           0.92      0.00
+  scenario breakdown: 150 forecasts, 21% happened; Brier 0.145, always the base rate 0.164
+    forecast      n  mean forecast  observed
+    0-10%        21           0.05      0.05
+    10-20%       40           0.15      0.05
+    20-30%       47           0.24      0.23
+    30-40%       38           0.33      0.34
+    40-50%        4           0.42      1.00
+  scenario breakout: 150 forecasts, 30% happened; Brier 0.215, always the base rate 0.210
+    forecast      n  mean forecast  observed
+    0-10%         9           0.05      0.22
+    10-20%       27           0.14      0.37
+    20-30%       62           0.25      0.24
+    30-40%       42           0.35      0.31
+    40-50%        9           0.42      0.56
+    50-60%        1           0.51      0.00
+  scenario range: 150 forecasts, 49% happened; Brier 0.237, always the base rate 0.250
+    forecast      n  mean forecast  observed
+    10-20%        1           0.18      0.00
+    20-30%        9           0.26      0.11
+    30-40%       24           0.35      0.42
+    40-50%       38           0.44      0.45
+    50-60%       30           0.54      0.43
+    60-70%       26           0.65      0.73
+    70-80%       13           0.73      0.61
+    80-90%        8           0.83      0.62
+    90-100%       1           0.92      0.00
+  scenario whipsaw: 150 forecasts, 1% happened; Brier 0.007, always the base rate 0.007
+    forecast      n  mean forecast  observed
+    0-10%       150           0.01      0.01
+
+XOM
+  151 case(s), 2889 forecast probabilities (Brier: 0 is perfect)
+  reach: 1077 forecasts, 40% happened; Brier 0.170, always 50% 0.250, always the base rate 0.240
+    forecast      n  mean forecast  observed
+    0-10%       206           0.04      0.05
+    10-20%      169           0.14      0.14
+    20-30%      121           0.25      0.38
+    30-40%      118           0.33      0.34
+    40-50%       54           0.45      0.50
+    50-60%      162           0.55      0.60
+    60-70%      107           0.64      0.61
+    70-80%       74           0.76      0.85
+    80-90%       66           0.81      0.88
+  turn: 1208 forecasts, 22% happened; Brier 0.160, always 50% 0.250, always the base rate 0.172
+    forecast      n  mean forecast  observed
+    0-10%       225           0.04      0.05
+    10-20%      319           0.15      0.18
+    20-30%      387           0.24      0.24
+    30-40%      166           0.35      0.34
+    40-50%       91           0.42      0.37
+    50-60%       17           0.54      0.59
+    60-70%        3           0.61      0.67
+  scenario (all four): 604 forecasts, 25% happened; Brier 0.159, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%       182           0.01      0.01
+    10-20%       49           0.15      0.12
+    20-30%      111           0.25      0.39
+    30-40%      142           0.34      0.33
+    40-50%       50           0.45      0.34
+    50-60%       33           0.55      0.48
+    60-70%       19           0.65      0.47
+    70-80%       12           0.73      0.42
+    80-90%        4           0.83      1.00
+    90-100%       2           0.94      1.00
+  scenario breakdown: 151 forecasts, 26% happened; Brier 0.180, always the base rate 0.192
+    forecast      n  mean forecast  observed
+    0-10%        18           0.03      0.06
+    10-20%       27           0.14      0.18
+    20-30%       57           0.24      0.28
+    30-40%       48           0.32      0.33
+    40-50%        1           0.44      1.00
+  scenario breakout: 151 forecasts, 32% happened; Brier 0.213, always the base rate 0.219
+    forecast      n  mean forecast  observed
+    0-10%        13           0.04      0.00
+    10-20%       22           0.16      0.04
+    20-30%       50           0.25      0.54
+    30-40%       60           0.34      0.30
+    40-50%        6           0.41      0.50
+  scenario range: 151 forecasts, 41% happened; Brier 0.238, always the base rate 0.242
+    forecast      n  mean forecast  observed
+    20-30%        4           0.28      0.00
+    30-40%       34           0.36      0.38
+    40-50%       43           0.45      0.30
+    50-60%       33           0.55      0.48
+    60-70%       19           0.65      0.47
+    70-80%       12           0.73      0.42
+    80-90%        4           0.83      1.00
+    90-100%       2           0.94      1.00
+  scenario whipsaw: 151 forecasts, 1% happened; Brier 0.007, always the base rate 0.007
+    forecast      n  mean forecast  observed
+    0-10%       151           0.00      0.01
+
+==================== 1-3m ====================
+BACKTEST of the baseline probabilities, horizon 1-3m
+  NVDA, AAPL, MSFT, SPY, JPM, XOM, PETR4.SA, VALE3.SA, ITUB4.SA, BBDC4.SA, ABEV3.SA, WEGE3.SA; as-of dates 2023-08-16 to 2026-08-16, every 10 trading day(s), after the close
+  sim method 2 (drift 5% a year)
+  906 case(s) scored
+  Zone rule (choose_zones): width = 1.5 times the mean of the two typical_zone_width numbers of
+    `rz.py levels`. Candidates are the prices `levels` reports as evidence: pivot lows and highs,
+    the lows and highs of the last three candles, the retracement levels and the two ends of the
+    dominant swing; those below the price serve supports, those above it resistances. Walking
+    outward from the price, a candidate within one width of the first member of the current cluster
+    joins it; a cluster of fewer than two candidates is dropped. Each remaining cluster's level is
+    the mean of its members, and its zone is one width centred there, cut at the price and pushed
+    outward so it never overlaps the zone before it. The nearest clusters are kept. A side with too
+    few clusters is filled with one-width zones, one width apart, beyond the last one.
+  This is the unadjusted baseline (rz.py sim) on mechanically chosen zones: not the zones or the
+    adjusted probabilities of a real projection, and no events, dividends or earnings shocks.
+  Cases overlap whenever the step is shorter than the horizon, and the entries of one case share one
+    price path, so the forecasts are far from independent; n overstates the evidence.
+  Tickers chosen today are survivors. Prices are split-adjusted to today's scale and not dividend-
+    adjusted, so a large dividend shows up as a drop the simulation did not include.
+  Calibration compares probabilities with events. It is not a measure of returns and does not show
+    that the method works or fails.
+
+OVERALL
+  906 case(s), 17315 forecast probabilities (Brier: 0 is perfect)
+  reach: 6443 forecasts, 44% happened; Brier 0.178, always 50% 0.250, always the base rate 0.246
+    forecast      n  mean forecast  observed
+    0-10%       733           0.05      0.04
+    10-20%     1028           0.14      0.17
+    20-30%      768           0.24      0.26
+    30-40%      788           0.34      0.37
+    40-50%      433           0.44      0.53
+    50-60%      638           0.56      0.53
+    60-70%      956           0.64      0.69
+    70-80%      429           0.75      0.79
+    80-90%      664           0.84      0.81
+    90-100%       6           0.90      1.00
+  turn: 7248 forecasts, 22% happened; Brier 0.159, always 50% 0.250, always the base rate 0.172
+    forecast      n  mean forecast  observed
+    0-10%       822           0.05      0.04
+    10-20%     2079           0.15      0.15
+    20-30%     2751           0.24      0.24
+    30-40%     1226           0.34      0.33
+    40-50%      286           0.43      0.43
+    50-60%       73           0.54      0.56
+    60-70%       11           0.63      0.82
+  scenario (all four): 3624 forecasts, 25% happened; Brier 0.155, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%      1017           0.01      0.03
+    10-20%      231           0.15      0.13
+    20-30%      654           0.25      0.21
+    30-40%     1032           0.34      0.35
+    40-50%      453           0.43      0.46
+    50-60%      144           0.54      0.52
+    60-70%       67           0.64      0.66
+    70-80%       22           0.73      0.77
+    80-90%        4           0.83      0.75
+  scenario breakdown: 906 forecasts, 21% happened; Brier 0.164, always the base rate 0.167
+    forecast      n  mean forecast  observed
+    0-10%        93           0.04      0.04
+    10-20%      137           0.15      0.14
+    20-30%      290           0.25      0.23
+    30-40%      354           0.34      0.26
+    40-50%       32           0.42      0.28
+  scenario breakout: 906 forecasts, 39% happened; Brier 0.223, always the base rate 0.238
+    forecast      n  mean forecast  observed
+    0-10%        17           0.07      0.12
+    10-20%       49           0.16      0.10
+    20-30%      196           0.26      0.21
+    30-40%      419           0.35      0.42
+    40-50%      209           0.43      0.56
+    50-60%       16           0.52      0.75
+  scenario range: 906 forecasts, 38% happened; Brier 0.211, always the base rate 0.234
+    forecast      n  mean forecast  observed
+    0-10%         3           0.08      0.00
+    10-20%       43           0.16      0.12
+    20-30%      168           0.25      0.18
+    30-40%      259           0.34      0.37
+    40-50%      212           0.44      0.38
+    50-60%      128           0.54      0.49
+    60-70%       67           0.64      0.66
+    70-80%       22           0.73      0.77
+    80-90%        4           0.83      0.75
+  scenario whipsaw: 906 forecasts, 2% happened; Brier 0.022, always the base rate 0.023
+    forecast      n  mean forecast  observed
+    0-10%       904           0.01      0.02
+    10-20%        2           0.11      0.00
+
+AAPL
+  76 case(s), 1451 forecast probabilities (Brier: 0 is perfect)
+  reach: 539 forecasts, 42% happened; Brier 0.184, always 50% 0.250, always the base rate 0.243
+    forecast      n  mean forecast  observed
+    0-10%        41           0.06      0.07
+    10-20%      103           0.14      0.08
+    20-30%       65           0.24      0.37
+    30-40%       71           0.34      0.30
+    40-50%       33           0.45      0.64
+    50-60%       58           0.55      0.48
+    60-70%       77           0.64      0.70
+    70-80%       39           0.74      0.74
+    80-90%       52           0.83      0.73
+  turn: 608 forecasts, 21% happened; Brier 0.155, always 50% 0.250, always the base rate 0.167
+    forecast      n  mean forecast  observed
+    0-10%        53           0.06      0.07
+    10-20%      188           0.15      0.10
+    20-30%      240           0.24      0.25
+    30-40%      100           0.34      0.28
+    40-50%       22           0.43      0.59
+    50-60%        4           0.51      0.75
+    60-70%        1           0.61      1.00
+  scenario (all four): 304 forecasts, 25% happened; Brier 0.153, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%        80           0.01      0.01
+    10-20%       20           0.15      0.10
+    20-30%       59           0.26      0.24
+    30-40%       86           0.34      0.30
+    40-50%       44           0.44      0.55
+    50-60%       10           0.53      0.60
+    60-70%        5           0.64      0.60
+  scenario breakdown: 76 forecasts, 18% happened; Brier 0.159, always the base rate 0.150
+    forecast      n  mean forecast  observed
+    0-10%         4           0.06      0.00
+    10-20%       16           0.14      0.06
+    20-30%       27           0.27      0.37
+    30-40%       28           0.33      0.11
+    40-50%        1           0.41      0.00
+  scenario breakout: 76 forecasts, 45% happened; Brier 0.232, always the base rate 0.247
+    forecast      n  mean forecast  observed
+    10-20%        2           0.17      0.00
+    20-30%       17           0.26      0.18
+    30-40%       33           0.34      0.42
+    40-50%       22           0.43      0.73
+    50-60%        2           0.50      0.50
+  scenario range: 76 forecasts, 36% happened; Brier 0.209, always the base rate 0.229
+    forecast      n  mean forecast  observed
+    10-20%        2           0.17      0.50
+    20-30%       15           0.25      0.07
+    30-40%       25           0.34      0.36
+    40-50%       21           0.44      0.38
+    50-60%        8           0.54      0.62
+    60-70%        5           0.64      0.60
+  scenario whipsaw: 76 forecasts, 1% happened; Brier 0.013, always the base rate 0.013
+    forecast      n  mean forecast  observed
+    0-10%        76           0.01      0.01
+
+ABEV3.SA
+  75 case(s), 1439 forecast probabilities (Brier: 0 is perfect)
+  reach: 539 forecasts, 48% happened; Brier 0.201, always 50% 0.250, always the base rate 0.250
+    forecast      n  mean forecast  observed
+    0-10%        56           0.06      0.00
+    10-20%       74           0.15      0.23
+    20-30%       82           0.24      0.37
+    30-40%       62           0.35      0.58
+    40-50%       33           0.44      0.48
+    50-60%       56           0.55      0.55
+    60-70%       85           0.63      0.66
+    70-80%       31           0.75      0.77
+    80-90%       60           0.83      0.82
+  turn: 600 forecasts, 22% happened; Brier 0.166, always 50% 0.250, always the base rate 0.172
+    forecast      n  mean forecast  observed
+    0-10%        59           0.06      0.00
+    10-20%      185           0.15      0.15
+    20-30%      231           0.24      0.30
+    30-40%       99           0.35      0.28
+    40-50%       25           0.42      0.24
+    60-70%        1           0.62      1.00
+  scenario (all four): 300 forecasts, 25% happened; Brier 0.172, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%        77           0.01      0.07
+    10-20%       18           0.16      0.00
+    20-30%       65           0.25      0.28
+    30-40%       84           0.34      0.39
+    40-50%       40           0.43      0.33
+    50-60%       14           0.54      0.36
+    60-70%        2           0.64      0.50
+  scenario breakdown: 75 forecasts, 29% happened; Brier 0.193, always the base rate 0.207
+    forecast      n  mean forecast  observed
+    0-10%         2           0.07      0.00
+    10-20%       14           0.16      0.00
+    20-30%       31           0.25      0.35
+    30-40%       27           0.34      0.41
+    40-50%        1           0.42      0.00
+  scenario breakout: 75 forecasts, 37% happened; Brier 0.233, always the base rate 0.234
+    forecast      n  mean forecast  observed
+    10-20%        2           0.18      0.00
+    20-30%       19           0.25      0.26
+    30-40%       34           0.35      0.44
+    40-50%       20           0.43      0.40
+  scenario range: 75 forecasts, 27% happened; Brier 0.198, always the base rate 0.196
+    forecast      n  mean forecast  observed
+    10-20%        2           0.16      0.00
+    20-30%       15           0.25      0.13
+    30-40%       23           0.35      0.30
+    40-50%       19           0.43      0.26
+    50-60%       14           0.54      0.36
+    60-70%        2           0.64      0.50
+  scenario whipsaw: 75 forecasts, 7% happened; Brier 0.062, always the base rate 0.062
+    forecast      n  mean forecast  observed
+    0-10%        75           0.01      0.07
+
+BBDC4.SA
+  75 case(s), 1432 forecast probabilities (Brier: 0 is perfect)
+  reach: 532 forecasts, 46% happened; Brier 0.192, always 50% 0.250, always the base rate 0.248
+    forecast      n  mean forecast  observed
+    0-10%        52           0.06      0.06
+    10-20%       88           0.14      0.15
+    20-30%       64           0.24      0.33
+    30-40%       64           0.35      0.42
+    40-50%       39           0.44      0.56
+    50-60%       42           0.56      0.62
+    60-70%      100           0.64      0.65
+    70-80%       22           0.75      0.91
+    80-90%       61           0.84      0.74
+  turn: 600 forecasts, 22% happened; Brier 0.165, always 50% 0.250, always the base rate 0.171
+    forecast      n  mean forecast  observed
+    0-10%        64           0.06      0.06
+    10-20%      170           0.15      0.18
+    20-30%      231           0.24      0.25
+    30-40%      114           0.34      0.26
+    40-50%       15           0.42      0.27
+    50-60%        6           0.56      0.83
+  scenario (all four): 300 forecasts, 25% happened; Brier 0.153, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%        81           0.02      0.03
+    10-20%       23           0.15      0.04
+    20-30%       55           0.26      0.18
+    30-40%       91           0.35      0.42
+    40-50%       36           0.43      0.39
+    50-60%        7           0.56      0.71
+    60-70%        6           0.64      0.67
+    70-80%        1           0.70      1.00
+  scenario breakdown: 75 forecasts, 24% happened; Brier 0.176, always the base rate 0.182
+    forecast      n  mean forecast  observed
+    0-10%         2           0.08      0.00
+    10-20%       12           0.14      0.08
+    20-30%       25           0.26      0.24
+    30-40%       31           0.35      0.29
+    40-50%        5           0.41      0.40
+  scenario breakout: 75 forecasts, 41% happened; Brier 0.223, always the base rate 0.242
+    forecast      n  mean forecast  observed
+    0-10%         4           0.06      0.00
+    10-20%        2           0.15      0.00
+    20-30%       15           0.25      0.07
+    30-40%       39           0.35      0.54
+    40-50%       15           0.43      0.60
+  scenario range: 75 forecasts, 32% happened; Brier 0.189, always the base rate 0.218
+    forecast      n  mean forecast  observed
+    10-20%        9           0.16      0.00
+    20-30%       15           0.26      0.20
+    30-40%       21           0.35      0.38
+    40-50%       16           0.44      0.19
+    50-60%        7           0.56      0.71
+    60-70%        6           0.64      0.67
+    70-80%        1           0.70      1.00
+  scenario whipsaw: 75 forecasts, 3% happened; Brier 0.025, always the base rate 0.026
+    forecast      n  mean forecast  observed
+    0-10%        75           0.01      0.03
+
+ITUB4.SA
+  75 case(s), 1441 forecast probabilities (Brier: 0 is perfect)
+  reach: 541 forecasts, 46% happened; Brier 0.191, always 50% 0.250, always the base rate 0.249
+    forecast      n  mean forecast  observed
+    0-10%        64           0.06      0.03
+    10-20%      100           0.14      0.27
+    20-30%       52           0.24      0.29
+    30-40%       61           0.34      0.41
+    40-50%       29           0.44      0.52
+    50-60%       58           0.55      0.60
+    60-70%       74           0.63      0.68
+    70-80%       42           0.75      0.81
+    80-90%       60           0.83      0.78
+    90-100%       1           0.91      1.00
+  turn: 600 forecasts, 22% happened; Brier 0.161, always 50% 0.250, always the base rate 0.170
+    forecast      n  mean forecast  observed
+    0-10%        81           0.06      0.04
+    10-20%      175           0.15      0.21
+    20-30%      211           0.24      0.20
+    30-40%       91           0.34      0.37
+    40-50%       31           0.43      0.26
+    50-60%       11           0.53      0.64
+  scenario (all four): 300 forecasts, 25% happened; Brier 0.153, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%        82           0.01      0.01
+    10-20%       31           0.14      0.23
+    20-30%       45           0.25      0.20
+    30-40%       81           0.34      0.37
+    40-50%       40           0.43      0.35
+    50-60%        8           0.54      0.50
+    60-70%        9           0.63      0.78
+    70-80%        4           0.72      0.75
+  scenario breakdown: 75 forecasts, 20% happened; Brier 0.169, always the base rate 0.160
+    forecast      n  mean forecast  observed
+    0-10%         4           0.08      0.25
+    10-20%       19           0.15      0.16
+    20-30%       25           0.25      0.24
+    30-40%       24           0.34      0.21
+    40-50%        3           0.43      0.00
+  scenario breakout: 75 forecasts, 48% happened; Brier 0.252, always the base rate 0.250
+    forecast      n  mean forecast  observed
+    0-10%         3           0.08      0.00
+    10-20%        8           0.14      0.38
+    20-30%       16           0.26      0.19
+    30-40%       30           0.34      0.60
+    40-50%       16           0.42      0.69
+    50-60%        2           0.51      0.50
+  scenario range: 75 forecasts, 32% happened; Brier 0.193, always the base rate 0.218
+    forecast      n  mean forecast  observed
+    10-20%        4           0.14      0.25
+    20-30%        4           0.23      0.00
+    30-40%       27           0.35      0.26
+    40-50%       21           0.44      0.14
+    50-60%        6           0.55      0.50
+    60-70%        9           0.63      0.78
+    70-80%        4           0.72      0.75
+  scenario whipsaw: 75 forecasts, 0% happened; Brier 0.000, always the base rate 0.000
+    forecast      n  mean forecast  observed
+    0-10%        75           0.01      0.00
+
+JPM
+  76 case(s), 1453 forecast probabilities (Brier: 0 is perfect)
+  reach: 541 forecasts, 44% happened; Brier 0.178, always 50% 0.250, always the base rate 0.247
+    forecast      n  mean forecast  observed
+    0-10%        88           0.04      0.06
+    10-20%       78           0.14      0.20
+    20-30%       55           0.25      0.31
+    30-40%       64           0.35      0.41
+    40-50%       36           0.44      0.61
+    50-60%       49           0.55      0.39
+    60-70%       72           0.64      0.81
+    70-80%       46           0.74      0.80
+    80-90%       51           0.84      0.77
+    90-100%       2           0.90      1.00
+  turn: 608 forecasts, 21% happened; Brier 0.160, always 50% 0.250, always the base rate 0.168
+    forecast      n  mean forecast  observed
+    0-10%        93           0.04      0.05
+    10-20%      144           0.15      0.18
+    20-30%      232           0.24      0.23
+    30-40%      109           0.34      0.32
+    40-50%       19           0.42      0.42
+    50-60%       10           0.54      0.30
+    60-70%        1           0.60      0.00
+  scenario (all four): 304 forecasts, 25% happened; Brier 0.165, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%        93           0.02      0.04
+    10-20%       17           0.16      0.23
+    20-30%       48           0.25      0.27
+    30-40%       86           0.34      0.34
+    40-50%       34           0.44      0.44
+    50-60%       14           0.55      0.21
+    60-70%       11           0.65      0.64
+    70-80%        1           0.77      1.00
+  scenario breakdown: 76 forecasts, 18% happened; Brier 0.146, always the base rate 0.150
+    forecast      n  mean forecast  observed
+    0-10%        16           0.04      0.06
+    10-20%       12           0.16      0.17
+    20-30%       24           0.24      0.21
+    30-40%       23           0.34      0.26
+    40-50%        1           0.40      0.00
+  scenario breakout: 76 forecasts, 43% happened; Brier 0.251, always the base rate 0.246
+    forecast      n  mean forecast  observed
+    0-10%         1           0.05      0.00
+    10-20%        2           0.14      0.50
+    20-30%       14           0.26      0.43
+    30-40%       42           0.34      0.38
+    40-50%       15           0.44      0.60
+    50-60%        2           0.55      0.50
+  scenario range: 76 forecasts, 34% happened; Brier 0.226, always the base rate 0.225
+    forecast      n  mean forecast  observed
+    10-20%        3           0.16      0.33
+    20-30%       10           0.26      0.20
+    30-40%       21           0.34      0.33
+    40-50%       18           0.44      0.33
+    50-60%       12           0.55      0.17
+    60-70%       11           0.65      0.64
+    70-80%        1           0.77      1.00
+  scenario whipsaw: 76 forecasts, 4% happened; Brier 0.037, always the base rate 0.038
+    forecast      n  mean forecast  observed
+    0-10%        76           0.01      0.04
+
+MSFT
+  76 case(s), 1460 forecast probabilities (Brier: 0 is perfect)
+  reach: 548 forecasts, 47% happened; Brier 0.173, always 50% 0.250, always the base rate 0.249
+    forecast      n  mean forecast  observed
+    0-10%        62           0.06      0.00
+    10-20%       94           0.15      0.21
+    20-30%       58           0.24      0.29
+    30-40%       74           0.34      0.46
+    40-50%       26           0.44      0.50
+    50-60%       66           0.56      0.58
+    60-70%       66           0.64      0.71
+    70-80%       43           0.75      0.81
+    80-90%       58           0.84      0.93
+    90-100%       1           0.90      1.00
+  turn: 608 forecasts, 23% happened; Brier 0.163, always 50% 0.250, always the base rate 0.176
+    forecast      n  mean forecast  observed
+    0-10%        72           0.06      0.01
+    10-20%      183           0.15      0.19
+    20-30%      230           0.24      0.23
+    30-40%       87           0.34      0.40
+    40-50%       28           0.43      0.46
+    50-60%        8           0.54      0.38
+  scenario (all four): 304 forecasts, 25% happened; Brier 0.154, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%        83           0.01      0.04
+    10-20%       18           0.14      0.06
+    20-30%       56           0.26      0.20
+    30-40%       92           0.34      0.34
+    40-50%       30           0.43      0.50
+    50-60%       24           0.55      0.62
+    60-70%        1           0.64      0.00
+  scenario breakdown: 76 forecasts, 20% happened; Brier 0.149, always the base rate 0.158
+    forecast      n  mean forecast  observed
+    0-10%         7           0.07      0.00
+    10-20%       11           0.14      0.09
+    20-30%       26           0.26      0.12
+    30-40%       31           0.33      0.35
+    40-50%        1           0.42      0.00
+  scenario breakout: 76 forecasts, 40% happened; Brier 0.224, always the base rate 0.239
+    forecast      n  mean forecast  observed
+    10-20%        5           0.15      0.00
+    20-30%       18           0.26      0.28
+    30-40%       39           0.35      0.41
+    40-50%       13           0.42      0.61
+    50-60%        1           0.50      1.00
+  scenario range: 76 forecasts, 37% happened; Brier 0.205, always the base rate 0.233
+    forecast      n  mean forecast  observed
+    10-20%        2           0.17      0.00
+    20-30%       12           0.25      0.25
+    30-40%       22           0.34      0.18
+    40-50%       16           0.44      0.44
+    50-60%       23           0.55      0.61
+    60-70%        1           0.64      0.00
+  scenario whipsaw: 76 forecasts, 4% happened; Brier 0.038, always the base rate 0.038
+    forecast      n  mean forecast  observed
+    0-10%        76           0.01      0.04
+
+NVDA
+  76 case(s), 1445 forecast probabilities (Brier: 0 is perfect)
+  reach: 533 forecasts, 40% happened; Brier 0.168, always 50% 0.250, always the base rate 0.240
+    forecast      n  mean forecast  observed
+    0-10%        62           0.04      0.03
+    10-20%       96           0.14      0.15
+    20-30%       66           0.25      0.15
+    30-40%       64           0.34      0.33
+    40-50%       30           0.44      0.60
+    50-60%       50           0.56      0.54
+    60-70%       81           0.65      0.69
+    70-80%       36           0.74      0.69
+    80-90%       48           0.84      0.83
+  turn: 608 forecasts, 22% happened; Brier 0.153, always 50% 0.250, always the base rate 0.171
+    forecast      n  mean forecast  observed
+    0-10%        64           0.04      0.03
+    10-20%      191           0.15      0.12
+    20-30%      200           0.24      0.23
+    30-40%      119           0.34      0.37
+    40-50%       27           0.43      0.44
+    50-60%        6           0.54      0.83
+    60-70%        1           0.64      1.00
+  scenario (all four): 304 forecasts, 25% happened; Brier 0.146, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%        88           0.01      0.02
+    10-20%       12           0.16      0.08
+    20-30%       62           0.25      0.13
+    30-40%       84           0.34      0.38
+    40-50%       39           0.44      0.51
+    50-60%       12           0.55      0.58
+    60-70%        5           0.64      1.00
+    70-80%        2           0.72      0.50
+  scenario breakdown: 76 forecasts, 12% happened; Brier 0.125, always the base rate 0.104
+    forecast      n  mean forecast  observed
+    0-10%        12           0.04      0.08
+    10-20%        9           0.16      0.11
+    20-30%       25           0.25      0.08
+    30-40%       23           0.34      0.13
+    40-50%        7           0.42      0.29
+  scenario breakout: 76 forecasts, 41% happened; Brier 0.221, always the base rate 0.241
+    forecast      n  mean forecast  observed
+    10-20%        2           0.18      0.00
+    20-30%       28           0.26      0.18
+    30-40%       37           0.35      0.51
+    40-50%        7           0.43      0.71
+    50-60%        2           0.52      1.00
+  scenario range: 76 forecasts, 46% happened; Brier 0.224, always the base rate 0.248
+    forecast      n  mean forecast  observed
+    10-20%        1           0.12      0.00
+    20-30%        9           0.25      0.11
+    30-40%       24           0.34      0.42
+    40-50%       25           0.44      0.52
+    50-60%       10           0.56      0.50
+    60-70%        5           0.64      1.00
+    70-80%        2           0.72      0.50
+  scenario whipsaw: 76 forecasts, 1% happened; Brier 0.013, always the base rate 0.013
+    forecast      n  mean forecast  observed
+    0-10%        76           0.01      0.01
+
+PETR4.SA
+  75 case(s), 1446 forecast probabilities (Brier: 0 is perfect)
+  reach: 546 forecasts, 42% happened; Brier 0.181, always 50% 0.250, always the base rate 0.244
+    forecast      n  mean forecast  observed
+    0-10%        37           0.06      0.11
+    10-20%       71           0.15      0.17
+    20-30%       79           0.24      0.17
+    30-40%       67           0.34      0.28
+    40-50%       56           0.43      0.43
+    50-60%       42           0.56      0.33
+    60-70%       94           0.64      0.64
+    70-80%       29           0.74      0.79
+    80-90%       71           0.84      0.86
+  turn: 600 forecasts, 22% happened; Brier 0.161, always 50% 0.250, always the base rate 0.172
+    forecast      n  mean forecast  observed
+    0-10%        42           0.06      0.10
+    10-20%      191           0.16      0.14
+    20-30%      265           0.23      0.24
+    30-40%       91           0.34      0.34
+    40-50%        8           0.43      0.62
+    50-60%        2           0.52      0.50
+    60-70%        1           0.64      1.00
+  scenario (all four): 300 forecasts, 25% happened; Brier 0.168, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%        79           0.02      0.04
+    10-20%       17           0.16      0.23
+    20-30%       56           0.25      0.25
+    30-40%       98           0.35      0.32
+    40-50%       41           0.42      0.46
+    50-60%        5           0.53      0.40
+    60-70%        4           0.61      0.50
+  scenario breakdown: 75 forecasts, 25% happened; Brier 0.202, always the base rate 0.189
+    forecast      n  mean forecast  observed
+    10-20%        5           0.16      0.60
+    20-30%       22           0.26      0.23
+    30-40%       43           0.35      0.21
+    40-50%        5           0.42      0.40
+  scenario breakout: 75 forecasts, 32% happened; Brier 0.219, always the base rate 0.218
+    forecast      n  mean forecast  observed
+    0-10%         4           0.06      0.50
+    10-20%        4           0.18      0.00
+    20-30%       12           0.25      0.17
+    30-40%       34           0.35      0.32
+    40-50%       21           0.42      0.43
+  scenario range: 75 forecasts, 41% happened; Brier 0.239, always the base rate 0.242
+    forecast      n  mean forecast  observed
+    0-10%         1           0.07      0.00
+    10-20%        7           0.16      0.14
+    20-30%       22           0.24      0.32
+    30-40%       21           0.34      0.52
+    40-50%       15           0.43      0.53
+    50-60%        5           0.53      0.40
+    60-70%        4           0.61      0.50
+  scenario whipsaw: 75 forecasts, 1% happened; Brier 0.013, always the base rate 0.013
+    forecast      n  mean forecast  observed
+    0-10%        74           0.02      0.01
+    10-20%        1           0.12      0.00
+
+SPY
+  76 case(s), 1436 forecast probabilities (Brier: 0 is perfect)
+  reach: 524 forecasts, 42% happened; Brier 0.160, always 50% 0.250, always the base rate 0.243
+    forecast      n  mean forecast  observed
+    0-10%        87           0.03      0.06
+    10-20%       79           0.14      0.14
+    20-30%       55           0.24      0.26
+    30-40%       65           0.34      0.34
+    40-50%       37           0.44      0.57
+    50-60%       57           0.55      0.44
+    60-70%       52           0.64      0.81
+    70-80%       56           0.75      0.86
+    80-90%       34           0.84      0.85
+    90-100%       2           0.91      1.00
+  turn: 608 forecasts, 22% happened; Brier 0.156, always 50% 0.250, always the base rate 0.174
+    forecast      n  mean forecast  observed
+    0-10%        93           0.03      0.07
+    10-20%      153           0.15      0.13
+    20-30%      202           0.24      0.21
+    30-40%      110           0.34      0.39
+    40-50%       41           0.43      0.49
+    50-60%        8           0.54      0.50
+    60-70%        1           0.66      1.00
+  scenario (all four): 304 forecasts, 25% happened; Brier 0.156, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%        96           0.01      0.04
+    10-20%       25           0.14      0.24
+    20-30%       39           0.26      0.18
+    30-40%       70           0.34      0.30
+    40-50%       40           0.43      0.42
+    50-60%       20           0.54      0.70
+    60-70%        9           0.65      0.56
+    70-80%        4           0.73      0.50
+    80-90%        1           0.83      0.00
+  scenario breakdown: 76 forecasts, 18% happened; Brier 0.145, always the base rate 0.150
+    forecast      n  mean forecast  observed
+    0-10%        20           0.03      0.05
+    10-20%       18           0.14      0.28
+    20-30%       16           0.26      0.12
+    30-40%       22           0.33      0.27
+  scenario breakout: 76 forecasts, 38% happened; Brier 0.218, always the base rate 0.236
+    forecast      n  mean forecast  observed
+    10-20%        3           0.15      0.33
+    20-30%       14           0.26      0.21
+    30-40%       31           0.34      0.32
+    40-50%       22           0.42      0.46
+    50-60%        6           0.52      0.83
+  scenario range: 76 forecasts, 40% happened; Brier 0.223, always the base rate 0.239
+    forecast      n  mean forecast  observed
+    10-20%        4           0.15      0.00
+    20-30%        9           0.25      0.22
+    30-40%       17           0.35      0.29
+    40-50%       18           0.44      0.39
+    50-60%       14           0.54      0.64
+    60-70%        9           0.65      0.56
+    70-80%        4           0.73      0.50
+    80-90%        1           0.83      0.00
+  scenario whipsaw: 76 forecasts, 4% happened; Brier 0.039, always the base rate 0.038
+    forecast      n  mean forecast  observed
+    0-10%        76           0.01      0.04
+
+VALE3.SA
+  75 case(s), 1431 forecast probabilities (Brier: 0 is perfect)
+  reach: 531 forecasts, 42% happened; Brier 0.175, always 50% 0.250, always the base rate 0.243
+    forecast      n  mean forecast  observed
+    0-10%        52           0.05      0.02
+    10-20%       84           0.14      0.12
+    20-30%       68           0.25      0.23
+    30-40%       62           0.35      0.32
+    40-50%       44           0.43      0.48
+    50-60%       45           0.56      0.62
+    60-70%       95           0.64      0.66
+    70-80%       25           0.75      0.72
+    80-90%       56           0.83      0.79
+  turn: 600 forecasts, 22% happened; Brier 0.158, always 50% 0.250, always the base rate 0.172
+    forecast      n  mean forecast  observed
+    0-10%        59           0.06      0.02
+    10-20%      174           0.15      0.15
+    20-30%      230           0.24      0.24
+    30-40%      109           0.34      0.28
+    40-50%       24           0.42      0.62
+    50-60%        3           0.53      1.00
+    60-70%        1           0.62      0.00
+  scenario (all four): 300 forecasts, 25% happened; Brier 0.140, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%        82           0.02      0.00
+    10-20%       13           0.15      0.00
+    20-30%       68           0.25      0.15
+    30-40%       79           0.34      0.38
+    40-50%       42           0.43      0.55
+    50-60%        9           0.54      0.78
+    60-70%        4           0.63      0.50
+    70-80%        3           0.71      1.00
+  scenario breakdown: 75 forecasts, 25% happened; Brier 0.172, always the base rate 0.189
+    forecast      n  mean forecast  observed
+    0-10%         5           0.05      0.00
+    10-20%        7           0.13      0.00
+    20-30%       30           0.24      0.23
+    30-40%       29           0.34      0.34
+    40-50%        4           0.41      0.50
+  scenario breakout: 75 forecasts, 33% happened; Brier 0.202, always the base rate 0.222
+    forecast      n  mean forecast  observed
+    0-10%         2           0.08      0.00
+    10-20%        3           0.15      0.00
+    20-30%       16           0.27      0.12
+    30-40%       30           0.35      0.37
+    40-50%       23           0.42      0.48
+    50-60%        1           0.51      1.00
+  scenario range: 75 forecasts, 41% happened; Brier 0.188, always the base rate 0.242
+    forecast      n  mean forecast  observed
+    10-20%        3           0.18      0.00
+    20-30%       22           0.25      0.04
+    30-40%       20           0.34      0.45
+    40-50%       15           0.44      0.67
+    50-60%        8           0.54      0.75
+    60-70%        4           0.63      0.50
+    70-80%        3           0.71      1.00
+  scenario whipsaw: 75 forecasts, 0% happened; Brier 0.000, always the base rate 0.000
+    forecast      n  mean forecast  observed
+    0-10%        75           0.01      0.00
+
+WEGE3.SA
+  75 case(s), 1433 forecast probabilities (Brier: 0 is perfect)
+  reach: 533 forecasts, 41% happened; Brier 0.165, always 50% 0.250, always the base rate 0.242
+    forecast      n  mean forecast  observed
+    0-10%        87           0.04      0.01
+    10-20%       82           0.15      0.17
+    20-30%       58           0.24      0.22
+    30-40%       63           0.35      0.41
+    40-50%       24           0.43      0.54
+    50-60%       51           0.56      0.57
+    60-70%       88           0.64      0.65
+    70-80%       23           0.74      0.87
+    80-90%       57           0.83      0.81
+  turn: 600 forecasts, 22% happened; Brier 0.156, always 50% 0.250, always the base rate 0.172
+    forecast      n  mean forecast  observed
+    0-10%        96           0.04      0.01
+    10-20%      154           0.15      0.17
+    20-30%      200           0.24      0.24
+    30-40%      107           0.34      0.38
+    40-50%       28           0.43      0.32
+    50-60%       12           0.54      0.42
+    60-70%        3           0.66      1.00
+  scenario (all four): 300 forecasts, 25% happened; Brier 0.143, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%        90           0.01      0.01
+    10-20%       23           0.16      0.09
+    20-30%       48           0.25      0.23
+    30-40%       80           0.34      0.36
+    40-50%       29           0.44      0.45
+    50-60%       16           0.54      0.44
+    60-70%        7           0.62      0.86
+    70-80%        6           0.73      0.83
+    80-90%        1           0.83      1.00
+  scenario breakdown: 75 forecasts, 24% happened; Brier 0.161, always the base rate 0.182
+    forecast      n  mean forecast  observed
+    0-10%        15           0.03      0.00
+    10-20%       12           0.16      0.17
+    20-30%       19           0.25      0.26
+    30-40%       29           0.35      0.38
+  scenario breakout: 75 forecasts, 32% happened; Brier 0.194, always the base rate 0.218
+    forecast      n  mean forecast  observed
+    10-20%       11           0.16      0.00
+    20-30%       19           0.25      0.21
+    30-40%       35           0.34      0.37
+    40-50%       10           0.42      0.70
+  scenario range: 75 forecasts, 43% happened; Brier 0.206, always the base rate 0.245
+    forecast      n  mean forecast  observed
+    20-30%       10           0.25      0.20
+    30-40%       16           0.34      0.31
+    40-50%       19           0.45      0.32
+    50-60%       16           0.54      0.44
+    60-70%        7           0.62      0.86
+    70-80%        6           0.73      0.83
+    80-90%        1           0.83      1.00
+  scenario whipsaw: 75 forecasts, 1% happened; Brier 0.013, always the base rate 0.013
+    forecast      n  mean forecast  observed
+    0-10%        75           0.01      0.01
+
+XOM
+  76 case(s), 1448 forecast probabilities (Brier: 0 is perfect)
+  reach: 536 forecasts, 42% happened; Brier 0.170, always 50% 0.250, always the base rate 0.243
+    forecast      n  mean forecast  observed
+    0-10%        45           0.06      0.02
+    10-20%       79           0.16      0.14
+    20-30%       66           0.24      0.20
+    30-40%       71           0.35      0.21
+    40-50%       46           0.43      0.52
+    50-60%       64           0.56      0.55
+    60-70%       72           0.64      0.71
+    70-80%       37           0.75      0.68
+    80-90%       56           0.84      0.88
+  turn: 608 forecasts, 22% happened; Brier 0.159, always 50% 0.250, always the base rate 0.173
+    forecast      n  mean forecast  observed
+    0-10%        46           0.05      0.02
+    10-20%      171           0.16      0.12
+    20-30%      279           0.24      0.25
+    30-40%       90           0.34      0.33
+    40-50%       18           0.43      0.56
+    50-60%        3           0.54      0.67
+    60-70%        1           0.60      1.00
+  scenario (all four): 304 forecasts, 25% happened; Brier 0.157, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%        86           0.03      0.01
+    10-20%       14           0.16      0.07
+    20-30%       53           0.24      0.26
+    30-40%      101           0.34      0.35
+    40-50%       38           0.43      0.53
+    50-60%        5           0.54      0.00
+    60-70%        4           0.63      0.50
+    70-80%        1           0.77      1.00
+    80-90%        2           0.83      1.00
+  scenario breakdown: 76 forecasts, 20% happened; Brier 0.167, always the base rate 0.158
+    forecast      n  mean forecast  observed
+    0-10%         6           0.06      0.00
+    10-20%        2           0.18      0.00
+    20-30%       20           0.25      0.25
+    30-40%       44           0.34      0.20
+    40-50%        4           0.41      0.25
+  scenario breakout: 76 forecasts, 37% happened; Brier 0.211, always the base rate 0.233
+    forecast      n  mean forecast  observed
+    0-10%         3           0.07      0.00
+    10-20%        5           0.15      0.00
+    20-30%        8           0.24      0.25
+    30-40%       35           0.36      0.34
+    40-50%       25           0.43      0.56
+  scenario range: 76 forecasts, 42% happened; Brier 0.238, always the base rate 0.244
+    forecast      n  mean forecast  observed
+    0-10%         2           0.09      0.00
+    10-20%        6           0.17      0.17
+    20-30%       25           0.23      0.28
+    30-40%       22           0.34      0.64
+    40-50%        9           0.42      0.56
+    50-60%        5           0.54      0.00
+    60-70%        4           0.63      0.50
+    70-80%        1           0.77      1.00
+    80-90%        2           0.83      1.00
+  scenario whipsaw: 76 forecasts, 1% happened; Brier 0.013, always the base rate 0.013
+    forecast      n  mean forecast  observed
+    0-10%        75           0.02      0.01
+    10-20%        1           0.10      0.00
+
+==================== 6-12m ====================
+BACKTEST of the baseline probabilities, horizon 6-12m
+  NVDA, AAPL, MSFT, SPY, JPM, XOM, PETR4.SA, VALE3.SA, ITUB4.SA, BBDC4.SA, ABEV3.SA, WEGE3.SA; as-of dates 2022-11-15 to 2025-11-15, every 21 trading day(s), after the close
+  sim method 2 (drift 5% a year)
+  432 case(s) scored
+  Zone rule (choose_zones): width = 1.5 times the mean of the two typical_zone_width numbers of
+    `rz.py levels`. Candidates are the prices `levels` reports as evidence: pivot lows and highs,
+    the lows and highs of the last three candles, the retracement levels and the two ends of the
+    dominant swing; those below the price serve supports, those above it resistances. Walking
+    outward from the price, a candidate within one width of the first member of the current cluster
+    joins it; a cluster of fewer than two candidates is dropped. Each remaining cluster's level is
+    the mean of its members, and its zone is one width centred there, cut at the price and pushed
+    outward so it never overlaps the zone before it. The nearest clusters are kept. A side with too
+    few clusters is filled with one-width zones, one width apart, beyond the last one.
+  This is the unadjusted baseline (rz.py sim) on mechanically chosen zones: not the zones or the
+    adjusted probabilities of a real projection, and no events, dividends or earnings shocks.
+  Cases overlap whenever the step is shorter than the horizon, and the entries of one case share one
+    price path, so the forecasts are far from independent; n overstates the evidence.
+  Tickers chosen today are survivors. Prices are split-adjusted to today's scale and not dividend-
+    adjusted, so a large dividend shows up as a drop the simulation did not include.
+  Calibration compares probabilities with events. It is not a measure of returns and does not show
+    that the method works or fails.
+
+OVERALL
+  432 case(s), 8266 forecast probabilities (Brier: 0 is perfect)
+  reach: 3082 forecasts, 41% happened; Brier 0.171, always 50% 0.250, always the base rate 0.242
+    forecast      n  mean forecast  observed
+    0-10%       405           0.04      0.04
+    10-20%      438           0.15      0.15
+    20-30%      389           0.25      0.22
+    30-40%      346           0.34      0.34
+    40-50%      257           0.44      0.44
+    50-60%      307           0.55      0.49
+    60-70%      421           0.64      0.68
+    70-80%      204           0.74      0.71
+    80-90%      304           0.84      0.86
+    90-100%      11           0.91      0.91
+  turn: 3456 forecasts, 22% happened; Brier 0.158, always 50% 0.250, always the base rate 0.170
+    forecast      n  mean forecast  observed
+    0-10%       434           0.04      0.04
+    10-20%     1004           0.15      0.15
+    20-30%     1227           0.24      0.24
+    30-40%      600           0.34      0.34
+    40-50%      145           0.43      0.45
+    50-60%       39           0.54      0.41
+    60-70%        7           0.61      0.86
+  scenario (all four): 1728 forecasts, 25% happened; Brier 0.160, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%       500           0.02      0.01
+    10-20%      114           0.15      0.17
+    20-30%      312           0.25      0.25
+    30-40%      452           0.34      0.36
+    40-50%      223           0.44      0.51
+    50-60%       79           0.55      0.39
+    60-70%       33           0.64      0.48
+    70-80%       11           0.73      0.27
+    80-90%        4           0.82      0.25
+  scenario breakdown: 432 forecasts, 8% happened; Brier 0.100, always the base rate 0.076
+    forecast      n  mean forecast  observed
+    0-10%        56           0.05      0.00
+    10-20%       68           0.15      0.04
+    20-30%      173           0.25      0.08
+    30-40%      129           0.33      0.15
+    40-50%        6           0.41      0.00
+  scenario breakout: 432 forecasts, 52% happened; Brier 0.281, always the base rate 0.250
+    forecast      n  mean forecast  observed
+    0-10%        13           0.07      0.46
+    10-20%       22           0.16      0.50
+    20-30%       77           0.26      0.53
+    30-40%      196           0.35      0.45
+    40-50%      115           0.43      0.59
+    50-60%        9           0.52      1.00
+  scenario range: 432 forecasts, 40% happened; Brier 0.259, always the base rate 0.239
+    forecast      n  mean forecast  observed
+    10-20%       23           0.16      0.26
+    20-30%       62           0.26      0.39
+    30-40%      127           0.34      0.42
+    40-50%      102           0.44      0.44
+    50-60%       70           0.55      0.31
+    60-70%       33           0.64      0.48
+    70-80%       11           0.73      0.27
+    80-90%        4           0.82      0.25
+  scenario whipsaw: 432 forecasts, 0% happened; Brier 0.003, always the base rate 0.002
+    forecast      n  mean forecast  observed
+    0-10%       431           0.01      0.00
+    10-20%        1           0.10      0.00
+
+AAPL
+  36 case(s), 687 forecast probabilities (Brier: 0 is perfect)
+  reach: 255 forecasts, 42% happened; Brier 0.148, always 50% 0.250, always the base rate 0.243
+    forecast      n  mean forecast  observed
+    0-10%        33           0.05      0.03
+    10-20%       52           0.15      0.12
+    20-30%       21           0.24      0.24
+    30-40%       40           0.34      0.28
+    40-50%       14           0.45      0.64
+    50-60%       25           0.55      0.68
+    60-70%       36           0.64      0.75
+    70-80%       14           0.74      0.93
+    80-90%       20           0.84      0.90
+  turn: 288 forecasts, 23% happened; Brier 0.158, always 50% 0.250, always the base rate 0.175
+    forecast      n  mean forecast  observed
+    0-10%        38           0.06      0.05
+    10-20%      100           0.15      0.11
+    20-30%       80           0.24      0.26
+    30-40%       55           0.34      0.46
+    40-50%       12           0.43      0.42
+    50-60%        2           0.52      0.00
+    60-70%        1           0.60      1.00
+  scenario (all four): 144 forecasts, 25% happened; Brier 0.152, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%        43           0.02      0.00
+    10-20%       10           0.17      0.40
+    20-30%       19           0.26      0.21
+    30-40%       41           0.33      0.29
+    40-50%       24           0.46      0.46
+    50-60%        4           0.57      0.50
+    60-70%        3           0.61      1.00
+  scenario breakdown: 36 forecasts, 3% happened; Brier 0.075, always the base rate 0.027
+    forecast      n  mean forecast  observed
+    0-10%         7           0.08      0.00
+    10-20%        4           0.17      0.00
+    20-30%       11           0.25      0.00
+    30-40%       14           0.32      0.07
+  scenario breakout: 36 forecasts, 53% happened; Brier 0.295, always the base rate 0.249
+    forecast      n  mean forecast  observed
+    10-20%        6           0.18      0.67
+    20-30%        8           0.26      0.50
+    30-40%       17           0.34      0.35
+    40-50%        5           0.45      1.00
+  scenario range: 36 forecasts, 44% happened; Brier 0.238, always the base rate 0.247
+    forecast      n  mean forecast  observed
+    30-40%       10           0.34      0.50
+    40-50%       19           0.46      0.32
+    50-60%        4           0.57      0.50
+    60-70%        3           0.61      1.00
+  scenario whipsaw: 36 forecasts, 0% happened; Brier 0.000, always the base rate 0.000
+    forecast      n  mean forecast  observed
+    0-10%        36           0.00      0.00
+
+ABEV3.SA
+  36 case(s), 691 forecast probabilities (Brier: 0 is perfect)
+  reach: 259 forecasts, 46% happened; Brier 0.164, always 50% 0.250, always the base rate 0.248
+    forecast      n  mean forecast  observed
+    0-10%        31           0.04      0.00
+    10-20%       22           0.14      0.09
+    20-30%       35           0.24      0.17
+    30-40%       32           0.34      0.41
+    40-50%       24           0.44      0.38
+    50-60%       29           0.55      0.76
+    60-70%       41           0.65      0.71
+    70-80%       10           0.72      0.70
+    80-90%       32           0.85      0.88
+    90-100%       3           0.90      0.67
+  turn: 288 forecasts, 23% happened; Brier 0.158, always 50% 0.250, always the base rate 0.175
+    forecast      n  mean forecast  observed
+    0-10%        34           0.05      0.00
+    10-20%       77           0.16      0.12
+    20-30%      115           0.24      0.27
+    30-40%       40           0.34      0.35
+    40-50%       20           0.43      0.50
+    50-60%        2           0.51      0.50
+  scenario (all four): 144 forecasts, 25% happened; Brier 0.152, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%        38           0.02      0.00
+    10-20%       13           0.14      0.00
+    20-30%       24           0.26      0.25
+    30-40%       35           0.34      0.43
+    40-50%       28           0.44      0.36
+    50-60%        6           0.52      0.83
+  scenario breakdown: 36 forecasts, 31% happened; Brier 0.178, always the base rate 0.212
+    forecast      n  mean forecast  observed
+    0-10%         2           0.08      0.00
+    10-20%       10           0.14      0.00
+    20-30%       13           0.25      0.31
+    30-40%       11           0.33      0.64
+  scenario breakout: 36 forecasts, 39% happened; Brier 0.230, always the base rate 0.238
+    forecast      n  mean forecast  observed
+    20-30%        2           0.24      0.50
+    30-40%       11           0.35      0.18
+    40-50%       20           0.44      0.40
+    50-60%        3           0.51      1.00
+  scenario range: 36 forecasts, 31% happened; Brier 0.202, always the base rate 0.212
+    forecast      n  mean forecast  observed
+    10-20%        3           0.18      0.00
+    20-30%        9           0.27      0.11
+    30-40%       13           0.34      0.46
+    40-50%        8           0.44      0.25
+    50-60%        3           0.53      0.67
+  scenario whipsaw: 36 forecasts, 0% happened; Brier 0.000, always the base rate 0.000
+    forecast      n  mean forecast  observed
+    0-10%        36           0.01      0.00
+
+BBDC4.SA
+  36 case(s), 684 forecast probabilities (Brier: 0 is perfect)
+  reach: 252 forecasts, 40% happened; Brier 0.157, always 50% 0.250, always the base rate 0.241
+    forecast      n  mean forecast  observed
+    0-10%        40           0.03      0.00
+    10-20%       12           0.14      0.17
+    20-30%       44           0.24      0.11
+    30-40%       36           0.35      0.44
+    40-50%       15           0.42      0.33
+    50-60%       36           0.57      0.58
+    60-70%       34           0.63      0.68
+    70-80%        7           0.77      0.86
+    80-90%       28           0.85      0.86
+  turn: 288 forecasts, 23% happened; Brier 0.164, always 50% 0.250, always the base rate 0.177
+    forecast      n  mean forecast  observed
+    0-10%        41           0.03      0.00
+    10-20%       70           0.15      0.27
+    20-30%      110           0.25      0.21
+    30-40%       44           0.35      0.27
+    40-50%       13           0.41      0.39
+    50-60%        8           0.54      0.62
+    60-70%        2           0.61      1.00
+  scenario (all four): 144 forecasts, 25% happened; Brier 0.159, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%        46           0.02      0.00
+    10-20%        4           0.14      0.00
+    20-30%       15           0.26      0.33
+    30-40%       54           0.35      0.37
+    40-50%       13           0.42      0.54
+    50-60%       11           0.55      0.36
+    60-70%        1           0.67      0.00
+  scenario breakdown: 36 forecasts, 17% happened; Brier 0.120, always the base rate 0.139
+    forecast      n  mean forecast  observed
+    0-10%        10           0.04      0.00
+    10-20%        4           0.14      0.00
+    20-30%        9           0.25      0.11
+    30-40%       13           0.33      0.39
+  scenario breakout: 36 forecasts, 44% happened; Brier 0.255, always the base rate 0.247
+    forecast      n  mean forecast  observed
+    30-40%       28           0.36      0.43
+    40-50%        8           0.42      0.50
+  scenario range: 36 forecasts, 39% happened; Brier 0.260, always the base rate 0.238
+    forecast      n  mean forecast  observed
+    20-30%        6           0.27      0.67
+    30-40%       13           0.33      0.23
+    40-50%        5           0.43      0.60
+    50-60%       11           0.55      0.36
+    60-70%        1           0.67      0.00
+  scenario whipsaw: 36 forecasts, 0% happened; Brier 0.000, always the base rate 0.000
+    forecast      n  mean forecast  observed
+    0-10%        36           0.01      0.00
+
+ITUB4.SA
+  36 case(s), 692 forecast probabilities (Brier: 0 is perfect)
+  reach: 260 forecasts, 44% happened; Brier 0.165, always 50% 0.250, always the base rate 0.247
+    forecast      n  mean forecast  observed
+    0-10%         2           0.07      0.00
+    10-20%       45           0.15      0.02
+    20-30%       29           0.24      0.17
+    30-40%       49           0.34      0.29
+    40-50%       19           0.44      0.79
+    50-60%       27           0.56      0.26
+    60-70%       43           0.64      0.79
+    70-80%        9           0.76      0.78
+    80-90%       35           0.85      0.86
+    90-100%       2           0.90      1.00
+  turn: 288 forecasts, 23% happened; Brier 0.166, always 50% 0.250, always the base rate 0.175
+    forecast      n  mean forecast  observed
+    0-10%         2           0.07      0.00
+    10-20%      114           0.16      0.13
+    20-30%      127           0.24      0.28
+    30-40%       42           0.34      0.29
+    40-50%        3           0.40      0.67
+  scenario (all four): 144 forecasts, 25% happened; Brier 0.147, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%        36           0.02      0.00
+    10-20%        2           0.17      0.00
+    20-30%       32           0.26      0.12
+    30-40%       59           0.34      0.34
+    40-50%       15           0.43      0.80
+  scenario breakdown: 36 forecasts, 0% happened; Brier 0.091, always the base rate 0.000
+    forecast      n  mean forecast  observed
+    20-30%       15           0.28      0.00
+    30-40%       21           0.32      0.00
+  scenario breakout: 36 forecasts, 72% happened; Brier 0.308, always the base rate 0.201
+    forecast      n  mean forecast  observed
+    20-30%        1           0.29      1.00
+    30-40%       21           0.35      0.62
+    40-50%       14           0.43      0.86
+  scenario range: 36 forecasts, 28% happened; Brier 0.191, always the base rate 0.201
+    forecast      n  mean forecast  observed
+    10-20%        2           0.17      0.00
+    20-30%       16           0.25      0.19
+    30-40%       17           0.36      0.41
+    40-50%        1           0.40      0.00
+  scenario whipsaw: 36 forecasts, 0% happened; Brier 0.001, always the base rate 0.000
+    forecast      n  mean forecast  observed
+    0-10%        36           0.02      0.00
+
+JPM
+  36 case(s), 687 forecast probabilities (Brier: 0 is perfect)
+  reach: 255 forecasts, 38% happened; Brier 0.193, always 50% 0.250, always the base rate 0.236
+    forecast      n  mean forecast  observed
+    0-10%        40           0.05      0.00
+    10-20%       50           0.14      0.28
+    20-30%       25           0.25      0.20
+    30-40%       31           0.34      0.55
+    40-50%       19           0.46      0.32
+    50-60%       23           0.56      0.39
+    60-70%       27           0.65      0.67
+    70-80%       24           0.74      0.67
+    80-90%       16           0.83      0.75
+  turn: 288 forecasts, 19% happened; Brier 0.150, always 50% 0.250, always the base rate 0.152
+    forecast      n  mean forecast  observed
+    0-10%        44           0.05      0.00
+    10-20%       82           0.15      0.27
+    20-30%       91           0.24      0.12
+    30-40%       58           0.34      0.24
+    40-50%       10           0.42      0.70
+    50-60%        3           0.53      0.00
+  scenario (all four): 144 forecasts, 25% happened; Brier 0.164, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%        43           0.01      0.00
+    10-20%       10           0.15      0.10
+    20-30%       26           0.25      0.23
+    30-40%       37           0.34      0.57
+    40-50%       12           0.43      0.25
+    50-60%        8           0.57      0.12
+    60-70%        8           0.63      0.50
+  scenario breakdown: 36 forecasts, 0% happened; Brier 0.048, always the base rate 0.000
+    forecast      n  mean forecast  observed
+    0-10%         7           0.05      0.00
+    10-20%        8           0.15      0.00
+    20-30%       15           0.25      0.00
+    30-40%        6           0.32      0.00
+  scenario breakout: 36 forecasts, 72% happened; Brier 0.357, always the base rate 0.201
+    forecast      n  mean forecast  observed
+    10-20%        2           0.17      0.50
+    20-30%       11           0.26      0.55
+    30-40%       22           0.35      0.82
+    40-50%        1           0.40      1.00
+  scenario range: 36 forecasts, 28% happened; Brier 0.250, always the base rate 0.201
+    forecast      n  mean forecast  observed
+    30-40%        9           0.36      0.33
+    40-50%       11           0.43      0.18
+    50-60%        8           0.57      0.12
+    60-70%        8           0.63      0.50
+  scenario whipsaw: 36 forecasts, 0% happened; Brier 0.000, always the base rate 0.000
+    forecast      n  mean forecast  observed
+    0-10%        36           0.00      0.00
+
+MSFT
+  36 case(s), 696 forecast probabilities (Brier: 0 is perfect)
+  reach: 264 forecasts, 44% happened; Brier 0.163, always 50% 0.250, always the base rate 0.247
+    forecast      n  mean forecast  observed
+    0-10%        54           0.04      0.07
+    10-20%       42           0.15      0.26
+    20-30%       27           0.25      0.18
+    30-40%       16           0.34      0.31
+    40-50%       25           0.45      0.56
+    50-60%       22           0.54      0.55
+    60-70%       30           0.64      0.87
+    70-80%       24           0.74      0.75
+    80-90%       23           0.84      0.91
+    90-100%       1           0.90      1.00
+  turn: 288 forecasts, 22% happened; Brier 0.161, always 50% 0.250, always the base rate 0.169
+    forecast      n  mean forecast  observed
+    0-10%        57           0.04      0.09
+    10-20%       69           0.15      0.17
+    20-30%       94           0.24      0.20
+    30-40%       49           0.34      0.41
+    40-50%       14           0.44      0.36
+    50-60%        4           0.54      0.00
+    60-70%        1           0.60      1.00
+  scenario (all four): 144 forecasts, 25% happened; Brier 0.170, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%        45           0.01      0.04
+    10-20%       16           0.16      0.31
+    20-30%       26           0.24      0.19
+    30-40%       20           0.35      0.25
+    40-50%       17           0.44      0.65
+    50-60%       12           0.53      0.58
+    60-70%        4           0.68      0.00
+    70-80%        2           0.73      0.00
+    80-90%        2           0.83      0.50
+  scenario breakdown: 36 forecasts, 11% happened; Brier 0.091, always the base rate 0.099
+    forecast      n  mean forecast  observed
+    0-10%         6           0.05      0.00
+    10-20%       12           0.15      0.08
+    20-30%       15           0.23      0.13
+    30-40%        3           0.31      0.33
+  scenario breakout: 36 forecasts, 50% happened; Brier 0.308, always the base rate 0.250
+    forecast      n  mean forecast  observed
+    0-10%         3           0.06      0.67
+    10-20%        4           0.16      1.00
+    20-30%       11           0.26      0.27
+    30-40%       12           0.36      0.33
+    40-50%        6           0.43      0.83
+  scenario range: 36 forecasts, 39% happened; Brier 0.283, always the base rate 0.238
+    forecast      n  mean forecast  observed
+    30-40%        5           0.36      0.00
+    40-50%       11           0.44      0.55
+    50-60%       12           0.53      0.58
+    60-70%        4           0.68      0.00
+    70-80%        2           0.73      0.00
+    80-90%        2           0.83      0.50
+  scenario whipsaw: 36 forecasts, 0% happened; Brier 0.000, always the base rate 0.000
+    forecast      n  mean forecast  observed
+    0-10%        36           0.00      0.00
+
+NVDA
+  36 case(s), 690 forecast probabilities (Brier: 0 is perfect)
+  reach: 258 forecasts, 44% happened; Brier 0.245, always 50% 0.250, always the base rate 0.247
+    forecast      n  mean forecast  observed
+    0-10%        54           0.03      0.22
+    10-20%       41           0.15      0.32
+    20-30%       33           0.24      0.48
+    30-40%       20           0.34      0.50
+    40-50%       12           0.45      0.33
+    50-60%       34           0.55      0.50
+    60-70%       29           0.64      0.66
+    70-80%       15           0.77      0.60
+    80-90%       20           0.84      0.70
+  turn: 288 forecasts, 20% happened; Brier 0.170, always 50% 0.250, always the base rate 0.159
+    forecast      n  mean forecast  observed
+    0-10%        57           0.03      0.16
+    10-20%       79           0.15      0.24
+    20-30%       64           0.25      0.12
+    30-40%       65           0.34      0.23
+    40-50%       14           0.42      0.21
+    50-60%        7           0.53      0.29
+    60-70%        2           0.62      0.50
+  scenario (all four): 144 forecasts, 25% happened; Brier 0.216, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%        47           0.01      0.09
+    10-20%       12           0.16      0.17
+    20-30%       34           0.24      0.47
+    30-40%       19           0.34      0.42
+    40-50%        7           0.47      0.43
+    50-60%       14           0.56      0.14
+    60-70%        4           0.62      0.25
+    70-80%        5           0.73      0.00
+    80-90%        2           0.81      0.00
+  scenario breakdown: 36 forecasts, 0% happened; Brier 0.044, always the base rate 0.000
+    forecast      n  mean forecast  observed
+    0-10%         7           0.03      0.00
+    10-20%       10           0.16      0.00
+    20-30%       15           0.24      0.00
+    30-40%        4           0.34      0.00
+  scenario breakout: 36 forecasts, 78% happened; Brier 0.478, always the base rate 0.173
+    forecast      n  mean forecast  observed
+    0-10%         4           0.08      1.00
+    10-20%        2           0.15      1.00
+    20-30%       18           0.25      0.83
+    30-40%       12           0.34      0.58
+  scenario range: 36 forecasts, 22% happened; Brier 0.341, always the base rate 0.173
+    forecast      n  mean forecast  observed
+    20-30%        1           0.29      1.00
+    30-40%        3           0.34      0.33
+    40-50%        7           0.47      0.43
+    50-60%       14           0.56      0.14
+    60-70%        4           0.62      0.25
+    70-80%        5           0.73      0.00
+    80-90%        2           0.81      0.00
+  scenario whipsaw: 36 forecasts, 0% happened; Brier 0.000, always the base rate 0.000
+    forecast      n  mean forecast  observed
+    0-10%        36           0.00      0.00
+
+PETR4.SA
+  36 case(s), 694 forecast probabilities (Brier: 0 is perfect)
+  reach: 262 forecasts, 40% happened; Brier 0.195, always 50% 0.250, always the base rate 0.241
+    forecast      n  mean forecast  observed
+    0-10%         1           0.09      0.00
+    10-20%       27           0.15      0.15
+    20-30%       53           0.25      0.19
+    30-40%       22           0.34      0.32
+    40-50%       41           0.44      0.27
+    50-60%       16           0.55      0.31
+    60-70%       44           0.64      0.61
+    70-80%       21           0.73      0.48
+    80-90%       37           0.85      0.86
+  turn: 288 forecasts, 22% happened; Brier 0.163, always 50% 0.250, always the base rate 0.171
+    forecast      n  mean forecast  observed
+    0-10%         2           0.09      0.00
+    10-20%       94           0.16      0.11
+    20-30%      157           0.24      0.27
+    30-40%       35           0.33      0.29
+  scenario (all four): 144 forecasts, 25% happened; Brier 0.181, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%        36           0.03      0.00
+    10-20%       12           0.17      0.50
+    20-30%       26           0.25      0.35
+    30-40%       46           0.34      0.33
+    40-50%       23           0.43      0.26
+    50-60%        1           0.53      0.00
+  scenario breakdown: 36 forecasts, 6% happened; Brier 0.127, always the base rate 0.052
+    forecast      n  mean forecast  observed
+    20-30%       11           0.26      0.00
+    30-40%       22           0.35      0.09
+    40-50%        3           0.42      0.00
+  scenario breakout: 36 forecasts, 47% happened; Brier 0.282, always the base rate 0.249
+    forecast      n  mean forecast  observed
+    20-30%        3           0.25      0.67
+    30-40%       14           0.35      0.64
+    40-50%       19           0.43      0.32
+  scenario range: 36 forecasts, 47% happened; Brier 0.316, always the base rate 0.249
+    forecast      n  mean forecast  observed
+    10-20%       12           0.17      0.50
+    20-30%       12           0.25      0.58
+    30-40%       10           0.32      0.40
+    40-50%        1           0.47      0.00
+    50-60%        1           0.53      0.00
+  scenario whipsaw: 36 forecasts, 0% happened; Brier 0.001, always the base rate 0.000
+    forecast      n  mean forecast  observed
+    0-10%        36           0.03      0.00
+
+SPY
+  36 case(s), 685 forecast probabilities (Brier: 0 is perfect)
+  reach: 253 forecasts, 41% happened; Brier 0.153, always 50% 0.250, always the base rate 0.242
+    forecast      n  mean forecast  observed
+    0-10%        55           0.03      0.00
+    10-20%       30           0.15      0.17
+    20-30%       35           0.24      0.29
+    30-40%       13           0.36      0.54
+    40-50%       33           0.45      0.52
+    50-60%       19           0.54      0.47
+    60-70%       15           0.64      0.80
+    70-80%       37           0.75      0.76
+    80-90%       14           0.82      1.00
+    90-100%       2           0.92      1.00
+  turn: 288 forecasts, 20% happened; Brier 0.144, always 50% 0.250, always the base rate 0.163
+    forecast      n  mean forecast  observed
+    0-10%        55           0.03      0.00
+    10-20%       60           0.15      0.18
+    20-30%       95           0.24      0.21
+    30-40%       56           0.34      0.23
+    40-50%       20           0.45      0.65
+    50-60%        2           0.53      1.00
+  scenario (all four): 144 forecasts, 25% happened; Brier 0.152, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%        52           0.01      0.02
+    10-20%        6           0.17      0.00
+    20-30%       24           0.25      0.21
+    30-40%       19           0.35      0.42
+    40-50%       23           0.43      0.65
+    50-60%       14           0.55      0.36
+    60-70%        4           0.63      0.25
+    70-80%        2           0.73      0.50
+  scenario breakdown: 36 forecasts, 0% happened; Brier 0.033, always the base rate 0.000
+    forecast      n  mean forecast  observed
+    0-10%        16           0.04      0.00
+    10-20%        3           0.16      0.00
+    20-30%       16           0.25      0.00
+    30-40%        1           0.30      0.00
+  scenario breakout: 36 forecasts, 72% happened; Brier 0.305, always the base rate 0.201
+    forecast      n  mean forecast  observed
+    10-20%        3           0.18      0.00
+    20-30%        7           0.25      0.71
+    30-40%       10           0.36      0.60
+    40-50%       14           0.43      0.93
+    50-60%        2           0.54      1.00
+  scenario range: 36 forecasts, 25% happened; Brier 0.243, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    20-30%        1           0.24      0.00
+    30-40%        8           0.34      0.25
+    40-50%        9           0.45      0.22
+    50-60%       12           0.55      0.25
+    60-70%        4           0.63      0.25
+    70-80%        2           0.73      0.50
+  scenario whipsaw: 36 forecasts, 3% happened; Brier 0.027, always the base rate 0.027
+    forecast      n  mean forecast  observed
+    0-10%        36           0.00      0.03
+
+VALE3.SA
+  36 case(s), 686 forecast probabilities (Brier: 0 is perfect)
+  reach: 254 forecasts, 35% happened; Brier 0.146, always 50% 0.250, always the base rate 0.229
+    forecast      n  mean forecast  observed
+    0-10%        54           0.04      0.00
+    10-20%       24           0.13      0.12
+    20-30%       26           0.25      0.08
+    30-40%       17           0.36      0.29
+    40-50%       23           0.44      0.30
+    50-60%       23           0.56      0.52
+    60-70%       45           0.64      0.56
+    70-80%       11           0.74      0.82
+    80-90%       30           0.85      0.87
+    90-100%       1           0.90      1.00
+  turn: 288 forecasts, 22% happened; Brier 0.149, always 50% 0.250, always the base rate 0.171
+    forecast      n  mean forecast  observed
+    0-10%        58           0.04      0.00
+    10-20%       62           0.15      0.14
+    20-30%       89           0.25      0.23
+    30-40%       48           0.34      0.42
+    40-50%       21           0.42      0.43
+    50-60%       10           0.55      0.50
+  scenario (all four): 144 forecasts, 25% happened; Brier 0.127, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%        42           0.02      0.00
+    10-20%       17           0.13      0.00
+    20-30%       19           0.25      0.21
+    30-40%       33           0.35      0.30
+    40-50%       21           0.44      0.57
+    50-60%        4           0.55      0.75
+    60-70%        7           0.64      0.86
+    70-80%        1           0.71      1.00
+  scenario breakdown: 36 forecasts, 6% happened; Brier 0.101, always the base rate 0.052
+    forecast      n  mean forecast  observed
+    0-10%         1           0.09      0.00
+    10-20%        9           0.14      0.00
+    20-30%       12           0.26      0.08
+    30-40%       12           0.36      0.08
+    40-50%        2           0.41      0.00
+  scenario breakout: 36 forecasts, 31% happened; Brier 0.157, always the base rate 0.212
+    forecast      n  mean forecast  observed
+    0-10%         6           0.06      0.00
+    10-20%        2           0.11      0.00
+    20-30%        5           0.23      0.20
+    30-40%        6           0.34      0.00
+    40-50%       14           0.45      0.50
+    50-60%        3           0.53      1.00
+  scenario range: 36 forecasts, 64% happened; Brier 0.248, always the base rate 0.231
+    forecast      n  mean forecast  observed
+    10-20%        5           0.13      0.00
+    20-30%        2           0.24      1.00
+    30-40%       15           0.34      0.60
+    40-50%        5           0.42      1.00
+    50-60%        1           0.59      0.00
+    60-70%        7           0.64      0.86
+    70-80%        1           0.71      1.00
+  scenario whipsaw: 36 forecasts, 0% happened; Brier 0.001, always the base rate 0.000
+    forecast      n  mean forecast  observed
+    0-10%        35           0.01      0.00
+    10-20%        1           0.10      0.00
+
+WEGE3.SA
+  36 case(s), 683 forecast probabilities (Brier: 0 is perfect)
+  reach: 251 forecasts, 42% happened; Brier 0.169, always 50% 0.250, always the base rate 0.243
+    forecast      n  mean forecast  observed
+    0-10%        35           0.05      0.00
+    10-20%       39           0.14      0.15
+    20-30%       29           0.25      0.41
+    30-40%       31           0.33      0.26
+    40-50%       16           0.44      0.56
+    50-60%       23           0.55      0.43
+    60-70%       43           0.64      0.70
+    70-80%       11           0.75      0.82
+    80-90%       24           0.84      0.88
+  turn: 288 forecasts, 24% happened; Brier 0.162, always 50% 0.250, always the base rate 0.180
+    forecast      n  mean forecast  observed
+    0-10%        40           0.06      0.03
+    10-20%       74           0.15      0.18
+    20-30%      102           0.24      0.22
+    30-40%       57           0.35      0.44
+    40-50%       13           0.42      0.39
+    50-60%        1           0.55      1.00
+    60-70%        1           0.60      1.00
+  scenario (all four): 144 forecasts, 25% happened; Brier 0.164, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%        36           0.01      0.00
+    10-20%       11           0.14      0.18
+    20-30%       27           0.26      0.37
+    30-40%       44           0.34      0.34
+    40-50%       19           0.43      0.32
+    50-60%        4           0.54      0.25
+    60-70%        2           0.64      0.50
+    70-80%        1           0.70      1.00
+  scenario breakdown: 36 forecasts, 25% happened; Brier 0.196, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    10-20%        8           0.14      0.25
+    20-30%       19           0.25      0.32
+    30-40%        9           0.32      0.11
+  scenario breakout: 36 forecasts, 39% happened; Brier 0.231, always the base rate 0.238
+    forecast      n  mean forecast  observed
+    10-20%        3           0.13      0.00
+    20-30%        5           0.28      0.60
+    30-40%       22           0.34      0.41
+    40-50%        6           0.42      0.33
+  scenario range: 36 forecasts, 36% happened; Brier 0.228, always the base rate 0.231
+    forecast      n  mean forecast  observed
+    20-30%        3           0.26      0.33
+    30-40%       13           0.35      0.39
+    40-50%       13           0.43      0.31
+    50-60%        4           0.54      0.25
+    60-70%        2           0.64      0.50
+    70-80%        1           0.70      1.00
+  scenario whipsaw: 36 forecasts, 0% happened; Brier 0.000, always the base rate 0.000
+    forecast      n  mean forecast  observed
+    0-10%        36           0.01      0.00
+
+XOM
+  36 case(s), 691 forecast probabilities (Brier: 0 is perfect)
+  reach: 259 forecasts, 33% happened; Brier 0.156, always 50% 0.250, always the base rate 0.221
+    forecast      n  mean forecast  observed
+    0-10%         6           0.08      0.00
+    10-20%       54           0.14      0.02
+    20-30%       32           0.25      0.19
+    30-40%       39           0.33      0.13
+    40-50%       16           0.45      0.38
+    50-60%       30           0.55      0.37
+    60-70%       34           0.64      0.53
+    70-80%       21           0.73      0.62
+    80-90%       25           0.84      0.92
+    90-100%       2           0.91      1.00
+  turn: 288 forecasts, 23% happened; Brier 0.156, always 50% 0.250, always the base rate 0.175
+    forecast      n  mean forecast  observed
+    0-10%         6           0.08      0.00
+    10-20%      123           0.15      0.04
+    20-30%      103           0.24      0.35
+    30-40%       51           0.34      0.45
+    40-50%        5           0.41      0.20
+  scenario (all four): 144 forecasts, 25% happened; Brier 0.141, always 25% 0.188, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    0-10%        36           0.01      0.00
+    10-20%        1           0.16      0.00
+    20-30%       40           0.26      0.12
+    30-40%       45           0.33      0.29
+    40-50%       21           0.45      0.81
+    50-60%        1           0.50      1.00
+  scenario breakdown: 36 forecasts, 3% happened; Brier 0.091, always the base rate 0.027
+    forecast      n  mean forecast  observed
+    20-30%       22           0.26      0.00
+    30-40%       13           0.31      0.08
+    40-50%        1           0.40      0.00
+  scenario breakout: 36 forecasts, 25% happened; Brier 0.167, always the base rate 0.188
+    forecast      n  mean forecast  observed
+    20-30%        6           0.26      0.00
+    30-40%       21           0.34      0.14
+    40-50%        8           0.45      0.62
+    50-60%        1           0.50      1.00
+  scenario range: 36 forecasts, 72% happened; Brier 0.304, always the base rate 0.201
+    forecast      n  mean forecast  observed
+    10-20%        1           0.16      0.00
+    20-30%       12           0.27      0.42
+    30-40%       11           0.35      0.82
+    40-50%       12           0.45      1.00
+  scenario whipsaw: 36 forecasts, 0% happened; Brier 0.000, always the base rate 0.000
+    forecast      n  mean forecast  observed
+    0-10%        36           0.01      0.00
