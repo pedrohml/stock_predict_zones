@@ -1383,6 +1383,30 @@ What it shows:
 
 The usual limits apply, more strongly: survivor tickers chosen in 2026, overlapping cases, mechanical zones, an assumed cost level, no borrowing costs or dividends, pessimistic ordering inside a day. It is a search for a calibration pattern in hypothetical setups, not a strategy, and its negative result is not advice either.
 
+### Stop and target placement: protocol (written before any evaluation)
+
+The long run and the segmentation found the setups about even before costs and losing after them at `1-2w` and `1-3m`: their stops sit a quarter of one candle's move beyond the zone, so an assumed round-trip cost of 0.20% of the price is a large share of 1R. The hypothesis tested: a different placement of the stop and the target, fixed globally per horizon, raises the mean R per order net of that cost out of sample, with the odds still calibrated. This section was written, and committed, before any variant was evaluated on any part of the long run.
+
+**The family of candidates, fixed beforehand.** Prices still come from the zones and the projection's volatility only; `move` is `units.move`, the price times the projection's volatility for one candle of the close basis (a day at `1-2w`, a week at `1-3m`, a month at `6-12m`).
+
+- **Stop:** the zone edge it sits beyond now, plus or minus k × `move`, k = 0.25 (rules 5's buffer), 0.5, 1 or 1.5.
+- **Target:** the next zone's edge (rules 5), three quarters of the way from the entry to that edge, or a fixed multiple of the risk: 1.5, 2 or 3 R.
+- **Minimum risk:** none (rules 5), or the stop moved further out until the risk is at least 1% or 2% of the entry price, tried with k = 0.25 and 0.5 and with the zone and 2 R targets.
+
+That is 28 variants including rules 5 itself. Everything else is unchanged: the entries, the zones used, the 0.5 minimum ratio, the 5% minimum fill on the paths' own count, the paths, the ranking and the pick.
+
+**Choosing, on the fit part only** (`--universe backtest_universe.txt --start 2005-01-03`, the same as-of grid and ends as rules 5's long report, cases with `part == "fit"`). For each variant, `CORRECTION` is refitted by the method of [the correction](#an-empirical-correction-of-the-odds-per-horizon-side-and-kind) at `1-2w` and `1-3m` (every valid setup of the fit cases, per side and kind, shrunk by n / (n + 100), market orders left uncorrected); `6-12m` stays uncorrected, as under rules 5. The picks are then made with the corrected odds and scored under the pessimistic ordering. Per horizon, the candidate is the variant with the highest fit-part mean R per order net of cost among those that (a) beat rules 5 there by at least 0.02 with t >= 2 (clustered by as-of month), (b) beat it in each of three blocks of fit years (2005-2012, 2013-2019, 2020-2026), and (c) meet tests 2 and 3 below on the fit part. A horizon with no such variant has no candidate and keeps rules 5 without a held-out run. `EDGE_BAND` is then re-measured under the candidate by its method (the larger of |mean stated `edge.if_filled` − mean observed R per fill| of the picks under the two orderings, fit part, rounded up to 0.01), and the candidate is committed before the held-out part is run.
+
+**Adoption criterion, per horizon, never to be changed after it.** The frozen candidate is run once on the held-out part (cases with `part == "held-out"`) and compared with rules 5 on the same cases (the held-out cases where both give setups), the picked setups, pessimistic ordering. It is adopted at a horizon only if all three hold there:
+
+1. **Net R per order higher:** the mean R per order net of a 0.20% round-trip cost (charged on filled setups, in R: 0.002 × entry / risk; an unfilled order is 0R) is higher than rules 5's by at least 0.02, with t >= 2 for the difference, its standard error clustered by as-of month.
+2. **Calibration of the edge kept:** |mean stated `edge.per_order` − mean observed R per order (gross)| is no more than 0.01 above rules 5's.
+3. **Brier no worse:** for `fill` and for `win_if_filled` separately, the candidate's Brier score minus that of the constant forecast (the group's own observed rate) is no more than 0.002 above the same difference for rules 5.
+
+A horizon can adopt while another does not; one that fails keeps rules 5's placement. If none passes, the rules stay version 5 and the candidate is written up as not adopted.
+
+**The held-out part has been read twice before** (the judgement of the rules 5 correction, and the segmentation's frozen segments). This is its third use. To limit the damage, it is used once here, for one frozen candidate per horizon; nothing is re-chosen after it. R is in units of each setup's own risk, so a wider stop also shrinks the cost in R; the risk as % of price and the net result as % of the entry price are reported alongside, never used to choose.
+
 ## Scoring the saved setups
 
 The [setup backtest](#backtest-of-the-trade-setups) replays today's rules on past dates. `score_entries.py` checks the setups that real runs actually wrote, before the prices existed: the forward, out-of-sample check. Every run keeps its `entries.json` in the run folder and, next to the saved projection, in `projections/`.
