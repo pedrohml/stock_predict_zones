@@ -143,16 +143,16 @@ def test_an_entries_file_of_rules_2_is_named_as_such(input_data, projection_data
     old = copy.deepcopy(entries_data)
     old["rules"] = 2
     bad = trade_entries.problems(input_data, projection_data, old)
-    assert len(bad) == 1 and "earlier version of the rules (rules 2, now 6)" in bad[0] and "other side" in bad[0]
+    assert len(bad) == 1 and "earlier version of the rules (rules 2, now 7)" in bad[0] and "other side" in bad[0]
 
 
 @pytest.mark.parametrize("version, why", [(3, "uncorrected path counts"), (4, "never shipped"),
-                                          (5, "zones of the earlier zone rule")])
-def test_an_entries_file_of_rules_3_4_or_5_is_named_as_such(input_data, projection_data, entries_data, version, why):
+                                          (5, "zones of the earlier zone rule"), (6, "under 2% of the entry")])
+def test_an_entries_file_of_rules_3_to_6_is_named_as_such(input_data, projection_data, entries_data, version, why):
     old = copy.deepcopy(entries_data)
     old["rules"] = version
     bad = trade_entries.problems(input_data, projection_data, old)
-    assert len(bad) == 1 and f"(rules {version}, now 6)" in bad[0] and why in bad[0]
+    assert len(bad) == 1 and f"(rules {version}, now 7)" in bad[0] and why in bad[0]
 
 
 def test_half_up_rounding_of_the_buffer(example):
@@ -285,7 +285,7 @@ def test_an_entries_file_of_the_earlier_rules_is_named_as_such(input_data, proje
 # ---- quality: the edge against the model's measured error at the horizon -----------
 
 def test_the_quality_band_follows_the_horizon():
-    assert trade_entries.band({"horizon": "1-2w"}) == 0.17
+    assert trade_entries.band({"horizon": "1-2w"}) == 0.16
     assert trade_entries.band({"horizon": "1-3m"}) == 0.05
     assert trade_entries.band({"horizon": "6-12m"}) == 0.32
     widest = max(trade_entries.EDGE_BAND.values())
@@ -589,3 +589,22 @@ def test_an_uncorrected_horizon_says_nothing_of_a_correction(example):
     t = trade_entries.TEXT["en"]
     assert t["correction"] not in reply["confidence"]["limits"] and t["method_corrected"] not in reply["method"]
     assert all(e["odds"]["basis"].startswith("20,000 simulated paths:") for e in reply["entries"])
+
+
+def test_min_risk_discards_tight_setups_at_its_horizon_only(example, monkeypatch):
+    """Rules 7: a setup whose risk is under MIN_RISK of its entry is discarded, at that horizon only."""
+    assert trade_entries.MIN_RISK == {"1-2w": 0.02}
+    source, proj = example
+    short_horizon = copy.deepcopy(source)
+    short_horizon["horizon"] = "1-2w"
+    every = trade_entries.setups(short_horizon, proj)
+    shares = sorted(item["risk"] / item["entry"] for item in every)
+    assert shares and shares[0] >= 0.02                     # the example's setups are all wider than 2%
+    cut = (shares[0] + shares[-1]) / 2                     # a minimum between the tightest and the widest
+    monkeypatch.setattr(trade_entries, "MIN_RISK", {"1-2w": cut})
+    kept = trade_entries.setups(short_horizon, proj)
+    assert kept and len(kept) < len(every)
+    assert all(item["risk"] >= cut * item["entry"] for item in kept)
+    at_1_3m = trade_entries.setups(source, proj)                  # 1-3m: no minimum
+    monkeypatch.setattr(trade_entries, "MIN_RISK", {})
+    assert at_1_3m == trade_entries.setups(source, proj)

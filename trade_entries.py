@@ -31,14 +31,15 @@ ROOT = Path(__file__).resolve().parent
 TEMPLATE = ROOT / "prompts" / "trade_entries.md"
 SCHEMA = ROOT / "prompts" / "trade_entries.schema.json"
 RZ_PATH = ROOT / ".claude" / "skills" / "reversal-zones-projection" / "scripts" / "rz.py"
-RULES = 6   # version of the rules; 1 (until 19 Nov 2026) took fill and win from reach and turn by formulas,
+RULES = 7   # version of the rules; 1 (until 19 Nov 2026) took fill and win from reach and turn by formulas,
             # 2 (19 Nov 2026) also swapped the third setup for the other side when all three shared one
             # and labelled quality with one band of ±0.05 R at every horizon, 3 (until 20 Nov 2026) stated
             # the path counts uncorrected (no CORRECTION), with bands 0.35 / 0.09 / 0.32; 4 (GARCH paths,
             # garch_paths()) was evaluated and never shipped; 5 (until 22 Nov 2026) set its prices on
             # the zones of the earlier zone rule (one width, single-candidate clusters), with its own
             # CORRECTION and bands 0.29 / 0.09 / 0.32; 6 sets them on the zones of backtest.py's
-            # current rule (1.5 widths, at least two candidates per cluster), CORRECTION refitted
+            # current rule (1.5 widths, at least two candidates per cluster), CORRECTION refitted;
+            # 7 (22 Nov 2026) also discards a 1-2w setup whose risk is under 2% of its entry (MIN_RISK)
 
 # The path estimate (paths(), odds()). A change to any of these is a new RULES number: an
 # entries file is checked by recomputing it.
@@ -51,13 +52,14 @@ DAYS = {"1D": 1, "1W": 5, "1M": 21}   # trading days per candle of the close bas
 SPREAD = 0.65
 # quality: edge.if_filled against the model's measured error at the horizon. Each band is the larger
 # of |stated - observed| mean R per fill of the picked setups, under the pessimistic and the
-# optimistic ordering, rounded up to 0.01: at 1-2w and 1-3m under rules 6 (with CORRECTION, market
+# optimistic ordering, rounded up to 0.01: at 1-3m under rules 6 (with CORRECTION, market
 # orders left as counted, the zones of backtest.py's current rule), on the fit part of the long
-# setup backtest (README, "A stronger zone rule"); at 6-12m, not corrected, the rules 3 band from
+# setup backtest (README, "A stronger zone rule"); at 1-2w the same under rules 7, with MIN_RISK
+# (README, "A minimum risk per setup"); at 6-12m, not corrected, the rules 3 band from
 # the first two years of the three-year backtest (README, "Backtest of the trade setups"), kept as
 # rules 5 kept it. An edge inside the band cannot be told from zero: `marginal`. A horizon the
 # backtest does not cover (today) gets the widest band.
-EDGE_BAND = {"1-2w": 0.17, "1-3m": 0.05, "6-12m": 0.32}
+EDGE_BAND = {"1-2w": 0.16, "1-3m": 0.05, "6-12m": 0.32}
 # The correction of the path odds (rules 5). The paths know nothing of the zones, and the long
 # setup backtest (README, "An empirical correction of the odds, per horizon, side and kind")
 # found errors that keep their sign across years and regimes: continuations overstated, reversals
@@ -83,6 +85,14 @@ CORRECTION = {   # (horizon, side, kind): log-odds shifts of fill and win, R add
     ("1-3m", "short", "reversal"): {"fill": 0.19, "win": 0.02, "edge": 0.02},
     ("1-3m", "short", "continuation"): {"fill": 0.02, "win": -0.11, "edge": -0.17},
 }
+# A setup whose risk (entry to stop, as rounded) is under this share of its entry is discarded
+# before the ranking (rules 7). The round trip a trade costs is a fixed share of the price, so a
+# tight stop pays it many times over in R: at 1-2w the setups with the smallest risk lost to costs
+# alone, with gross R near zero. 2% was chosen at 1-2w on the fit part of the long setup backtest
+# among 1, 1.5, 2, 3 and 4% and judged once on a fresh universe of 50 tickers (README, "A minimum
+# risk per setup, as a protection"); at 1-3m no minimum passed, and 6-12m was not tested. It makes
+# the list lose less, not win: the setups kept still lost after costs.
+MIN_RISK = {"1-2w": 0.02}
 MIN_FILL = 0.05      # a setup whose order fills on fewer paths says nothing (its edge rounds to zero and would rank first)
 TOLERANCE = 0.011        # one hundredth, for a rounding that fell the other way
 RANK_TOLERANCE = 0.021   # two setups this close in edge.per_order may swap places
@@ -378,6 +388,7 @@ def setups(source, proj, sim=None):
     digits = places(source)
     price, unit = proj["as_of"]["price"], units(proj, digits)
     buffer, found, played, width = unit["buffer"], [], {"sim": sim}, band(source)
+    minimum = MIN_RISK.get(source.get("horizon"), 0.0)
 
     def add(side, kind, zone_id, order, entry, stop, target, detail):
         ordered = stop < entry < target if side == "long" else target < entry < stop
@@ -387,6 +398,8 @@ def setups(source, proj, sim=None):
             return
         risk, reward = half_up(abs(entry - stop), digits), half_up(abs(target - entry), digits)
         if risk <= 0:   # entry and stop round to the same price: no ratio, so no setup
+            return
+        if risk < minimum * half_up(entry, digits):   # a stop too tight to pay the round trip (rules 7)
             return
         ratio = half_up(reward / risk)
         if ratio < 0.5:
@@ -627,7 +640,9 @@ EARLIER = {1: "its odds came from reach and turn by formulas, not from simulated
            4: "rules 4 (GARCH paths) was evaluated and never shipped",
            5: "its prices came from the zones of the earlier zone rule (one width, single-candidate clusters), "
               "with the correction and bands fitted on them (rules 6 uses zones 1.5 widths wide of at least two "
-              "candidates, with a refitted correction)"}
+              "candidates, with a refitted correction)",
+           6: "it kept 1-2w setups whose risk is under 2% of the entry (rules 7 discards them, and its 1-2w "
+              "band is ±0.16 R)"}
 PRICES = {"entry", "stop", "target", "risk", "reward"}   # checked to the rows' precision, the rest to 0.011
 
 

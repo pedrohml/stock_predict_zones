@@ -58,7 +58,7 @@ Zones are listed nearest first. For a zone, the **near edge** is the one closest
 - Stop: that zone's near edge, moved `buffer` further away from the entry.
 - Target: the far edge of the next zone outward (`detail.next`).
 
-Prices: `risk = |entry − stop|` and `reward = |target − entry|`, rounded to the rows' precision; `ratio = reward / risk`. A setup is discarded when its prices are out of order (a long needs `stop < entry < target`, a short `target < entry < stop`), when its entry, stop or target rounds to zero or below, when its entry is on the wrong side of the current price for its order type, when `risk` rounds to zero, when `ratio` is below 0.5, or when its `fill` (below) is under 0.05: an order that almost never fills has an edge per order of about zero and would otherwise rank above every setup with a negative one.
+Prices: `risk = |entry − stop|` and `reward = |target − entry|`, rounded to the rows' precision; `ratio = reward / risk`. A setup is discarded when its prices are out of order (a long needs `stop < entry < target`, a short `target < entry < stop`), when its entry, stop or target rounds to zero or below, when its entry is on the wrong side of the current price for its order type, when `risk` rounds to zero, when the input's `horizon` is `1-2w` and `risk` is below 2% of the entry (`risk < 0.02 × entry`, a stop too tight to pay a trade's costs), when `ratio` is below 0.5, or when its `fill` (below) is under 0.05: an order that almost never fills has an edge per order of about zero and would otherwise rank above every setup with a negative one.
 
 Odds, counted on 20,000 simulated price paths of the projection's own simulation (`rz.py sim`'s paths, same seed and drift), refined to daily steps with simulated daily highs and lows:
 
@@ -66,7 +66,7 @@ Odds, counted on 20,000 simulated price paths of the projection's own simulation
 - `win_if_filled`: the share of the filled paths that reach the target before the stop. A day that reaches both counts as the stop, and on the fill day a stop touched that day counts against the setup.
 - `edge.if_filled`: the mean result of the filled paths in units of risk: −1 at the stop, `+ratio` at the target, the last close against the entry when the setup is still open at `valid_until`.
 - `edge.per_order = fill × edge.if_filled`: the same, counting the orders that never fill as zero.
-- `quality`: `edge.if_filled` against the model's measured error at the input's `horizon`, a band of ±0.17 at `1-2w`, ±0.05 at `1-3m`, ±0.32 at `6-12m` and ±0.32 at any other horizon. `favourable` when the edge is at or above the band, `unfavourable` at or below minus the band, `marginal` inside it: an edge that cannot be told from zero. The band is how far the stated mean edge missed the observed one in a backtest; it is not a measure of how good a setup is.
+- `quality`: `edge.if_filled` against the model's measured error at the input's `horizon`, a band of ±0.16 at `1-2w`, ±0.05 at `1-3m`, ±0.32 at `6-12m` and ±0.32 at any other horizon. `favourable` when the edge is at or above the band, `unfavourable` at or below minus the band, `marginal` inside it: an edge that cannot be told from zero. The band is how far the stated mean edge missed the observed one in a backtest; it is not a measure of how good a setup is.
 - `detail.loss` and `detail.open` are the shares of the filled paths that end at the stop and still open; `win_if_filled + loss + open = 1`.
 - **The backtest correction** (`detail.corrected` is true): at the `1-2w` and `1-3m` horizons the path counts are corrected for each side and kind (reversal, continuation) by the average error a backtest of these rules measured on past dates. a market order is left as counted (the shifts were fitted on limit and stop orders); for the others `fill` and `win_if_filled` are moved by a fixed shift in log-odds, `edge.if_filled` by a fixed number of R, and `detail.loss` and `detail.open` are scaled so the three shares still add up to one; `edge.per_order`, `quality` and the ranking use the corrected numbers. The 5% minimum `fill` is judged on the paths' own count, before the correction. At `6-12m` and any other horizon nothing is corrected.
 
@@ -93,13 +93,13 @@ No position size, leverage, or instruction to buy or sell. `why` describes the s
 
 ## Output
 
-Reply with one JSON object and nothing else: no prose before or after, no code fence. Keys, ids, enum values and their order stay exactly as below; `rules` is 6. Free-text values (`anchor`, `basis`, `why`, `watch`, `limits`, `method`, `note`) are written in the language named by `input.reply.language`. Prices keep the precision of the candle rows; probabilities, `ratio` and `edge` have two decimals.
+Reply with one JSON object and nothing else: no prose before or after, no code fence. Keys, ids, enum values and their order stay exactly as below; `rules` is 7. Free-text values (`anchor`, `basis`, `why`, `watch`, `limits`, `method`, `note`) are written in the language named by `input.reply.language`. Prices keep the precision of the candle rows; probabilities, `ratio` and `edge` have two decimals.
 
 The example shows the shape, computed from a real run. Your numbers come from `<setups>`.
 
 {
   "task": "trade_entries",
-  "rules": 6,
+  "rules": 7,
   "asset": { "ticker": "PETR4.SA", "currency": "BRL" },
   "as_of": { "time": "2026-11-18T15:15-03:00", "price": 42.77 },
   "valid_until": "2027-02-12",
