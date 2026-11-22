@@ -1561,6 +1561,34 @@ What it shows:
 - **Honest on average is not enough.** The odds passed tests 3 and 4, because with one ratio for every setup there is little left to get wrong. That is the same reason the placement study's Brier test failed them, seen from the other side.
 - This was the held-out part's fourth use. A pass would have been weak evidence; a fail is still informative, because the failure has a plain cause (direction) that the fit part could not show.
 
+### Candlestick and chart patterns: protocol (written on 22 Nov 2026, before any evaluation)
+
+The setups use support and resistance only. This study asks whether two well-known families of price patterns carry information the setups lack: **candlestick patterns** (one to three daily candles) and **chart patterns** (shapes over weeks of closes). The published evidence for both is weak after costs; the study is there to measure that on this universe, not to assume it. Code and output: [`examples/patterns_2026-11-22/`](examples/patterns_2026-11-22/).
+
+**The patterns**, all detected at the as-of close from the daily candles up to that day and nothing later (`patterns.py`, with a self-test on hand-made candles). A pattern has a direction, bullish or bearish. "Down trend" before a candle pattern means the close five days earlier is above the previous day's close, "up trend" the reverse.
+
+| Family | Bullish | Bearish | Definition (body = abs(close − open), range = high − low) |
+|---|---|---|---|
+| candle: engulfing | after a down trend, a black candle then a white one whose body covers it | the mirror | today's open ≤ yesterday's close and today's close ≥ yesterday's open (bullish) |
+| candle: hammer / shooting star | hammer after a down trend | shooting star after an up trend | body ≤ 1/3 of range, the long shadow ≥ 2 × body, the other shadow ≤ 0.1 × range |
+| candle: morning / evening star | after a down trend: a long black, a small body, a white closing above the first one's middle | the mirror | long = body ≥ 0.6 × range; small = body ≤ 0.3 × the first body |
+| candle: piercing / dark cloud | after a down trend: a long black, then a white opening below its low and closing above its middle but below its open | the mirror | |
+| candle: three soldiers / crows | three white candles, each closing higher and opening inside the previous body | the mirror | each body ≥ 0.5 × range |
+| chart: head and shoulders | inverse head and shoulders | head and shoulders | five alternating turning points, the middle one the extreme, the two shoulders within 3% of each other, the two neckline points within 3%; signal when a close crosses the neckline |
+| chart: double top / bottom | double bottom | double top | two lows (highs) within 2% of each other, at least 15 days apart, the peak (trough) between them at least 5% away; signal when a close crosses that peak (trough) |
+| chart: triangle breakout | close above the upper line | close below the lower line | the last two highs falling and the last two lows rising; signal when a close crosses the line through the two highs (lows) |
+
+Turning points for the chart patterns: a close that is the highest (lowest) of the 11 closes centred on it, known only five days later; only turning points of the last 120 days count. A chart signal is the first close past the line within 20 days of the last turning point being known, so one shape gives at most one signal.
+
+**Two questions per pattern and direction** (16 in all), on the **fit part** only (`HELD_OUT_YEARS` cases excluded, as everywhere since rules 5):
+
+- **A. Does the pattern predict the price by itself?** On every trading day of every ticker of `backtest_universe.txt`, 2005-2026, where a pattern fires: the return over the next 10 trading days for candle patterns and 63 for chart patterns, in the pattern's direction, **minus the mean return of all the universe's tickers over the same days** (so a rising market does not count as the pattern's merit, which is what fooled the fixed-target study), minus a 0.20% round trip.
+- **B. Does it improve the setups?** In the setup backtest (rules 6, `1-2w` every 10 trading days for candle patterns, `1-3m` every 20 for chart patterns), the setups whose side agrees with a pattern that fired on the as-of day or in the four days before it, against all setups of the same horizon: mean net R per order (the 0.20% round trip in R, as in the earlier studies) and the difference.
+
+Standard errors cluster by as-of month (the windows overlap). A pattern and direction **passes the fit part** when it has at least 300 events on at least 100 dates, and either A's mean is above 0 with t ≥ 3, or B's agreeing setups have net R above 0 and above all setups with t ≥ 3 on the difference; in both cases positive in each of the three blocks of fit years (2005-2012, 2013-2019, 2020-2026). t ≥ 3 because 32 tests are made.
+
+**Held-out, once:** every passing pattern and direction is judged on `--part held-out` by the same statistic with t ≥ 2. Nothing is chosen after that, and a pattern that holds would only then be proposed as a rule, with its own `RULES` number. If nothing passes the fit part the held-out part is not read. If it is read, it is the held-out part's fifth use, and a pass would be weak evidence; a later rule would need fresh tickers or later dates.
+
 ## Scoring the saved setups
 
 The [setup backtest](#backtest-of-the-trade-setups) replays today's rules on past dates. `score_entries.py` checks the setups that real runs actually wrote, before the prices existed: the forward, out-of-sample check. Every run keeps its `entries.json` in the run folder and, next to the saved projection, in `projections/`.
@@ -1764,7 +1792,7 @@ stock_predict_zones/
 ├── .claude/skills/reversal-zones-projection/
 │   ├── SKILL.md                    step 2: the skill
 │   └── scripts/rz.py               its helper: levels, simulation, validation, saving, outcomes
-├── examples/                       one complete run: input, projection and charts; reports of the value test and the setup backtest; segmentation_2026-11-20/ (the segment search); zone_rule_2026-11-21/ (the zone-rule study), placement_2026-11-21/ (stop and target placement, not adopted), fixed_target_2026-11-22/ (a fixed R target at 1-3m, not adopted)
+├── examples/                       one complete run: input, projection and charts; reports of the value test and the setup backtest; segmentation_2026-11-20/ (the segment search); zone_rule_2026-11-21/ (the zone-rule study), placement_2026-11-21/ (stop and target placement, not adopted), fixed_target_2026-11-22/ (a fixed R target at 1-3m, not adopted), patterns_2026-11-22/ (candlestick and chart patterns)
 ├── prompts/
 │   ├── trade_entries.md            prompt: three ranked trade setups from one run
 │   └── trade_entries.schema.json   JSON Schema of its reply
