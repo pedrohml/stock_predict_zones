@@ -1,0 +1,13 @@
+  1-2w  base    orders  86110 (base  86110) long  66% fill  39% R/o st +0.004 obs +0.002 (opt +0.067) net -0.036 (t -8.1) vs base -0.036 diff +0.000 t +0.0 [+0.000/+0.000/+0.000] gap 0.002 (base 0.002)
+* 1-2w  min1    orders  82667 (base  86110) long  66% fill  39% R/o st +0.003 obs +0.001 (opt +0.065) net -0.033 (t -7.4) vs base -0.036 diff +0.003 t +3.9 [+0.004/+0.006/+0.001] gap 0.002 (base 0.002)
+* 1-2w  min1.5  orders  72240 (base  86110) long  66% fill  38% R/o st +0.002 obs +0.001 (opt +0.062) net -0.028 (t -6.2) vs base -0.036 diff +0.008 t +4.7 [+0.011/+0.016/+0.003] gap 0.001 (base 0.002)
+* 1-2w  min2    orders  58864 (base  86110) long  65% fill  38% R/o st +0.000 obs +0.001 (opt +0.058) net -0.023 (t -4.7) vs base -0.036 diff +0.013 t +5.2 [+0.023/+0.022/+0.004] gap 0.001 (base 0.002)
+  1-2w  min3    orders  35410 (base  86110) long  65% fill  36% R/o st -0.003 obs -0.005 (opt +0.047) net -0.022 (t -3.7) vs base -0.036 diff +0.013 t +2.9 [+0.023/+0.032/+0.004] gap 0.002 (base 0.002)
+  1-2w  min4    orders  21312 (base  86110) long  65% fill  34% R/o st -0.008 obs -0.013 (opt +0.036) net -0.026 (t -3.9) vs base -0.036 diff +0.010 t +1.7 [+0.008/+0.025/+0.008] gap 0.005 (base 0.002)
+  1-3m  base    orders  39715 (base  39715) long  99% fill  56% R/o st +0.031 obs +0.029 (opt +0.060) net +0.005 (t +0.5) vs base +0.005 diff +0.000 t +0.0 [+0.000/+0.000/+0.000] gap 0.002 (base 0.002)
+  1-3m  min1    orders  39709 (base  39715) long  99% fill  56% R/o st +0.031 obs +0.029 (opt +0.060) net +0.005 (t +0.5) vs base +0.005 diff -0.000 t -0.1 [+0.000/-0.000/+0.000] gap 0.002 (base 0.002)
+  1-3m  min1.5  orders  39653 (base  39715) long  99% fill  56% R/o st +0.031 obs +0.030 (opt +0.060) net +0.005 (t +0.5) vs base +0.005 diff +0.000 t +0.8 [+0.002/-0.002/+0.001] gap 0.001 (base 0.002)
+  1-3m  min2    orders  39270 (base  39715) long  98% fill  56% R/o st +0.030 obs +0.030 (opt +0.059) net +0.007 (t +0.7) vs base +0.005 diff +0.002 t +1.8 [+0.006/-0.001/+0.001] gap 0.000 (base 0.002)
+  1-3m  min3    orders  36169 (base  39715) long  97% fill  54% R/o st +0.026 obs +0.025 (opt +0.052) net +0.005 (t +0.5) vs base +0.005 diff +0.000 t +0.1 [+0.009/-0.006/+0.000] gap 0.001 (base 0.002)
+  1-3m  min4    orders  30964 (base  39715) long  95% fill  52% R/o st +0.021 obs +0.023 (opt +0.048) net +0.007 (t +0.7) vs base +0.005 diff +0.002 t +0.4 [+0.019/-0.005/+0.000] gap 0.002 (base 0.002)
+frozen: {'1-2w': 'min2'}
