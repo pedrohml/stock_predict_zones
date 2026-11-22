@@ -1851,6 +1851,24 @@ Fit part ([`fit.txt`](examples/combo_2026-11-22/fit.txt), [`FROZEN.json`](exampl
 
 Rules 9 stays as it is, and universe v2 was not run: **it is still unread**.
 
+### Does the shape of the last candles predict direction? A triple-barrier test: protocol (written on 22 Nov 2026, before any evaluation)
+
+The question, as the user put it: from the current candle and the X before it, can a pattern be found that gives a gain of at least one ATR from the close within the next N candles? As stated, the answer is almost always yes by chance (on a random walk the high of the next 5 to 10 days passes the close plus one ATR in about 55% to 70% of cases, and the low passes the close minus one ATR just as often), so the test is posed with **three barriers** (López de Prado): a target and a stop around the close, and a time limit. This study does not use the zones: it asks whether the shape of the last candles alone says which barrier comes first. Code and output: [`examples/triple_2026-11-22/`](examples/triple_2026-11-22/).
+
+**Samples**: every 5th trading day from 2005 of each ticker's daily candles (split-adjusted, as everywhere), entering at that day's close. ATR is the mean true range of the last 14 days. A sample is dropped when its X + N days hold a flat candle (open = high = low = close) or when fewer than 252 days precede it.
+
+**Outcome**, per side: long, the target is close + a × ATR and the stop close − b × ATR; short, mirrored. From the next day, day by day up to N days: a gap past a barrier closes at the open, a day that reaches both counts as the stop (pessimistic), and at the time limit the trade closes at the last close. R in units of b × ATR (−1 at the stop, a / b at the target). Configurations: X ∈ {5, 10, 20} candles, N ∈ {5, 10, 20} days, a target of a ∈ {1, 2, 3} ATR with a stop of b = 1 ATR (the user asked for targets of two and three ATR too; N = 20 gives a three-ATR target time to happen), and the two sides: 54 in all. On a random walk every one of them has an expected R near zero; a larger target only trades many small gains for few large ones, so a pass would mean the shapes foresee large moves in one direction.
+
+**Features**: for each of the last X candles, its open, high, low and close minus the current close, divided by the current ATR; the ATR as a share of the close; the return over the last 21 and 63 days. Nothing else: the question is the candles' shape.
+
+**Model**, fixed now: scikit-learn 1.9.1 `HistGradientBoostingRegressor` predicting R, with meta-labelling's parameters (`max_depth=3`, `learning_rate=0.05`, `max_iter=300`, `min_samples_leaf=200`, `l2_regularization=1.0`, `random_state=0`), one per configuration.
+
+**Validation on the fit part** of `backtest_universe.txt` (samples whose window touches none of the held-out years `HELD_OUT_YEARS`): walk-forward by year from 2010, each year predicted by a model trained on fit samples whose window ended at least 30 days before 1 January of that year. A trade is taken when the prediction exceeds τ ∈ {0, 0.05, 0.10, 0.20}. Statistic: mean R of the kept trades minus the mean R of every sample of that side and configuration in the same years (the base rate, which carries the market's drift), standard errors clustered by month; costs ignored.
+
+**Choice**, per side: among the configurations and τ whose difference is positive with t ≥ 3, positive in each block (2010-2012, 2013-2019, 2020-2026), and that keep at least 10% of the samples, the one with the highest mean R of the kept trades. Its model, refitted on every fit sample, is frozen in `FROZEN.json` before universe v2 is touched. A side with no such configuration is not judged.
+
+**Judgement, once, on universe v2** ([`fresh_universe_v2.txt`](examples/kinds_2026-11-22/fresh_universe_v2.txt), unread, all its years): the frozen model's kept trades must beat that universe's base rate for the side with t ≥ 2. Passing would show that candle shapes carry direction; it would not by itself be a rule of the setups, which would need its own design.
+
 ## Scoring the saved setups
 
 The [setup backtest](#backtest-of-the-trade-setups) replays today's rules on past dates. `score_entries.py` checks the setups that real runs actually wrote, before the prices existed: the forward, out-of-sample check. Every run keeps its `entries.json` in the run folder and, next to the saved projection, in `projections/`.
