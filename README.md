@@ -1450,6 +1450,8 @@ What it shows, and what it does not:
 
 ### Stop and target placement: protocol (written before any evaluation)
 
+*Measured on rules 5 and its zones, in parallel with the zone-rule study above; rules 6 changed the zones afterwards, so the numbers below compare placements on the earlier zones.*
+
 The long run and the segmentation found the setups about even before costs and losing after them at `1-2w` and `1-3m`: their stops sit a quarter of one candle's move beyond the zone, so an assumed round-trip cost of 0.20% of the price is a large share of 1R. The hypothesis tested: a different placement of the stop and the target, fixed globally per horizon, raises the mean R per order net of that cost out of sample, with the odds still calibrated. This section was written, and committed, before any variant was evaluated on any part of the long run.
 
 **The family of candidates, fixed beforehand.** Prices still come from the zones and the projection's volatility only; `move` is `units.move`, the price times the projection's volatility for one candle of the close basis (a day at `1-2w`, a week at `1-3m`, a month at `6-12m`).
