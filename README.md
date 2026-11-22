@@ -1641,6 +1641,29 @@ The setups are rules 6's `setups()`, odds and correction included, filtered to t
 
 **Judgement, once, on the fresh universe**, per frozen horizon: adopted only if its net R per order is above 0 and its difference with `base` is above 0 with t ≥ 2. The gap between stated and observed R per order is reported next to it, because the correction was fitted without the filter. The fresh tickers trade in the same years as the fit tickers, so a shared market move is not removed. A pass would therefore be followed by the held-out years of the fresh universe as a second check before any rules change.
 
+#### Result: every trend filter made the setups worse; the fresh universe was not used
+
+Run on 22 Nov 2026 (`trend.py run` then `trend.py fit`, output in `fit.txt` and `FROZEN.json`; 14 minutes for both horizons on the fit part). The `base` rows equal `backtest_entries.py`'s for the same cases. Net R per order, the difference with `base` on the same cases (t), the share of long setups:
+
+| Horizon | Variant | Orders | Long | R/order stated / observed | Net R/order | vs base (t) |
+|---|---|---|---|---|---|---|
+| `1-2w` | base (rules 6) | 86,110 | 66% | +0.004 / +0.002 | −0.036 | |
+| `1-2w` | sma200 | 85,382 | 57% | −0.047 / −0.042 | −0.085 | −0.049 (−12.8) |
+| `1-2w` | mom12 | 85,436 | 61% | −0.046 / −0.039 | −0.081 | −0.046 (−12.6) |
+| `1-2w` | both | 63,340 | 62% | −0.048 / −0.042 | −0.086 | −0.050 (−11.9) |
+| `1-3m` | base (rules 6) | 39,715 | 99% | +0.031 / +0.029 | +0.005 | |
+| `1-3m` | sma200 | 39,464 | 57% | +0.000 / +0.003 | −0.020 | −0.025 (−2.9) |
+| `1-3m` | mom12 | 39,440 | 61% | +0.003 / +0.010 | −0.013 | −0.018 (−2.3) |
+| `1-3m` | both | 29,334 | 62% | +0.005 / +0.013 | −0.012 | −0.016 (−1.9) |
+
+No variant met test (1) or (2), the differences are negative in every block of years, and nothing was frozen. Under the protocol the fresh universe is not run, so it is still unread and stays available for the next judgement.
+
+What it shows:
+
+- **The odds already knew.** With the filter, the stated R per order of the picks fell (at `1-2w` from +0.004 to −0.047) and the observed R fell with it, by about the same amount: the stated and observed figures stayed within a few thousandths. The filter forced the pick away from the setups the path odds rank best (mostly long, because of the drift of sim method 2) and onto setups they rank worse, mostly shorts in a down trend, and those did as badly as stated. So the model's own ranking is not what is wrong.
+- **Trend-following is not a pick rule for these setups.** The setups are zone trades with stops and targets a few percent away over weeks; a 200-day trend says little about which of two nearby zones the price reaches first, which is what the odds measure. The trend effect the literature reports is a slow drift over months, and at `1-3m` the base picks already hold that drift: 99% long.
+- A variant that drops counter-trend setups without replacing them (long only in an up trend, nothing otherwise) is the segmentation's `above200 = above` with `side = long`, which did not pass at `1-2w` or `1-3m` either.
+
 ## Scoring the saved setups
 
 The [setup backtest](#backtest-of-the-trade-setups) replays today's rules on past dates. `score_entries.py` checks the setups that real runs actually wrote, before the prices existed: the forward, out-of-sample check. Every run keeps its `entries.json` in the run folder and, next to the saved projection, in `projections/`.
@@ -1844,7 +1867,7 @@ stock_predict_zones/
 ├── .claude/skills/reversal-zones-projection/
 │   ├── SKILL.md                    step 2: the skill
 │   └── scripts/rz.py               its helper: levels, simulation, validation, saving, outcomes
-├── examples/                       one complete run: input, projection and charts; reports of the value test and the setup backtest; segmentation_2026-11-20/ (the segment search); zone_rule_2026-11-21/ (the zone-rule study), placement_2026-11-21/ (stop and target placement, not adopted), fixed_target_2026-11-22/ (a fixed R target at 1-3m, not adopted), patterns_2026-11-22/ (candlestick and chart patterns, none passed), trend_2026-11-22/ (trading with the trend, judged on a fresh universe)
+├── examples/                       one complete run: input, projection and charts; reports of the value test and the setup backtest; segmentation_2026-11-20/ (the segment search); zone_rule_2026-11-21/ (the zone-rule study), placement_2026-11-21/ (stop and target placement, not adopted), fixed_target_2026-11-22/ (a fixed R target at 1-3m, not adopted), patterns_2026-11-22/ (candlestick and chart patterns, none passed), trend_2026-11-22/ (trading with the trend, not adopted; fresh_universe.txt, still unread)
 ├── prompts/
 │   ├── trade_entries.md            prompt: three ranked trade setups from one run
 │   └── trade_entries.schema.json   JSON Schema of its reply
