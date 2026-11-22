@@ -7,16 +7,29 @@
 # Names known to have been delisted or merged away (Walgreens, BRF, JBS's B3 line, US Steel) were left
 # out because Yahoo has no current history for them, not for their prices.
 # A symbol is dropped or cut only for data reasons, each written down here before any result is read.
+#
+# Data checks of 22 Nov 2026 (day-over-day close ratio above 1.6 or below 1/1.6 since 2003, rows with
+# open = high = low = close), before any setup was made:
+# - MO@2008-03-31.. cut: x0.30 on 31 Mar 2008 is the Philip Morris International spin-off, which Yahoo's
+#   split-only adjustment leaves in the prices (not a market move).
+# - GGBR4.SA@2008-12-26.. cut: flat rows then x0.52 on 26 Dec 2008, which looks unadjusted; x0.00 in 2003.
+# - CMIG4.SA@2006-06-01.. cut: x9.78 / x0.10 in Aug 2003 and x0.00 in May 2006 (broken rows).
+# - LREN3.SA@2006-01-01.. cut: x2.00, x0.02, x0.00 in 2005 (broken rows).
+# - CPFE3.SA@2006-02-01.. cut: x19 on 6 Jan 2006 (broken rows).
+# - UGPA3.SA@2021-06-28.. cut: prices of 6,068,052 in 2007 and x2.19 on 28 Jun 2021 with no news, which
+#   looks like an unadjusted change of share count.
+# - Kept as real moves: NFLX -41% on 15 Oct 2004, RIG -38% on 9 Mar 2020 (the oil crash).
+# - Many flat rows on the B3 names before about 2008; backtest_entries.py's stale rule skips those cases.
 version: 2
 
 [us-large] US large caps of sectors and names not in the earlier universes.
-AMZN GOOGL META ADBE CRM NKE SBUX MO LLY BMY AMGN GILD MDT UNP CSX RTX AXP MET ALL NEE D EOG KMB CL GIS
+AMZN GOOGL META ADBE CRM NKE SBUX MO@2008-03-31.. LLY BMY AMGN GILD MDT UNP CSX RTX AXP MET ALL NEE D EOG KMB CL GIS
 
 [us-fell-hard] US names with crashes or long declines (streaming, payments, offshore drilling, PCs, retail, disks, toys).
 NFLX PYPL RIG HPQ BBY GAP WDC MAT
 
 [br] B3 large caps not in the earlier universes.
-BBSE3.SA GGBR4.SA GOAU4.SA CMIG4.SA LREN3.SA ENEV3.SA CPFE3.SA HYPE3.SA UGPA3.SA RAIL3.SA
+BBSE3.SA GGBR4.SA@2008-12-26.. GOAU4.SA CMIG4.SA@2006-06-01.. LREN3.SA@2006-01-01.. ENEV3.SA CPFE3.SA@2006-02-01.. HYPE3.SA UGPA3.SA@2021-06-28.. RAIL3.SA
 
 [intl] Large caps of France, Canada, Australia and the UK.
 MC.PA TTE.PA AIR.PA SAN.PA RY.TO ENB.TO BHP.AX ULVR.L
