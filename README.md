@@ -1784,6 +1784,30 @@ Fresh universe, run once at `1-2w` only ([`judge.txt`](examples/volstop_2026-11-
 
 **It is rules version 9** (`EXCLUDED = {"1-2w": ("continuation", "market")}` in `trade_entries.py`, the template and the schema; `"rules": 9`). The long `1-2w` run under rules 9, same command and dates as before ([`examples/backtest_entries_2026-11-22_rules9_1-2w_long.txt`](examples/backtest_entries_2026-11-22_rules9_1-2w_long.txt)): 51,881 cases with setups (22,246 had none), all of them limit-order reversals, 62% long. Fill stated / observed 35% / 33%; gross R per order stated / observed +0.003 / +0.007 on the fit part and +0.003 / +0.009 on the held-out part (rules 8: −0.005 / −0.002 on both); net −0.015 and −0.011. The band measured on the fit part is still ±0.15 R, so `EDGE_BAND` is unchanged, and so is `CORRECTION`, which was fitted over every valid setup.
 
+### The order of events inside a daily candle, measured on hourly candles: protocol (written on 22 Nov 2026, before any evaluation)
+
+The setup backtest plays every setup on daily candles. When one candle reaches both the stop and the target, or fills the entry and reaches a level that may have come before the fill, the day's candle cannot say which came first: the backtest resolves it against the setup (pessimistic) and reports the other ordering too (optimistic). At `1-2w` the two differ by about 0.04 R per order (rules 9: +0.007 against +0.050), which is larger than any effect a rule has found. This study measures where the truth lies. **It changes no rule and no number of the setups**; it says how to read the two orderings. Code and output: [`examples/intraday_2026-11-22/`](examples/intraday_2026-11-22/).
+
+**Data**: rules 9 setups at `1-2w` (as-of dates every 5 trading days) and `1-3m` (every 10) for the 76 tickers of `backtest_universe.txt`, made exactly as `backtest_entries.py` makes them, on the as-of dates whose whole window (the day after the as-of date to `valid_until`) is covered by the hourly candles Yahoo serves (the last 730 days, downloaded once through `data_source`) and whose `valid_until` has passed. Only these recent dates can be measured, and they are all in the fit part.
+
+**Method**: every setup is walked on daily candles under both orderings (`backtest_entries.walk()`). A setup whose two results differ is ambiguous; it is walked again with the same `walk()` on the hourly candles of the same days, an hour taking the place of a day, under both orderings. It is resolved when the two hourly results agree. The hourly candles must agree with the daily ones: a day whose hourly open, high, low or close differs from the daily one by more than 0.5% (or that has no hourly candle) makes the setup unmeasurable, and such setups are counted and left out of every number.
+
+**Reported**, per horizon: the share of setups that are ambiguous; of those, the share resolved by the hourly candles and the share resolved in the setup's favour; and the mean R per order of all measured setups under the daily pessimistic ordering, the daily optimistic ordering, and the daily walk with each ambiguous setup replaced by its hourly result (as a range when the hour itself is still ambiguous). The answer is where that last number falls between the two daily ones.
+
+### Kinds of setup at `1-3m` and `6-12m`: protocol (written on 22 Nov 2026, before any evaluation)
+
+Rules 9 left out the `1-2w` continuations, which lost where the reversals did not. At `1-3m` the same filter made the setups worse, and `6-12m` was never tested. This study asks whether dropping one side and kind of setup helps at those two horizons. Code and output: [`examples/kinds_2026-11-22/`](examples/kinds_2026-11-22/).
+
+**Candidates**, per horizon: drop one of the four cells side × kind (`-long-rev`, `-short-rev`, `-long-cont`, `-short-cont`), drop every reversal (`-rev`), drop every continuation (`-cont`), or drop market orders (`-mkt`). Seven candidates against rules 9 itself; the rest of rules 9 is unchanged and the best three of what is left are kept. A candidate that drops a short cell and passes would mean the list leans with the market's average rise, not that the zones say more; that would be written next to the result.
+
+**Statistic**: costs ignored, as asked: mean gross R per order (pessimistic ordering) and its difference with rules 9 on the same cases, standard errors clustered by as-of month. Net R and the optimistic ordering are printed for reference.
+
+**Data**: `1-3m` every 20 trading days (as before) and `6-12m` every 21 (`backtest.DEFAULT_STEP`); the fit part of `backtest_universe.txt` (76 tickers, 2005 onwards) to choose. To judge: **a new fresh universe, version 2** ([`fresh_universe_v2.txt`](examples/kinds_2026-11-22/fresh_universe_v2.txt), 51 tickers in none of the earlier universes, written down before any of its prices were downloaded, its data checks and cuts recorded before any setup was made), all its years. The first fresh universe (read twice) and the held-out years (read four times) are not read.
+
+**Choice on the fit part, per horizon**: among the candidates whose difference with rules 9 is positive with t ≥ 3 and positive in each block of fit years (2005-2012, 2013-2019, 2020-2026), and that keep at least half of rules 9's orders, the one with the highest gross R per order, written to `FROZEN.json` before universe v2 is run. A horizon with no such candidate keeps rules 9 and universe v2 is not run for it.
+
+**Judgement, once, on universe v2**, per frozen horizon: adopted when the difference with rules 9 is positive with t ≥ 2 and the gap between stated and observed R per order is no more than 0.02 above rules 9's. If adopted, it becomes rules 10 (`EXCLUDED` at that horizon), with `EDGE_BAND` re-measured on the fit part.
+
 ## Scoring the saved setups
 
 The [setup backtest](#backtest-of-the-trade-setups) replays today's rules on past dates. `score_entries.py` checks the setups that real runs actually wrote, before the prices existed: the forward, out-of-sample check. Every run keeps its `entries.json` in the run folder and, next to the saved projection, in `projections/`.
