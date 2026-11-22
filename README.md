@@ -1664,6 +1664,36 @@ What it shows:
 - **Trend-following is not a pick rule for these setups.** The setups are zone trades with stops and targets a few percent away over weeks; a 200-day trend says little about which of two nearby zones the price reaches first, which is what the odds measure. The trend effect the literature reports is a slow drift over months, and at `1-3m` the base picks already hold that drift: 99% long.
 - A variant that drops counter-trend setups without replacing them (long only in an up trend, nothing otherwise) is the segmentation's `above200 = above` with `side = long`, which did not pass at `1-2w` or `1-3m` either.
 
+### Meta-labelling the setups, with volatility-expansion and crash-risk features: protocol (written on 22 Nov 2026, before any evaluation)
+
+The setups' odds are counted on random paths, so their expected R is close to zero by construction: a stop and a target do not change the expectation of a random walk, and the setups' stated and observed R agree. Something can only be gained by knowing, at the as-of date, more than those paths do. This study tries the most general version of that. A second model, trained on the outcomes of past setups ("meta-labelling", López de Prado's method), decides which of rules 6's setups to keep. Its features include two kinds known to predict the *shape* of the next move rather than its direction:
+
+- **volatility expansion**: realised volatility is persistent and mean-reverting, and narrow ranges precede wide ones;
+- **conditional skewness**, or crash risk: Chen, Hong and Stein (2001) found that high detrended turnover and strong past returns precede negatively skewed returns.
+
+Code and output: [`examples/meta_2026-11-22/`](examples/meta_2026-11-22/).
+
+**Setups**: rules 6's three picks per case, `1-2w` every 10 trading days and `1-3m` every 20, pessimistic ordering. Outcome: net R per order (the 0.20% round trip in R), 0 for an unfilled order.
+
+**Features**, all from the daily candles (with volume) up to the as-of close:
+
+| Group | Features |
+|---|---|
+| the setup | side, kind, order, rank, ratio, stated fill, win_if_filled, if_filled, per_order, risk and entry distance as % of the price |
+| volatility (item 3) | realised volatility over 5, 21 and 63 days; their ratios 5/63 and 21/63; the 20-day Bollinger width's percentile over 252 days; mean range over 10 days / over 63 days |
+| crash risk (item 2) | detrended turnover (mean log volume over 21 days minus over 252 days); returns over 21, 126 and 252 days; skewness of daily returns over 126 days; drawdown from the 63-day high; distance to the 252-day high and low |
+| trend | close / 200-day average; return from 252 to 21 days ago |
+
+**Model**, fixed now, nothing tuned: one scikit-learn 1.9.1 `HistGradientBoostingRegressor` per horizon predicting net R, `max_depth=3`, `learning_rate=0.05`, `max_iter=300`, `min_samples_leaf=200`, `l2_regularization=1.0`, `random_state=0`; side, kind and order as categorical.
+
+**Validation on the fit part**: walk-forward by year. For each fit year Y from 2010 on, the model is trained on fit cases whose window ends before 1 January of Y minus an embargo of 30 calendar days (`1-2w`) or 120 (`1-3m`), and predicts the cases of Y. A setup is kept when its prediction exceeds a threshold τ. τ is chosen from {0, 0.02, 0.05, 0.10} on those out-of-sample predictions: the value with the highest net R per order of the kept setups, among those keeping at least 20% of them.
+
+**Passes on the fit part** when the kept setups' out-of-sample net R per order (1) is above 0 with t ≥ 3, (2) beats all setups of those years by at least +0.02 with t ≥ 3 (standard errors clustered by as-of month), and (3) beats them in each of the blocks 2010-2012, 2013-2019 and 2020-2026. A passing horizon's model is refitted on all its fit cases and frozen with τ (`FROZEN.json` and the model file).
+
+**Judgement, once, on the fresh universe** (`examples/trend_2026-11-22/fresh_universe.txt`, version 1, unread): setups made by `backtest_entries.py` on the same grid, all years. The frozen model is adopted for a later rule only if its kept setups' net R per order is above 0 and beats all setups with t ≥ 2. If nothing passes the fit part, the fresh universe stays unread.
+
+**Items 2 and 3 on their own**, reported on the fit part and never used to choose anything: Spearman's correlation of each volatility feature with the realised volatility of the next 10 (or 63) days, and of each crash-risk feature with the skewness of the next 63 days' daily returns, on every case.
+
 ## Scoring the saved setups
 
 The [setup backtest](#backtest-of-the-trade-setups) replays today's rules on past dates. `score_entries.py` checks the setups that real runs actually wrote, before the prices existed: the forward, out-of-sample check. Every run keeps its `entries.json` in the run folder and, next to the saved projection, in `projections/`.
@@ -1867,7 +1897,7 @@ stock_predict_zones/
 ├── .claude/skills/reversal-zones-projection/
 │   ├── SKILL.md                    step 2: the skill
 │   └── scripts/rz.py               its helper: levels, simulation, validation, saving, outcomes
-├── examples/                       one complete run: input, projection and charts; reports of the value test and the setup backtest; segmentation_2026-11-20/ (the segment search); zone_rule_2026-11-21/ (the zone-rule study), placement_2026-11-21/ (stop and target placement, not adopted), fixed_target_2026-11-22/ (a fixed R target at 1-3m, not adopted), patterns_2026-11-22/ (candlestick and chart patterns, none passed), trend_2026-11-22/ (trading with the trend, not adopted; fresh_universe.txt, still unread)
+├── examples/                       one complete run: input, projection and charts; reports of the value test and the setup backtest; segmentation_2026-11-20/ (the segment search); zone_rule_2026-11-21/ (the zone-rule study), placement_2026-11-21/ (stop and target placement, not adopted), fixed_target_2026-11-22/ (a fixed R target at 1-3m, not adopted), patterns_2026-11-22/ (candlestick and chart patterns, none passed), trend_2026-11-22/ (trading with the trend, not adopted; fresh_universe.txt, still unread), meta_2026-11-22/ (meta-labelling the setups)
 ├── prompts/
 │   ├── trade_entries.md            prompt: three ranked trade setups from one run
 │   └── trade_entries.schema.json   JSON Schema of its reply
