@@ -1840,6 +1840,17 @@ Every filter is applied before the pick, and the best three of what is left are 
 
 **Judgement, once, on universe v2**, per frozen item and horizon: adopted when the difference with rules 9 is positive with t ≥ 2 and the gap between stated and observed R per order is no more than 0.02 above rules 9's. When more than one item is adopted at a horizon, only the one with the largest difference becomes a rule, since no combination was judged. An adopted item becomes rules 10.
 
+#### Result: none of the four passed the fit part; universe v2 stays unread
+
+Fit part ([`fit.txt`](examples/combo_2026-11-22/fit.txt), [`FROZEN.json`](examples/combo_2026-11-22/FROZEN.json): nothing frozen). Gross R per order against rules 9 (`1-2w` +0.007, `1-3m` +0.026):
+
+- **Confirmation entry (`1-2w`)**: it does what the hourly measurement suggested, and gains nothing. Waiting for the close removes the same-day stop entirely (the optimistic and pessimistic orderings now agree), but it also enters fewer times (fill 14% for `conf-above`, 19% for `conf-inside`, against 33%) and at a worse price, nearer the target and farther from the stop. Gross R per order −0.001 and +0.000, a difference of −0.008 (t −2.3) and −0.007 (t −2.1). What the limit order loses on the days the zone breaks, the confirmation pays back in entry price on the days it holds.
+- **Meta-labelling v2**: the out-of-sample kept setups do better as the threshold rises (`1-2w`: +0.010 at τ 0.02, +0.029 at 0.05, +0.054 at 0.10), but none passes. At τ 0.02, the only threshold keeping at least 25% of the setups at `1-2w`, the difference is +0.006 (t 1.4) and negative in 2020-2026; the higher thresholds keep 4% to 9% with t under 3 and a block of years negative or empty. At `1-3m` the best eligible threshold gives +0.005 (t 1.4). There is a signal, but not one strong enough to pass.
+- **Short-term reversal across tickers**: worse everywhere. At `1-2w` −0.004 to −0.011 R per order (t −1.1 to −2.2); at `1-3m` about −0.045 (t −5), because the filter turns a list that is 93% long into one that is half short. Buying the week's or the month's losers and selling its winners added nothing to the zones' setups on this universe.
+- **Stop beyond the usual overnight gap**: nothing. At `1-2w` the 2% minimum risk of rules 7 already sits beyond most gaps (`gapq95` keeps 83% of the orders and changes nothing, −0.001); the stricter versions keep few setups and do no better. At `1-3m` the setups' risks are already far wider than any overnight gap, so `gapq95` keeps everything, and `gapmax` makes it worse (−0.017, t −2.6).
+
+Rules 9 stays as it is, and universe v2 was not run: **it is still unread**.
+
 ## Scoring the saved setups
 
 The [setup backtest](#backtest-of-the-trade-setups) replays today's rules on past dates. `score_entries.py` checks the setups that real runs actually wrote, before the prices existed: the forward, out-of-sample check. Every run keeps its `entries.json` in the run folder and, next to the saved projection, in `projections/`.
